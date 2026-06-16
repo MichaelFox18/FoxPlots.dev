@@ -1,0 +1,19 @@
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Rdata
+.Ruserdata
+.Rapp.history
+*.Rproj
+
+# Shiny / deploy
+rsconnect/
+
+# Scratch / smoke-test files
+_smoke_tmp.R
+*_tmp.R
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,2 @@
+This file anchors here::here() to the projects/ kit root, so it resolves
+here even though the enclosing UF-IFAS folder is the actual git repo.
