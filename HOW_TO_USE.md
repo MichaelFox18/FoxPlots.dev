@@ -1,3 +1,29 @@
+One-time only — install the packages (skip if already done):
+
+
+install.packages(c("shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
+                   "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here",
+                   "binom", "testthat"))
+Point R at the project folder (once per session):
+
+
+setwd("C:/Users/michaelfox1/Desktop/FoxPlots")
+Then run whichever app you want (each opens in a browser tab; press Esc in the console to stop it):
+
+
+shiny::runApp("apps/data_explorer")
+
+shiny::runApp("apps/reshape_tool")
+
+shiny::runApp("apps/combine_tool")
+
+
+
+
+
+
+
+
 # How to use these apps
 
 Plain-English instructions for running the UF/IFAS data apps — in **RStudio**,
@@ -122,6 +148,10 @@ The tabs run left to right, and **each one feeds the next**:
    chi-square between two categories, with assumption checks and effect sizes.
 6. **Regression** — fit a model and read a plain-English interpretation.
 7. **Export** — download your data, charts, summary, or model results.
+8. **Report** — one click bundles the whole session into a single self-contained
+   HTML report (data overview, summary, charts, comparison, regression), with an
+   optional "show the R code" toggle. It needs no extra software and opens in any
+   browser.
 
 Whatever you do on Import + Reshape is the data the rest of the app uses.
 

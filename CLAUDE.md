@@ -18,10 +18,10 @@ Why modular: the existing `DataExplorerApp.R` is ~2,776 lines in a single namesp
 
 The kit is built and the original roadmap is done. What exists:
 
-- **Three runnable apps** (`apps/`): `data_explorer` (the full pipeline: About → Import → Reshape → Summarize → Visualize → Compare Groups → Regression → Export), `reshape_tool` (import → reshape → export), and `combine_tool` (import two tables → combine → export).
-- **Eight modules** (`modules/`): `mod_import` (upload/clean/recast + Data Health + **row filter** + profile), `mod_reshape` (stack/split/transpose/sort/subset), `mod_summarize`, `mod_visualize` (1–4 plots, 7 chart types, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square, assumptions, effect sizes), `mod_regression`, `mod_export` (data + charts + summary + model), `mod_combine` (concatenate/join/update/compare).
-- **Eleven pure helper files** (`R/`), all unit-tested — see layout below.
-- **A testthat suite** (`tests/testthat/`, ~190 expectations) covering every `do_*`/helper. Modules are verified with `shiny::testServer` smoke checks (not committed; run ad hoc).
+- **Three runnable apps** (`apps/`): `data_explorer` (the full pipeline: About → Import → Reshape → Summarize → Visualize → Compare Groups → Regression → Export → Report), `reshape_tool` (import → reshape → export), and `combine_tool` (import two tables → combine → export).
+- **Nine modules** (`modules/`): `mod_import` (upload/clean/recast + Data Health + **row filter** + profile), `mod_reshape` (stack/split/transpose/sort/subset), `mod_summarize`, `mod_visualize` (1–4 plots, 7 chart types, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square, assumptions, effect sizes), `mod_regression`, `mod_export` (data + charts + summary + model), `mod_combine` (concatenate/join/update/compare), `mod_report` (one-click self-contained HTML report of the whole session).
+- **Twelve pure helper files** (`R/`), all unit-tested — see layout below.
+- **A testthat suite** (`tests/testthat/`, ~244 expectations) covering every `do_*`/helper. Modules are verified with `shiny::testServer` smoke checks (not committed; run ad hoc).
 
 To extend it, follow the same path every existing feature took: **pure helper + its test → thin module (`mod_*`) that calls it → a `dev/run_*.R` harness → wire it into an app.**
 
@@ -58,19 +58,22 @@ To extend it, follow the same path every existing feature took: **pure helper + 
 │   ├── helpers_model.R          # fit_model, model_interpretation, diagnostic ggplots
 │   ├── helpers_reshape.R        # do_stack/do_split/do_transpose/do_sort/do_subset
 │   ├── helpers_combine.R        # do_concatenate/do_join/do_update/compare_tables
-│   └── helpers_compare.R        # compare_groups_numeric/compare_categorical, assumptions, effect sizes
+│   ├── helpers_compare.R        # compare_groups_numeric/compare_categorical, assumptions, effect sizes
+│   └── helpers_report.R         # report_spec + build_report_html (pandoc-free self-contained HTML) + render_report
 ├── modules/                     # mod_<feature>.R, each <feature>UI(id) + <feature>Server(id, ...)
 │   ├── mod_import.R   mod_reshape.R   mod_summarize.R   mod_visualize.R
-│   ├── mod_compare.R   mod_regression.R   mod_export.R   mod_combine.R
+│   ├── mod_compare.R   mod_regression.R   mod_export.R   mod_combine.R   mod_report.R
 ├── apps/
-│   ├── data_explorer/app.R      # full pipeline (all tabs)
+│   ├── data_explorer/app.R      # full pipeline (all tabs, incl. Report)
 │   ├── reshape_tool/app.R       # import → reshape → export
 │   └── combine_tool/app.R       # import two tables → combine → export
 ├── dev/                         # boot ONE module alone with sample data
 │   ├── run_reshape.R
-│   └── run_combine.R
+│   ├── run_combine.R
+│   ├── run_compare.R
+│   └── run_report.R
 └── tests/testthat/              # setup.R sources R/; test-<area>.R per helper file
-    ├── test-reshape.R  test-io.R  test-stats.R  test-plot.R
+    ├── test-reshape.R  test-io.R  test-stats.R  test-plot.R  test-report.R
     ├── test-model.R    test-clean.R  test-combine.R  test-compare.R  test-filter.R
 ```
 

@@ -26,6 +26,7 @@ source(here::here("R", "helpers_plot.R"))
 source(here::here("R", "helpers_model.R"))
 source(here::here("R", "helpers_reshape.R"))
 source(here::here("R", "helpers_compare.R"))
+source(here::here("R", "helpers_report.R"))
 source(here::here("modules", "mod_import.R"))
 source(here::here("modules", "mod_reshape.R"))
 source(here::here("modules", "mod_summarize.R"))
@@ -33,6 +34,7 @@ source(here::here("modules", "mod_visualize.R"))
 source(here::here("modules", "mod_compare.R"))
 source(here::here("modules", "mod_regression.R"))
 source(here::here("modules", "mod_export.R"))
+source(here::here("modules", "mod_report.R"))
 
 # --- About tab (static orientation) -----------------------------------------
 about_panel <- nav_panel(
@@ -67,7 +69,10 @@ about_panel <- nav_panel(
           tags$li(tags$b("Regression"), " — fit linear, multiple, or polynomial ",
                   "models with diagnostics and a plain-English interpretation."),
           tags$li(tags$b("Export"), " — download the data, the charts, the summary, ",
-                  "and the model results.")
+                  "and the model results."),
+          tags$li(tags$b("Report"), " — one click bundles everything you made ",
+                  "into a single self-contained HTML report (with an optional ",
+                  "“show the R code” toggle).")
         )
       )
     ),
@@ -109,18 +114,27 @@ ui <- page_navbar(
   nav_panel(tagList(icon("chart-simple"),  " Regression"), value = "regression",
             regressionUI("reg")),
   nav_panel(tagList(icon("file-export"),   " Export"),     value = "export",
-            exportUI("ex"))
+            exportUI("ex")),
+  nav_panel(tagList(icon("file-lines"),    " Report"),     value = "report",
+            reportUI("rep"))
 )
 
 server <- function(input, output, session) {
-  imported  <- importServer("imp")              # Import    -> reactive(data | NULL)
-  working   <- reshapeServer("rs", imported)    # Reshape   -> reactive(working data)
-  summary_t <- summarizeServer("sm", working)   # Summarize -> reactive(summary table)
-  plots     <- visualizeServer("viz", working)  # Visualize -> reactive(list of ggplots)
-  compareServer("cmp", working)                 # Compare    reads the working data
-  model     <- regressionServer("reg", working) # Regression -> reactive(fitted lm)
+  imported   <- importServer("imp")              # Import    -> reactive(data | NULL)
+  working    <- reshapeServer("rs", imported)    # Reshape   -> reactive(working data)
+  summary_t  <- summarizeServer("sm", working)   # Summarize -> reactive(summary table)
+  viz        <- visualizeServer("viz", working)  # Visualize -> reactive(list(plots, code))
+  plots      <- reactive(viz()$plots)            #   the ggplot list (for Export + Report)
+  plot_code  <- reactive(viz()$code)             #   the matching ggplot2 code (for Report)
+  comparison <- compareServer("cmp", working)    # Compare   -> reactive(result list | NULL)
+  model      <- regressionServer("reg", working) # Regression -> reactive(fitted lm)
+
   exportServer("ex", working, plots = plots, model = model,  # data + charts +
                summary_tbl = summary_t)                      # model + summary
+
+  reportServer("rep", working,                   # one-click HTML report of the
+               summary_tbl = summary_t, plots = plots, plot_code = plot_code,
+               comparison = comparison, model = model)       # whole session
 }
 
 shinyApp(ui, server)

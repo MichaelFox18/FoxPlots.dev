@@ -456,24 +456,31 @@ visualizeServer <- function(id, data_in) {
       })
     }
 
-    # Build the list of currently-configured ggplots (skips slots without a
-    # usable X; errors become NULL rather than breaking the whole list).
-    current_plots <- function() {
+    # Build the currently-configured plots AND their ggplot2 code together, so
+    # the two lists stay index-aligned (a slot without a usable X, or one that
+    # fails to build, is skipped in both). Per-slot errors become NULL/NA rather
+    # than breaking the whole list.
+    current_outputs <- function() {
       df <- data_in()
-      if (!is.data.frame(df)) return(list())
-      n   <- as.integer(input$n_plots %||% 1)
-      out <- list()
+      if (!is.data.frame(df)) return(list(plots = list(), code = list()))
+      n <- as.integer(input$n_plots %||% 1)
+      plots <- list(); codes <- list()
       for (i in seq_len(n)) {
         pr <- slot_params(i)
         if (!identical(pr$type, "heatmap") && (is.null(pr$x) || !nzchar(pr$x))) next
         pl <- tryCatch(build_full_plot(df, pr), error = function(e) NULL)
-        if (!is.null(pl)) out[[length(out) + 1L]] <- pl
+        if (is.null(pl)) next
+        plots[[length(plots) + 1L]] <- pl
+        codes[[length(codes) + 1L]] <- tryCatch(generate_code(df, pr),
+                                                error = function(e) NA_character_)
       }
-      out
+      list(plots = plots, code = codes)
     }
 
-    # Return the current plot list (ggplots) so a downstream stage like Export
-    # can render them to an image. Lazy: only forced when actually read.
-    reactive(current_plots())
+    # Return both the live ggplot list and the matching code, as
+    # list(plots = <ggplots>, code = <strings>). Export reads $plots to render
+    # images; Report reads both to embed charts with their code. Lazy: only
+    # computed when actually read.
+    reactive(current_outputs())
   })
 }
