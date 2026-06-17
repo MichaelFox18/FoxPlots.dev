@@ -52,6 +52,30 @@ blank_cell <- function(v) {
   if (is.character(v)) is.na(v) | trimws(v) == "" else is.na(v)
 }
 
+# A real numeric column (excludes dates/times, which are doubles under the hood).
+is_real_numeric <- function(x)
+  is.numeric(x) && !inherits(x, c("Date", "POSIXct", "POSIXt"))
+
+# Which values of a numeric vector fall outside Tukey's k×IQR fences. k = 1.5 is
+# the usual "outlier"; k = 3 (default) is the conservative "far out" / extreme.
+# NA-safe; a constant column (IQR 0) has no outliers.
+outlier_iqr <- function(x, k = 3) {
+  if (!is_real_numeric(x)) return(rep(FALSE, length(x)))
+  qs  <- stats::quantile(x, c(0.25, 0.75), na.rm = TRUE, names = FALSE)
+  iqr <- qs[2] - qs[1]
+  if (!is.finite(iqr) || iqr == 0) return(rep(FALSE, length(x)))
+  lo <- qs[1] - k * iqr; hi <- qs[2] + k * iqr
+  !is.na(x) & (x < lo | x > hi)
+}
+
+# Rows that are an extreme outlier in ANY numeric column.
+outlier_rows <- function(df, k = 3) {
+  if (!nrow(df)) return(logical(0))
+  num <- vapply(df, is_real_numeric, logical(1))
+  if (!any(num)) return(rep(FALSE, nrow(df)))
+  Reduce(`|`, lapply(df[num], outlier_iqr, k = k))
+}
+
 # Each spec: default (pre-checked?), detect(df) -> HTML string or NULL,
 # apply(df) -> df. Order here is the order fixes are applied.
 clean_specs <- function() list(
@@ -168,6 +192,20 @@ clean_specs <- function() list(
       sprintf("<b>Duplicate rows:</b> remove %d exact duplicate row(s).", n)
     },
     apply = function(df) df[!duplicated(df), , drop = FALSE]
+  ),
+  outliers = list(
+    default = FALSE,   # opt-in: it flags rather than fixes, and adds a column
+    detect = function(df) {
+      n <- sum(outlier_rows(df, k = 3))
+      if (n == 0) return(NULL)
+      sprintf("<b>Extreme outliers:</b> flag %d row(s) with a value far outside the typical range (beyond 3×IQR) by adding an <code>is_outlier</code> column — nothing is deleted; filter or drop them yourself if you want.", n)
+    },
+    apply = function(df) {
+      r  <- outlier_rows(df, k = 3)
+      nm <- make.unique(c(names(df), "is_outlier"), sep = "_")
+      df[[nm[length(nm)]]] <- r
+      df
+    }
   )
 )
 
