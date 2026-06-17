@@ -1,67 +1,23 @@
-One-time only — install the packages (skip if already done):
+# How to run the apps
 
+Plain-English steps to get the UF/IFAS data apps running on your computer. If
+you just want the fastest path, do **Step 1**, **Step 2**, and **Step 3** — that's it.
 
-install.packages(c("shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
-                   "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here",
-                   "binom", "testthat"))
-Point R at the project folder (once per session):
-
-
-setwd("C:/Users/michaelfox1/Desktop/FoxPlots")
-Then run whichever app you want (each opens in a browser tab; press Esc in the console to stop it):
-
-
-shiny::runApp("apps/data_explorer")
-
-shiny::runApp("apps/reshape_tool")
-
-shiny::runApp("apps/combine_tool")
-
-
-
-
-
-
-
-
-# How to use these apps
-
-Plain-English instructions for running the UF/IFAS data apps — in **RStudio**,
-a plain **R console**, or **VS Code**. If you just want the fastest path, read
-section 1 and stop.
-
-There are three apps. Pick the one that matches your task:
+There are three apps. Pick the one that fits your task:
 
 | App | What it's for | Folder |
 |---|---|---|
-| **Data Explorer** | The whole workflow: import → clean → reshape → summarize → visualize → model → export | `apps/data_explorer` |
-| **Reshape Tool** | Just restructure one table (stack/split/transpose/sort/subset) and export it | `apps/reshape_tool` |
+| **Data Explorer** | The whole workflow: import → clean → reshape → summarize → visualize → compare → model → report | `apps/data_explorer` |
+| **Reshape Tool** | Just restructure one table (stack / split / transpose / sort / subset / summarize) and export it | `apps/reshape_tool` |
 | **Combine Tool** | Merge / join / compare **two** tables | `apps/combine_tool` |
 
 ---
 
-## 1. The 30-second version
+## Step 1 — Install R and the packages (once per computer)
 
-1. Make sure R and the required packages are installed (section 2, one-time).
-2. Open R **in the `projects` folder** (section 3 explains how in each program).
-3. Run one line:
-
-```r
-shiny::runApp("apps/data_explorer")
-```
-
-Swap in `"apps/reshape_tool"` or `"apps/combine_tool"` for the other apps. The
-app opens in your web browser. To stop it, press **Esc** in the R console (or
-close the browser tab and the console).
-
----
-
-## 2. One-time setup: install R and the packages
-
-You need **R 4.6 or newer** (and RStudio if you want the friendly interface —
-[posit.co/download/rstudio-desktop](https://posit.co/download/rstudio-desktop)).
-
-Open R and paste this once to install everything the apps use:
+1. Install **R 4.6 or newer**: <https://cran.r-project.org>
+   (and **RStudio**, the friendly interface: <https://posit.co/download/rstudio-desktop>).
+2. Open R (or RStudio) and paste this **once** to install everything the apps use:
 
 ```r
 install.packages(c(
@@ -71,115 +27,70 @@ install.packages(c(
 ))
 ```
 
-(That can take a few minutes the first time. You only do it once per computer.)
+It can take a few minutes the first time. You only do this once.
 
 ---
 
-## 3. The one rule that makes everything work
+## Step 2 — Get the project folder
 
-**Keep the `projects` folder together, and run the apps from inside it.**
+Download the project from GitHub and keep it together in one folder (it will be
+called `FoxPlots`):
 
-These apps are intentionally built from many small files — the apps in `apps/`
-borrow shared code from the `R/` and `modules/` folders next to them (so a fix
-in one place improves every app). That means:
+- **Clone it** (if you use git): `git clone <repo-url>`, **or**
+- **Download a ZIP**: on the GitHub page click **Code → Download ZIP**, then
+  unzip it somewhere easy to find, like your Desktop or Documents.
 
-- ✅ You need the **whole `projects` folder**, not just a single `app.R`.
-- ✅ R needs to be pointed at the `projects` folder when it runs.
-
-A small marker file named `.here` sits in the `projects` folder so the apps can
-always find their shared code, no matter which app you launch. You don't have to
-do anything with it — just don't move the apps out of the folder.
+> **The one rule:** keep the whole `FoxPlots` folder together. The apps share
+> code from the `R/` and `modules/` folders next to them, so they need the whole
+> folder — not just a single `app.R`. (A hidden `.here` marker file lets them
+> find that shared code automatically; you don't need to do anything with it.)
 
 ---
 
-## 4. Running it in each program
+## Step 3 — Run an app
 
-### A) RStudio — the easy "Run App" button (recommended)
+### Easiest: RStudio's "Run App" button
 
-1. In RStudio: **File → Open File…** and open the app you want, e.g.
-   `projects/apps/data_explorer/app.R`.
-2. A green **▶ Run App** button appears at the top-right of the editor. Click it.
-3. The app opens. Click the **▶** dropdown → **Run External** to open it in a
-   full browser window instead of RStudio's small viewer.
+1. In RStudio: **File → Open File…** and open `apps/data_explorer/app.R`
+   (inside your `FoxPlots` folder).
+2. Click the green **▶ Run App** button at the top-right of the editor.
+3. To open it in a full browser window, click the **▶** dropdown → **Run External**.
 
-That's it — RStudio handles the working directory for you, and the `.here`
-marker lets the app find its shared code automatically.
+That's it — RStudio handles the working directory for you.
 
-> **Even tidier:** RStudio → **File → New Project → Existing Directory →** choose
-> the `projects` folder. From then on, opening that project starts you in the
-> right place, and you can just run `shiny::runApp("apps/data_explorer")` in the
-> Console.
+### Or: any R console (RStudio Console, R GUI, VS Code R terminal)
 
-### B) Any R console (RStudio Console, R GUI, or `Rscript`)
-
-Point R at the `projects` folder, then launch:
+Point R at your `FoxPlots` folder, then launch:
 
 ```r
-setwd("C:/Users/michaelfox1/Desktop/FoxPlots")  # <- your path to projects
+setwd("C:/path/to/FoxPlots")          # <- the folder you downloaded
 shiny::runApp("apps/data_explorer")
 ```
 
-`setwd()` only needs to be done once per session. Use forward slashes `/` in the
-path even on Windows.
+Swap in `"apps/reshape_tool"` or `"apps/combine_tool"` for the other apps.
+`setwd()` only needs doing once per session; use forward slashes `/` in the
+path, even on Windows.
 
-### C) VS Code
-
-1. Open an **R terminal** (Command Palette → "R: Create R terminal"), then use
-   the same two lines as **B** above.
-2. Or install the R extension and use its **Run** support the same way RStudio
-   does.
+The app opens in your web browser. To stop it, press **Esc** in the R console
+(or close the browser tab).
 
 ---
 
-## 5. Which tab does what (Data Explorer)
+## If something goes wrong
 
-The tabs run left to right, and **each one feeds the next**:
-
-1. **Import** — load a CSV/Excel/TSV/RDS file (or a built-in example). The
-   **Data Health** panel flags common problems (stray text, blank rows, etc.)
-   as one-click, reversible fixes; **Change Variable Types** recasts a column;
-   **Filter rows** keeps only the rows matching conditions you set (e.g. team is
-   any of LAL/BOS, points ≥ 20) — everything downstream uses the filtered data.
-   **Save / restore session** lets you download a `.rds` of your data and all of
-   this prep (and your reshape choice) and reload it later to continue.
-2. **Reshape** *(optional)* — Stack, Split, Transpose, Sort, Subset, or
-   Summarize (grouped stats as a new table). Leave it on **None** to pass your
-   data through untouched.
-3. **Summarize** — counts/means/medians/SD/SE/IQR by group, or **Proportions**
-   (percent of each category, with confidence intervals).
-4. **Visualize** — up to four charts at once (scatter, line, bar, histogram,
-   density, box, violin, mean ± error, pie, hexbin, correlation heatmap), with a
-   "copy the R code" button.
-5. **Compare Groups** — t-test / ANOVA (or non-parametric) across groups, or a
-   chi-square between two categories, with assumption checks and effect sizes.
-6. **Regression** — fit a model and read a plain-English interpretation.
-7. **Export** — download your data, charts, summary, or model results.
-8. **Report** — one click bundles the whole session (data overview, summary,
-   charts, comparison, regression) into a report, with an optional "show the R
-   code" toggle. Choose **HTML** (one self-contained file that opens in any
-   browser) or an editable **Word `.docx`** you can open in Word / Google Docs to
-   cut sections and add your own write-up.
-
-Whatever you do on Import + Reshape is the data the rest of the app uses.
+| What you see | Fix |
+|---|---|
+| `could not find function "runApp"` | Run `library(shiny)` first, or use `shiny::runApp(...)`. |
+| `cannot open file 'apps/...'` / path not found | R isn't pointed at the `FoxPlots` folder — use the **Run App** button, or `setwd("…/FoxPlots")`. |
+| `could not find function "uf_title"` (or similar) | The shared code wasn't loaded — you're in the wrong folder. Same fix as above. |
+| `there is no package called '…'` | A package isn't installed — re-run the install line in Step 1. |
+| The UF logo doesn't show | Make sure the whole `FoxPlots` folder is intact and you launched from inside it. |
+| Paths act strange after lots of testing | Restart R (**Session → Restart R**) and try again. |
 
 ---
 
-## 6. If something goes wrong
+## Want more detail?
 
-| What you see | What it means | Fix |
-|---|---|---|
-| `could not find function "runApp"` | The `shiny` package isn't loaded | Run `library(shiny)` first, or use `shiny::runApp(...)` |
-| `cannot open file 'apps/...'` / path not found | R isn't pointed at the `projects` folder | Do `setwd("…/projects")` (section 4B) or use the Run App button |
-| `could not find function "uf_title"` (or similar) | The shared code wasn't loaded — usually the wrong folder | Same as above: run from `projects` |
-| The UF logo doesn't show | The app can't find the `www/` image | Make sure the whole `projects` folder is intact and you're launching from it |
-| `there is no package called '…'` | A package isn't installed | Re-run the install line in section 2 |
-| Paths act strange after lots of testing | R cached an old location | Restart R (Session → Restart R), then try again |
-
----
-
-## 7. For people maintaining the code
-
-- Architecture, conventions, and the file map: **`CLAUDE.md`**.
-- A running history of what was built and why: **`BUILD_LOG.md`**.
-- A higher-level overview of the toolkit: **`README.md`**.
-- Run the test suite: `testthat::test_dir(here::here("tests/testthat"))`.
+- **What each app and tab does:** see `README.md`.
+- **Architecture and conventions (for developers):** see `CLAUDE.md`.
+- **Run the test suite:** `testthat::test_dir(here::here("tests/testthat"))`.

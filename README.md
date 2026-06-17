@@ -72,8 +72,8 @@ install.packages(c("shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
 its shared `R/` and `modules/` files). In an R console:
 
 ```r
-setwd("C:/Users/michaelfox1/Desktop/FoxPlots")   # once per session
-shiny::runApp("apps/data_explorer")              # then launch any app
+setwd("C:/path/to/FoxPlots")          # the folder you cloned/downloaded
+shiny::runApp("apps/data_explorer")   # then launch any app
 ```
 
 | Command | App | Use it when you want to… |
