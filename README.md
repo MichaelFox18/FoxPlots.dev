@@ -48,14 +48,15 @@ The look stays UF/IFAS-themed (blue/orange + the IFAS logo) throughout.
 - **R 4.6+**
 - Packages: `shiny`, `bslib`, `DT`, `ggplot2`, `plotly`, `colourpicker`,
   `dplyr`, `tidyr`, `tidyselect`, `readxl`, `writexl`, `here`, `binom`,
-  `officer` (for the Word report), and `testthat` (for tests).
+  `hexbin` (for the hexbin chart), `officer` (for the Word report), and
+  `testthat` (for tests).
 
 Install any you're missing:
 
 ```r
 install.packages(c("shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
                    "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here",
-                   "binom", "officer", "testthat"))
+                   "binom", "hexbin", "officer", "testthat"))
 ```
 
 > The **HTML** report needs no extra packages — it is built from base R +
@@ -95,19 +96,20 @@ Tabs run **left → right**, each feeding the next:
 
 1. **Import** — upload CSV / Excel / TSV / RDS (or load a built-in example).
    Then **Data Health** flags common problems (stray text-numbers, blank
-   rows/cols, duplicates, whitespace, NA markers) as opt-in, **reversible**
-   fixes; **Change Variable Types** recasts a column (e.g. a numeric code → a
-   factor); **Filter rows** keeps only the rows you want; and the **profile**
-   and **summary** describe every column. **Save / restore session** here
-   downloads (or reloads) a `.rds` capturing your data and all of this prep —
-   plus your reshape choice — so you can continue later.
-2. **Reshape** — *(optional)* Stack, Split, Transpose, Sort, or Subset. Defaults
-   to **None (pass-through)**, so by default your data flows on unchanged.
+   rows/cols, duplicates, whitespace, NA markers, extreme outliers) as opt-in,
+   **reversible** fixes; **Change Variable Types** recasts a column (e.g. a
+   numeric code → a factor); **Filter rows** keeps only the rows you want; and
+   the **profile** and **summary** describe every column. **Save / restore
+   session** here downloads (or reloads) a `.rds` capturing your data and all of
+   this prep — plus your reshape choice — so you can continue later.
+2. **Reshape** — *(optional)* Stack, Split, Transpose, Sort, Subset, or
+   **Summarize** (grouped stats as a new table). Defaults to **None
+   (pass-through)**, so by default your data flows on unchanged.
 3. **Summarize** — count / mean / median / mode / min / max / SD / SE / IQR by
    group, or category **proportions** with confidence intervals.
-4. **Visualize** — 1–4 charts side by side (scatter, line, bar, histogram, box,
-   pie, correlation heatmap), with styling and a **"copy the ggplot2 code"**
-   panel for each.
+4. **Visualize** — 1–4 charts side by side (scatter, line, bar, histogram,
+   density, box, violin, mean ± error, pie, hexbin, correlation heatmap), with
+   styling and a **"copy the ggplot2 code"** panel for each.
 5. **Compare Groups** — t-test / ANOVA (or non-parametric) across groups, or a
    chi-square between two categories, with assumption checks and effect sizes.
 6. **Regression** — fit linear / multiple / polynomial models with a

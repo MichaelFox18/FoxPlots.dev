@@ -67,7 +67,7 @@ Open R and paste this once to install everything the apps use:
 install.packages(c(
   "shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
   "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here", "binom",
-  "officer"
+  "hexbin", "officer"
 ))
 ```
 
@@ -142,11 +142,14 @@ The tabs run left to right, and **each one feeds the next**:
    any of LAL/BOS, points ≥ 20) — everything downstream uses the filtered data.
    **Save / restore session** lets you download a `.rds` of your data and all of
    this prep (and your reshape choice) and reload it later to continue.
-2. **Reshape** *(optional)* — Stack, Split, Transpose, Sort, or Subset. Leave it
-   on **None** to pass your data through untouched.
+2. **Reshape** *(optional)* — Stack, Split, Transpose, Sort, Subset, or
+   Summarize (grouped stats as a new table). Leave it on **None** to pass your
+   data through untouched.
 3. **Summarize** — counts/means/medians/SD/SE/IQR by group, or **Proportions**
    (percent of each category, with confidence intervals).
-4. **Visualize** — up to four charts at once, with a "copy the R code" button.
+4. **Visualize** — up to four charts at once (scatter, line, bar, histogram,
+   density, box, violin, mean ± error, pie, hexbin, correlation heatmap), with a
+   "copy the R code" button.
 5. **Compare Groups** — t-test / ANOVA (or non-parametric) across groups, or a
    chi-square between two categories, with assumption checks and effect sizes.
 6. **Regression** — fit a model and read a plain-English interpretation.

@@ -54,16 +54,18 @@ about_panel <- nav_panel(
         tags$ol(
           class = "px-3",
           tags$li(tags$b("Import"), " — upload CSV/Excel/TSV/RDS or load an example, ",
-                  "then run a Data Health check, recast column types, and filter ",
-                  "to just the rows you want."),
-          tags$li(tags$b("Reshape"), " — stack, split, transpose, sort, or subset ",
-                  "(optional)."),
+                  "then run a Data Health check (including extreme-outlier ",
+                  "flagging), recast column types, and filter to just the rows ",
+                  "you want. You can also save the whole session and restore it ",
+                  "later."),
+          tags$li(tags$b("Reshape"), " — stack, split, transpose, sort, subset, or ",
+                  "summarize by group (optional)."),
           tags$li(tags$b("Summarize"), " — count, mean, median, mode, min, max, SD, ",
                   "SE, and IQR by group, or category proportions with confidence ",
                   "intervals."),
           tags$li(tags$b("Visualize"), " — up to four charts at once (scatter, line, ",
-                  "bar, histogram, box, pie, correlation heatmap) with copy-ready ",
-                  "ggplot2 code."),
+                  "bar, histogram, density, box, violin, mean ± error, pie, ",
+                  "hexbin, correlation heatmap) with copy-ready ggplot2 code."),
           tags$li(tags$b("Compare Groups"), " — t-test / ANOVA (or non-parametric) ",
                   "across groups, or chi-square between two categories, with ",
                   "assumption checks and effect sizes."),
@@ -71,9 +73,9 @@ about_panel <- nav_panel(
                   "models with diagnostics and a plain-English interpretation."),
           tags$li(tags$b("Export"), " — download the data, the charts, the summary, ",
                   "and the model results."),
-          tags$li(tags$b("Report"), " — one click bundles everything you made ",
-                  "into a single self-contained HTML report (with an optional ",
-                  "“show the R code” toggle).")
+          tags$li(tags$b("Report"), " — one click bundles everything you made into ",
+                  "a report: a self-contained HTML file or an editable Word ",
+                  "document (with an optional “show the R code” toggle).")
         )
       )
     ),
@@ -88,8 +90,12 @@ about_panel <- nav_panel(
         tags$li("On the Visualize tab, use the ", icon("expand"),
                 " full-screen button on any chart to see it in detail — handy for ",
                 "faceted (small-multiple) charts."),
-        tags$li("Numbers stored as text, missing-value markers, and duplicate rows ",
-                "are caught by Data Health on the Import tab — fixes are reversible.")
+        tags$li("Numbers stored as text, missing-value markers, duplicate rows, and ",
+                "extreme outliers are caught by Data Health on the Import tab — ",
+                "fixes are reversible."),
+        tags$li("Use ", tags$b("Save / restore session"), " on the Import tab to ",
+                "download your progress (data + cleaning + filters + reshape) and ",
+                "pick it back up later.")
       )
     )
   )

@@ -19,9 +19,9 @@ Why modular: the existing `DataExplorerApp.R` is ~2,776 lines in a single namesp
 The kit is built and the original roadmap is done. What exists:
 
 - **Three runnable apps** (`apps/`): `data_explorer` (the full pipeline: About → Import → Reshape → Summarize → Visualize → Compare Groups → Regression → Export → Report), `reshape_tool` (import → reshape → export), and `combine_tool` (import two tables → combine → export).
-- **Nine modules** (`modules/`): `mod_import` (upload/clean/recast + Data Health + **row filter** + profile), `mod_reshape` (stack/split/transpose/sort/subset), `mod_summarize`, `mod_visualize` (1–4 plots, 7 chart types, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square, assumptions, effect sizes), `mod_regression`, `mod_export` (data + charts + summary + model), `mod_combine` (concatenate/join/update/compare), `mod_report` (one-click self-contained HTML report of the whole session).
+- **Nine modules** (`modules/`): `mod_import` (upload/clean/recast + Data Health incl. **outlier flagging** + **row filter** + profile + **session save/restore**), `mod_reshape` (stack/split/transpose/sort/subset/**summary**), `mod_summarize`, `mod_visualize` (1–4 plots, **11 chart types**, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square, assumptions, effect sizes), `mod_regression`, `mod_export` (data + charts + summary + model), `mod_combine` (concatenate/join/update/compare), `mod_report` (one-click HTML **or Word** report of the whole session).
 - **Thirteen pure helper files** (`R/`), all unit-tested — see layout below.
-- **A testthat suite** (`tests/testthat/`, ~290 expectations) covering every `do_*`/helper (Word-report tests `skip_if_not_installed("officer")`). Modules are verified with `shiny::testServer` smoke checks (not committed; run ad hoc).
+- **A testthat suite** (`tests/testthat/`, ~324 expectations) covering every `do_*`/helper (Word-report tests `skip_if_not_installed("officer")`). Modules are verified with `shiny::testServer` smoke checks (not committed; run ad hoc).
 - **Session save/restore** (`helpers_state.R`): the Import tab can download a versioned `.rds` of the data-prep stage (working data + raw + filters + reshape settings) and restore it. Wired via a shared `session_store` reactiveValues passed to `importServer`/`reshapeServer` — the one sanctioned app-wide-state use of a shared store (reshape *publishes* its settings; a restore *stages* them for the reshape sync-observer to consume).
 
 To extend it, follow the same path every existing feature took: **pure helper + its test → thin module (`mod_*`) that calls it → a `dev/run_*.R` harness → wire it into an app.**
@@ -84,7 +84,7 @@ To extend it, follow the same path every existing feature took: **pure helper + 
 
 ## Tech stack
 
-R + `shiny`, `bslib` (layout: `page_navbar`, `layout_sidebar`, `card` — matches the existing app), `DT`, `tidyr`, `dplyr`, `tidyselect`, `ggplot2`, `writexl` / `readxl` / `readr` (import/export), `officer` (the editable Word report — pandoc-free), `here`, and `testthat` for tests. Add packages as needed and note them in the build log.
+R + `shiny`, `bslib` (layout: `page_navbar`, `layout_sidebar`, `card` — matches the existing app), `DT`, `tidyr`, `dplyr`, `tidyselect`, `ggplot2`, `hexbin` (the hexbin chart), `writexl` / `readxl` / `readr` (import/export), `officer` (the editable Word report — pandoc-free), `here`, and `testthat` for tests. Add packages as needed and note them in the build log.
 
 ---
 
