@@ -67,3 +67,10 @@ test_that("the outliers Data Health fix flags rows with an is_outlier column", {
   expect_equal(which(out$is_outlier), 6L)
   expect_equal(nrow(out), nrow(df))             # nothing deleted
 })
+
+test_that("the outliers issue clears once the data is flagged", {
+  df  <- data.frame(x = c(1, 2, 3, 2, 1, 500), y = c(5, 6, 5, 6, 5, 6))
+  expect_true("outliers" %in% names(detect_issues(df)))    # flagged before
+  out <- clean_apply(df, "outliers")
+  expect_false("outliers" %in% names(detect_issues(out)))  # gone after
+})

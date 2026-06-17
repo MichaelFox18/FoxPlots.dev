@@ -196,6 +196,9 @@ clean_specs <- function() list(
   outliers = list(
     default = FALSE,   # opt-in: it flags rather than fixes, and adds a column
     detect = function(df) {
+      # Once flagged, consider it handled — the fix adds a column rather than
+      # removing rows, so the outliers are (intentionally) still present.
+      if ("is_outlier" %in% names(df)) return(NULL)
       n <- sum(outlier_rows(df, k = 3))
       if (n == 0) return(NULL)
       sprintf("<b>Extreme outliers:</b> flag %d row(s) with a value far outside the typical range (beyond 3×IQR) by adding an <code>is_outlier</code> column — nothing is deleted; filter or drop them yourself if you want.", n)
