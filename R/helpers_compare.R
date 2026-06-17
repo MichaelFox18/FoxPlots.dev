@@ -17,6 +17,7 @@
 
 #' Per-group descriptive stats for a numeric outcome (NA-safe).
 #' @return data.frame(Group, N, Mean, SD, Median), one row per non-empty level.
+#' @noRd
 group_stats_table <- function(df, outcome, group) {
   y  <- df[[outcome]]; g <- as.factor(df[[group]])
   ok <- !is.na(y) & !is.na(g); y <- y[ok]; g <- droplevels(g[ok])
@@ -32,6 +33,7 @@ group_stats_table <- function(df, outcome, group) {
 }
 
 #' Cohen's d (pooled SD) for a two-level grouping. NA if not exactly two groups.
+#' @noRd
 cohens_d <- function(y, g) {
   g <- droplevels(as.factor(g))
   lv <- levels(g); if (length(lv) != 2L) return(NA_real_)
@@ -45,6 +47,9 @@ cohens_d <- function(y, g) {
 
 #' Rough magnitude label for a standardised effect size.
 #' @param name "Cohen's d", "Eta-squared", or "Cramér's V".
+#' @param value The effect-size value.
+#' @return A character bucket: negligible / small / medium / large (or NA).
+#' @export
 effect_magnitude <- function(name, value) {
   if (is.null(value) || is.na(value)) return(NA_character_)
   v   <- abs(value)
@@ -63,6 +68,7 @@ effect_magnitude <- function(name, value) {
 #' Per-group Shapiro–Wilk normality test. W / p are NA where a group is too
 #' small (n < 3), too large (n > 5000), or constant.
 #' @return data.frame(Group, N, W, p_value, Normal).
+#' @noRd
 normality_table <- function(df, outcome, group) {
   y  <- df[[outcome]]; g <- as.factor(df[[group]])
   ok <- !is.na(y) & !is.na(g); y <- y[ok]; g <- droplevels(g[ok])
@@ -84,6 +90,7 @@ normality_table <- function(df, outcome, group) {
 
 #' Brown–Forsythe Levene test (median-centred) for equal variances — pure base
 #' R, more robust to non-normality than Bartlett's. NULL if < 2 groups.
+#' @noRd
 levene_test <- function(y, g) {
   g <- droplevels(as.factor(g))
   if (nlevels(g) < 2L) return(NULL)
@@ -107,9 +114,15 @@ levene_test <- function(y, g) {
 #'   non-parametric, 2     -> Wilcoxon rank-sum (Mann–Whitney U)
 #'   non-parametric, 3+    -> Kruskal–Wallis
 #'
+#' @param df A data frame.
+#' @param outcome Name of the numeric outcome column.
+#' @param group Name of the categorical grouping column.
+#' @param parametric Use a parametric test (t-test / ANOVA) vs. a rank test.
+#' @param var_equal Assume equal variances (two-group t-test only).
 #' @return A list (or NULL on unusable input) with: test, statistic, df/df2,
 #'   p_value, effect_name/effect_value, group_stats, posthoc (ANOVA only),
 #'   k, n, parametric.
+#' @export
 compare_groups_numeric <- function(df, outcome, group,
                                    parametric = TRUE, var_equal = FALSE) {
   if (!is.data.frame(df) || !all(c(outcome, group) %in% names(df))) return(NULL)
@@ -180,8 +193,11 @@ compare_groups_numeric <- function(df, outcome, group,
 #' When any expected cell count is < 5 the chi-square approximation is shaky, so
 #' a Monte-Carlo Fisher's-exact p-value is added as a fallback.
 #'
+#' @param df A data frame.
+#' @param var1,var2 Names of the two categorical columns.
 #' @return A list (or NULL) with: table, expected, statistic, df, p_value,
 #'   fisher_p, low_expected (proportion of cells expected < 5), cramers_v, n.
+#' @export
 compare_categorical <- function(df, var1, var2) {
   if (!is.data.frame(df) || !all(c(var1, var2) %in% names(df))) return(NULL)
   a <- df[[var1]]; b <- df[[var2]]

@@ -21,6 +21,7 @@
 #' @return A tibble in long form.
 #' @examples
 #' do_stack(data.frame(id = 1:2, q1 = c(5, 2), q2 = c(3, 4)), c("q1", "q2"))
+#' @export
 do_stack <- function(data, cols, label_to = "Label", value_to = "Data") {
   stopifnot(is.data.frame(data), is.character(cols), length(cols) >= 1L)
   missing <- setdiff(cols, names(data))
@@ -57,6 +58,7 @@ do_stack <- function(data, cols, label_to = "Label", value_to = "Data") {
 #' long <- data.frame(id = c(1, 1, 2, 2), k = c("a", "b", "a", "b"),
 #'                    v = c(5, 3, 2, 4))
 #' do_split(long, value_col = "v", split_by = "k", group_cols = "id")
+#' @export
 do_split <- function(data, value_col, split_by, group_cols = NULL,
                      values_fn = NULL) {
   stopifnot(
@@ -94,6 +96,7 @@ do_split <- function(data, value_col, split_by, group_cols = NULL,
 #' @examples
 #' do_sort(data.frame(g = c("a", "a", "b"), v = c(1, 2, 1)),
 #'         c("g", "v"), desc = c(FALSE, TRUE))
+#' @export
 do_sort <- function(data, cols, desc = FALSE) {
   stopifnot(is.data.frame(data), is.character(cols), length(cols) >= 1L,
             is.logical(desc), length(desc) >= 1L)
@@ -129,6 +132,7 @@ do_sort <- function(data, cols, desc = FALSE) {
 #' @examples
 #' do_subset(data.frame(g = rep(c("a", "b"), each = 5), x = 1:10),
 #'           sample = "prop", size = 0.5, stratify_by = "g", seed = 1)
+#' @export
 do_subset <- function(data, cols = NULL, sample = c("all", "n", "prop"),
                       size = NULL, stratify_by = NULL, seed = NULL) {
   sample <- match.arg(sample)
@@ -176,6 +180,7 @@ do_subset <- function(data, cols = NULL, sample = c("all", "n", "prop"),
 #' @examples
 #' do_transpose(data.frame(metric = c("h", "w"), a = c(1, 10), b = c(2, 20)),
 #'              names_from = "metric")
+#' @export
 do_transpose <- function(data, names_from = NULL, id_col = "name") {
   stopifnot(
     is.data.frame(data),

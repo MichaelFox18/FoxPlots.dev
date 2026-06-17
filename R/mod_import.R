@@ -92,7 +92,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
     # nothing is lost; the tidyr sets give a wide and a long shape to reshape.
     examples <- examples %||% list(
       mtcars = local({
-        d <- as.data.frame(mtcars); d$car <- rownames(d); rownames(d) <- NULL; d
+        d <- as.data.frame(datasets::mtcars); d$car <- rownames(d); rownames(d) <- NULL; d
       }),
       relig_income    = as.data.frame(tidyr::relig_income),
       fish_encounters = as.data.frame(tidyr::fish_encounters)
@@ -242,7 +242,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
         return(helpText("Load a dataset to change column types."))
       cols    <- names(rv$data)
       types   <- vapply(rv$data, friendly_type, character(1))
-      choices <- setNames(cols, sprintf("%s  (currently %s)", cols, types))
+      choices <- stats::setNames(cols, sprintf("%s  (currently %s)", cols, types))
       tagList(
         tags$p(class = "mb-2",
           "Recast a column to a different type. The most common need: a number ",

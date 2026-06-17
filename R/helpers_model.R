@@ -18,6 +18,7 @@
 #' @param type One of "linear", "multiple", "polynomial".
 #' @param degree Polynomial degree (used when type = "polynomial").
 #' @return An lm object.
+#' @export
 fit_model <- function(df, response, predictors,
                       type = c("linear", "multiple", "polynomial"),
                       degree = 2) {
@@ -40,6 +41,7 @@ fit_model <- function(df, response, predictors,
 #' @param model An lm object.
 #' @return A list: r2, adj_r2, overall_p (model F-test p), and the names of the
 #'   significant / non-significant predictors at alpha = 0.05.
+#' @export
 model_interpretation <- function(model) {
   s     <- summary(model)
   fstat <- s$fstatistic
@@ -73,8 +75,9 @@ thin_note <- function(n) {
 }
 
 #' Fitted-vs-actual diagnostic ggplot. Requires ggplot2 attached.
+#' @noRd
 reg_fitted_gg <- function(model) {
-  d <- data.frame(actual = model$model[[1]], fitted = fitted(model))
+  d <- data.frame(actual = model$model[[1]], fitted = stats::fitted(model))
   note <- thin_note(nrow(d)); d <- thin_rows(d)
   ggplot(d, aes(x = .data[["actual"]], y = .data[["fitted"]])) +
     geom_point(color = UF_BLUE, size = 2.5, alpha = 0.7) +
@@ -86,8 +89,9 @@ reg_fitted_gg <- function(model) {
 }
 
 #' Residuals-vs-fitted diagnostic ggplot. Requires ggplot2 attached.
+#' @noRd
 reg_resid_gg <- function(model) {
-  d <- data.frame(fitted = fitted(model), resid = residuals(model))
+  d <- data.frame(fitted = stats::fitted(model), resid = stats::residuals(model))
   note <- thin_note(nrow(d)); d <- thin_rows(d)
   ggplot(d, aes(x = .data[["fitted"]], y = .data[["resid"]])) +
     geom_point(color = UF_BLUE, size = 2.5, alpha = 0.7) +

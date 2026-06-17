@@ -38,6 +38,7 @@
 #' @param digits Rounding for the reported statistics.
 #' @return A tidy data frame [groups..., Variable, N, Mean, Median, Mode, Min,
 #'   Max, SD, SE, IQR], or NULL if the inputs aren't usable.
+#' @export
 grouped_summary <- function(df, vars, groups, digits = 3) {
   if (is.null(df) || !length(vars) || !length(groups)) return(NULL)
   vars   <- intersect(vars, names(df))
@@ -79,6 +80,7 @@ grouped_summary <- function(df, vars, groups, digits = 3) {
 #' @param digits Rounding for the reported percentages.
 #' @return A tidy data frame [groups..., Level, N, Total, Percent, CI_low,
 #'   CI_high] (percentages 0–100), or NULL if the inputs aren't usable.
+#' @export
 proportions_summary <- function(df, outcome, groups, conf_level = 0.95,
                                 digits = 1) {
   if (is.null(df) || !length(outcome) || !length(groups)) return(NULL)
@@ -106,6 +108,9 @@ proportions_summary <- function(df, outcome, groups, conf_level = 0.95,
 }
 
 #' A plain-English column type for display ("numeric", "factor", "date", …).
+#' @param x A vector (a data-frame column).
+#' @return A length-1 character label.
+#' @export
 friendly_type <- function(x) {
   if (inherits(x, c("Date", "POSIXct", "POSIXt"))) "date"
   else if (is.logical(x)) "logical"
@@ -120,6 +125,7 @@ friendly_type <- function(x) {
 #' blank_cell() from helpers_clean.R.
 #' @param df A data frame.
 #' @return A data frame, one row per input column.
+#' @export
 column_profile <- function(df) {
   if (is.null(df) || !ncol(df)) return(data.frame())
   n <- nrow(df)
@@ -151,6 +157,7 @@ column_profile <- function(df) {
 #' Headline counts for the "at a glance" summary.
 #' @param df A data frame.
 #' @return A list: n, m, num, cat, date, complete.
+#' @export
 data_glance <- function(df) {
   types <- vapply(df, friendly_type, character(1))
   list(
@@ -166,6 +173,7 @@ data_glance <- function(df) {
 #'
 #' @param df A data frame.
 #' @return Character vector of column names (numeric, excluding dates).
+#' @export
 numeric_cols <- function(df) {
   if (is.null(df) || !ncol(df)) return(character(0))
   keep <- vapply(df, function(x)
@@ -183,6 +191,7 @@ numeric_cols <- function(df) {
 #' @param df A data frame.
 #' @param max_levels Maximum distinct values to count as groupable.
 #' @return Character vector of column names.
+#' @export
 groupable_cols <- function(df, max_levels = 30L) {
   if (is.null(df) || !ncol(df)) return(character(0))
   keep <- vapply(df, function(x)

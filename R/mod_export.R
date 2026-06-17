@@ -236,7 +236,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
         filename = function() paste0(safe_stem(), "_fitted.csv"),
         content  = function(f) {
           need_model(); m <- model()
-          utils::write.csv(data.frame(actual = m$model[[1]], fitted = fitted(m)),
+          utils::write.csv(data.frame(actual = m$model[[1]], fitted = stats::fitted(m)),
                            f, row.names = FALSE)
         }
       )
@@ -244,7 +244,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
         filename = function() paste0(safe_stem(), "_residuals.csv"),
         content  = function(f) {
           need_model(); m <- model()
-          utils::write.csv(data.frame(fitted = fitted(m), residual = residuals(m)),
+          utils::write.csv(data.frame(fitted = stats::fitted(m), residual = stats::residuals(m)),
                            f, row.names = FALSE)
         }
       )

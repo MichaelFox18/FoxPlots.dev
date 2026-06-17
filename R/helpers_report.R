@@ -22,6 +22,7 @@
 # --- small string utilities (pure) ------------------------------------------
 
 #' HTML-escape a character vector (&, <, >, ").
+#' @noRd
 html_escape <- function(x) {
   x <- as.character(x)
   x <- gsub("&", "&amp;",  x, fixed = TRUE)
@@ -32,6 +33,7 @@ html_escape <- function(x) {
 
 #' Format one display cell as plain text: round numbers, blank out NA. No HTML
 #' escaping (so it's reusable for Word) — the HTML path escapes on top.
+#' @noRd
 .fmt_cell <- function(x) {
   if (length(x) != 1L) x <- x[1]
   if (is.na(x)) return("")
@@ -42,9 +44,11 @@ html_escape <- function(x) {
 }
 
 #' HTML display cell = the plain cell, escaped.
+#' @noRd
 .report_cell <- function(x) html_escape(.fmt_cell(x))
 
 #' Plain-text p-value (no HTML entity) — for the Word path.
+#' @noRd
 .p_txt <- function(p) {
   if (is.null(p) || is.na(p)) return("N/A")
   if (p < 0.001) "< 0.001" else as.character(round(p, 4))
@@ -54,6 +58,7 @@ html_escape <- function(x) {
 #' @param df A data frame.
 #' @param caption Optional caption shown above the table.
 #' @param max_rows Truncate to this many rows (a note is appended if cut).
+#' @noRd
 df_to_html <- function(df, caption = NULL, max_rows = 500L) {
   if (is.null(df) || !is.data.frame(df) || !nrow(df))
     return("<p class=\"note\">(nothing to show)</p>")
@@ -74,6 +79,7 @@ df_to_html <- function(df, caption = NULL, max_rows = 500L) {
 }
 
 #' A static, non-executed R code block.
+#' @noRd
 code_block_html <- function(code) {
   if (is.null(code) || !nzchar(code)) return("")
   paste0("<pre class=\"code\"><code>", html_escape(code), "</code></pre>")
@@ -88,6 +94,7 @@ code_block_html <- function(code) {
 
 #' Reproduce the grouped-summary / proportions call from the result table's
 #' column layout (the outcome name is lost in proportions mode, so it's a stub).
+#' @noRd
 summary_code <- function(summary_tbl) {
   if (is.null(summary_tbl) || !is.data.frame(summary_tbl) || !nrow(summary_tbl))
     return(NULL)
@@ -108,6 +115,7 @@ summary_code <- function(summary_tbl) {
 #' categorical vs numeric from the result's own fields (compare_categorical
 #' carries var1/var2; compare_groups_numeric carries outcome/group), so it does
 #' not depend on the $mode tag the module adds.
+#' @noRd
 compare_code <- function(res) {
   if (is.null(res) || !is.list(res)) return(NULL)
   is_cat <- !is.null(res$var1) && !is.null(res$var2) && is.null(res$outcome)
@@ -130,6 +138,7 @@ compare_code <- function(res) {
 }
 
 #' Reproduce the lm() call from a fitted model.
+#' @noRd
 regression_code <- function(model) {
   if (is.null(model) || !inherits(model, "lm")) return(NULL)
   f <- paste(deparse(stats::formula(model)), collapse = " ")
@@ -157,6 +166,7 @@ regression_code <- function(model) {
 #' @param logo Optional data-URI string for the masthead logo.
 #' @param generated A POSIXct timestamp.
 #' @return A named list describing the report (see `sections`).
+#' @export
 report_spec <- function(data, summary_tbl = NULL, plots = NULL, plot_code = NULL,
                         comparison = NULL, model = NULL,
                         title = "Data Explorer Report", show_code = FALSE,
@@ -333,6 +343,7 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
 #' @param plot_uris Character vector of data URIs aligned to spec$plots.
 #' @param reg_uris Character vector of data URIs for regression diagnostics (0–2).
 #' @return A complete HTML document (character scalar).
+#' @export
 build_report_html <- function(spec, plot_uris = character(0),
                               reg_uris = character(0)) {
   sec <- spec$sections
@@ -475,6 +486,7 @@ build_report_html <- function(spec, plot_uris = character(0),
 #' @param plot_paths Character vector of PNG file paths aligned to spec$plots.
 #' @param reg_paths PNG file paths for the regression diagnostics (0–2).
 #' @return An `rdocx` object (print() it to a .docx file).
+#' @export
 build_report_docx <- function(spec, plot_paths = character(0),
                               reg_paths = character(0)) {
   if (!requireNamespace("officer", quietly = TRUE))
@@ -520,6 +532,7 @@ build_report_docx <- function(spec, plot_paths = character(0),
 
 #' Rasterize one ggplot to a temp PNG file; returns the path (or NA). For the
 #' Word path, which embeds images from files rather than data URIs.
+#' @noRd
 plot_to_png_file <- function(plot, width = 7, height = 4.5, dpi = 110) {
   if (is.null(plot)) return(NA_character_)
   tmp <- tempfile(fileext = ".png")
@@ -533,6 +546,7 @@ plot_to_png_file <- function(plot, width = 7, height = 4.5, dpi = 110) {
 }
 
 #' Rasterize one ggplot to a base64 PNG data URI. Requires ggplot2 attached.
+#' @noRd
 plot_to_data_uri <- function(plot, width = 7, height = 4.5, dpi = 110) {
   if (is.null(plot)) return(NA_character_)
   tmp <- tempfile(fileext = ".png")
@@ -556,6 +570,7 @@ plot_to_data_uri <- function(plot, width = 7, height = 4.5, dpi = 110) {
 #' @param format "html" or "docx".
 #' @param width,height,dpi Per-chart image size.
 #' @return `file`, invisibly.
+#' @export
 render_report <- function(spec, file, format = c("html", "docx"),
                           width = 7, height = 4.5, dpi = 110) {
   stopifnot(is.list(spec))

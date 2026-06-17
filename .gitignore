@@ -10,6 +10,10 @@
 # Shiny / deploy
 rsconnect/
 
+# R package build artifacts
+*.tar.gz
+*.Rcheck/
+
 # Scratch / smoke-test files
 _smoke_tmp.R
 *_tmp.R

@@ -17,6 +17,7 @@
 #' @param add_source Add a column recording which table each row came from?
 #' @param source_col Name for that column.
 #' @return A tibble.
+#' @export
 do_concatenate <- function(left, right, add_source = FALSE,
                            source_col = "source") {
   stopifnot(is.data.frame(left), is.data.frame(right))
@@ -36,6 +37,7 @@ do_concatenate <- function(left, right, add_source = FALSE,
 #'   type = "cross".
 #' @param type One of "left", "inner", "full", "right", "cross".
 #' @return A tibble.
+#' @export
 do_join <- function(left, right, by = NULL,
                     type = c("left", "inner", "full", "right", "cross")) {
   type <- match.arg(type)
@@ -64,6 +66,7 @@ do_join <- function(left, right, by = NULL,
 #' @param by Character vector of key columns present in both tables.
 #' @param mode "overwrite" or "fill".
 #' @return A tibble the shape of `main`.
+#' @export
 do_update <- function(main, updates, by = NULL,
                       mode = c("overwrite", "fill")) {
   mode <- match.arg(mode)
@@ -89,6 +92,7 @@ do_update <- function(main, updates, by = NULL,
 #'
 #' @param left,right Data frames.
 #' @return A data frame [Column, In_left, In_right, Differing].
+#' @export
 compare_tables <- function(left, right) {
   stopifnot(is.data.frame(left), is.data.frame(right))
   cols   <- union(names(left), names(right))

@@ -952,9 +952,9 @@ assemble_code <- function(pre, code, needs_dplyr) {
 draw_plot_grid <- function(plots) {
   n <- length(plots)
   if (n == 0) {
-    plot.new()
-    text(0.5, 0.5, "No plots to show.\nConfigure plots in the Visualize tab.",
-         cex = 1.3, col = "gray40")
+    graphics::plot.new()
+    graphics::text(0.5, 0.5, "No plots to show.\nConfigure plots in the Visualize tab.",
+                   cex = 1.3, col = "gray40")
     return(invisible(NULL))
   }
   ncols <- if (n == 1) 1L else 2L

@@ -18,6 +18,7 @@
 #'
 #' @param fields Integer vector of per-line field counts (from count.fields).
 #' @return A list(start, end) of 1-based physical line numbers.
+#' @noRd
 detect_table_bounds <- function(fields) {
   none <- list(start = 1L, end = length(fields))
   if (!length(fields)) return(list(start = 1L, end = 0L))
@@ -41,6 +42,7 @@ detect_table_bounds <- function(fields) {
 #' @param dec Decimal mark.
 #' @param reader The base reader to delegate to (read.csv or read.table).
 #' @return A data frame with n_skip_head / n_skip_tail attributes.
+#' @noRd
 read_delim_smart <- function(path, sep, header, dec, reader) {
   # blank.lines.skip = FALSE keeps the field-count vector aligned 1:1 with the
   # physical lines, so the [start, end] span can be sliced exactly.
@@ -72,6 +74,7 @@ read_delim_smart <- function(path, sep, header, dec, reader) {
 #' @param dec Decimal mark.
 #' @param sheet Worksheet name or index for Excel files.
 #' @return A data frame. Delimited reads carry n_skip_head / n_skip_tail attrs.
+#' @export
 read_file_data <- function(path, ext, header = TRUE, sep = ",", dec = ".",
                            sheet = 1) {
   ext <- tolower(ext)

@@ -1,78 +1,77 @@
 # How to run the apps
 
-Plain-English steps to get the UF/IFAS data apps running on your computer. If
-you just want the fastest path, do **Step 1**, **Step 2**, and **Step 3** — that's it.
+`foxplots` is an **R package**. Once it's installed, you launch any app with a
+single line — no folders to point at, no files to source.
 
-There are three apps. Pick the one that fits your task:
+There are three apps:
 
-| App | What it's for | Folder |
+| Launch with | App | What it's for |
 |---|---|---|
-| **Data Explorer** | The whole workflow: import → clean → reshape → summarize → visualize → compare → model → report | `apps/data_explorer` |
-| **Reshape Tool** | Just restructure one table (stack / split / transpose / sort / subset / summarize) and export it | `apps/reshape_tool` |
-| **Combine Tool** | Merge / join / compare **two** tables | `apps/combine_tool` |
+| `run_data_explorer()` | **Data Explorer** | The whole workflow: import → clean → reshape → summarize → visualize → compare → model → report |
+| `run_reshape_tool()`  | **Reshape Tool**  | Just restructure one table (stack / split / transpose / sort / subset / summarize) and export it |
+| `run_combine_tool()`  | **Combine Tool**  | Merge / join / compare **two** tables |
 
 ---
 
-## Step 1 — Install R and the packages (once per computer)
+## Step 1 — Install R (once per computer)
 
-1. Install **R 4.6 or newer**: <https://cran.r-project.org>
-   (and **RStudio**, the friendly interface: <https://posit.co/download/rstudio-desktop>).
-2. Open R (or RStudio) and paste this **once** to install everything the apps use:
+Install **R 4.4 or newer**: <https://cran.r-project.org>
+(and **RStudio**, the friendly interface: <https://posit.co/download/rstudio-desktop>).
+
+---
+
+## Step 2 — Install the `foxplots` package (once)
+
+You need the `remotes` package to install foxplots; get it first:
 
 ```r
-install.packages(c(
-  "shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
-  "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here", "binom",
-  "hexbin", "officer"
-))
+install.packages("remotes")
 ```
 
-It can take a few minutes the first time. You only do this once.
+Then install foxplots. Pick whichever fits how you got the project:
 
----
+- **From a folder you downloaded/cloned** — point at it:
 
-## Step 2 — Get the project folder
+  ```r
+  remotes::install_local("C:/path/to/FoxPlots")
+  ```
 
-Download the project from GitHub and keep it together in one folder (it will be
-called `FoxPlots`):
+- **From GitHub** (if you have access to the repository):
 
-- **Clone it** (if you use git): `git clone <repo-url>`, **or**
-- **Download a ZIP**: on the GitHub page click **Code → Download ZIP**, then
-  unzip it somewhere easy to find, like your Desktop or Documents.
+  ```r
+  remotes::install_github("UFSDACU/FoxPlots")
+  ```
 
-> **The one rule:** keep the whole `FoxPlots` folder together. The apps share
-> code from the `R/` and `modules/` folders next to them, so they need the whole
-> folder — not just a single `app.R`. (A hidden `.here` marker file lets them
-> find that shared code automatically; you don't need to do anything with it.)
+Either way, the other packages foxplots needs are installed automatically. This
+can take a few minutes the first time; you only do it once (re-run it to update).
 
 ---
 
 ## Step 3 — Run an app
 
-### Easiest: RStudio's "Run App" button
-
-1. In RStudio: **File → Open File…** and open `apps/data_explorer/app.R`
-   (inside your `FoxPlots` folder).
-2. Click the green **▶ Run App** button at the top-right of the editor.
-3. To open it in a full browser window, click the **▶** dropdown → **Run External**.
-
-That's it — RStudio handles the working directory for you.
-
-### Or: any R console (RStudio Console, R GUI, VS Code R terminal)
-
-Point R at your `FoxPlots` folder, then launch:
-
 ```r
-setwd("C:/path/to/FoxPlots")          # <- the folder you downloaded
-shiny::runApp("apps/data_explorer")
+library(foxplots)
+run_data_explorer()      # or run_reshape_tool() / run_combine_tool()
 ```
-
-Swap in `"apps/reshape_tool"` or `"apps/combine_tool"` for the other apps.
-`setwd()` only needs doing once per session; use forward slashes `/` in the
-path, even on Windows.
 
 The app opens in your web browser. To stop it, press **Esc** in the R console
 (or close the browser tab).
+
+---
+
+## Bonus: use the tools in your own R code
+
+The package also exports the underlying helper functions, so you can use them in
+a script without the apps — for example:
+
+```r
+library(foxplots)
+do_stack(my_data, c("q1", "q2", "q3"))        # reshape wide → tall
+grouped_summary(my_data, vars = "score", groups = "group")
+fit_model(my_data, response = "y", predictors = c("x1", "x2"))
+```
+
+See `help(package = "foxplots")` for the full list.
 
 ---
 
@@ -80,17 +79,15 @@ The app opens in your web browser. To stop it, press **Esc** in the R console
 
 | What you see | Fix |
 |---|---|
-| `could not find function "runApp"` | Run `library(shiny)` first, or use `shiny::runApp(...)`. |
-| `cannot open file 'apps/...'` / path not found | R isn't pointed at the `FoxPlots` folder — use the **Run App** button, or `setwd("…/FoxPlots")`. |
-| `could not find function "uf_title"` (or similar) | The shared code wasn't loaded — you're in the wrong folder. Same fix as above. |
-| `there is no package called '…'` | A package isn't installed — re-run the install line in Step 1. |
-| The UF logo doesn't show | Make sure the whole `FoxPlots` folder is intact and you launched from inside it. |
-| Paths act strange after lots of testing | Restart R (**Session → Restart R**) and try again. |
+| `there is no package called 'foxplots'` | The install didn't finish — re-run Step 2. |
+| `could not find function "run_data_explorer"` | Run `library(foxplots)` first. |
+| Install fails on a dependency | Run `install.packages("<name>")` for the one it names, then retry Step 2. |
+| The app opens but the UF logo is missing | Reinstall the package (Step 2) so its bundled files come along. |
 
 ---
 
-## Want more detail?
+## More detail
 
 - **What each app and tab does:** see `README.md`.
 - **Architecture and conventions (for developers):** see `CLAUDE.md`.
-- **Run the test suite:** `testthat::test_dir(here::here("tests/testthat"))`.
+- **Run the test suite (from the source folder):** `R CMD check .`, or in R: `testthat::test_local()`.

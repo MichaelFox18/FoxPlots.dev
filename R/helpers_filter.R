@@ -53,6 +53,7 @@ filter_mask <- function(df, cond) {
 #' @examples
 #' apply_filters(data.frame(team = c("LAL", "BOS"), pts = c(25, 18)),
 #'               list(list(col = "pts", op = ">", value = 20)))
+#' @export
 apply_filters <- function(df, conditions) {
   if (!is.data.frame(df) || is.null(conditions) || !length(conditions)) return(df)
   keep <- rep(TRUE, nrow(df))
@@ -65,6 +66,9 @@ apply_filters <- function(df, conditions) {
 }
 
 #' Human-readable one-line description of a condition (for the filter chips).
+#' @param cond A filter condition, `list(col, op, value)`.
+#' @return A length-1 character label.
+#' @export
 describe_condition <- function(cond) {
   lab <- switch(cond$op %||% "",
     "between" = "is between", ">" = ">", ">=" = "≥", "<" = "<", "<=" = "≤",

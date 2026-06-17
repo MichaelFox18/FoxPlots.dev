@@ -1,0 +1,12 @@
+^dev$
+^apps$
+^docs$
+^BUILD_LOG\.md$
+^CLAUDE\.md$
+^HOW_TO_USE\.md$
+^\.here$
+^\.git$
+^\.gitignore$
+^.*\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$

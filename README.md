@@ -1,91 +1,61 @@
-# FoxPlots — UF/IFAS Data Toolkit (modular R Shiny)
+# foxplots — UF/IFAS Data Toolkit (R package)
 
 A point-and-click toolkit for UF/IFAS students and staff to **import, clean,
 reshape, summarize, visualize, compare, model, and export** tabular data — no R
-code required. It is built as reusable Shiny **modules** on a shared
-**pure-helper** foundation, so the same pieces assemble into several apps.
+code required. It is an installable **R package** built from reusable Shiny
+**modules** on a shared, unit-tested **helper** foundation.
 
-> Contributor/architecture notes live in `CLAUDE.md`; a dated history is in
-> `BUILD_LOG.md`; plain-English run instructions are in `HOW_TO_USE.md`.
+> Contributor/architecture notes live in `CLAUDE.md`; plain-English run
+> instructions are in `HOW_TO_USE.md`.
 
 ---
 
-## Status & roadmap
+## Status
 
-**Today:** the toolkit is feature-complete and runs as a set of loose files —
-three apps, eight modules, and eleven unit-tested helper files. This is the
-working app you run right now (see *Running an app* below).
+`foxplots` is an **installable R package**. It bundles the whole toolkit — three
+Shiny apps, the modules behind them, and a tested helper foundation — and exports
+both **launcher functions** (`run_data_explorer()`, `run_reshape_tool()`,
+`run_combine_tool()`) and the underlying **helper API** (`do_stack()`,
+`grouped_summary()`, `fit_model()`, …). Install it once and run anywhere.
 
-**Just shipped:**
-
-- ✅ **Downloadable report** — a one-click report (Report tab in Data Explorer)
-  that auto-assembles everything you produced in a session: data overview,
-  summaries, charts, group comparisons, and regression. Choose **HTML** (one
-  polished, self-contained file for sharing/archiving) or **Word `.docx`** (fully
-  editable — cut sections, add your own intro, notes, or bios). A **"show the R
-  code"** toggle switches either between a clean results write-up and a
-  reproducible methods document. Both are **pandoc-free**, so they render the
-  same from RStudio, VS Code, a bare `Rscript`, or a deployed app.
-- ✅ **Save / restore your progress** — on the Import tab, **Save progress**
-  downloads a small `.rds` session file; **Restore** re-loads it later to pick up
-  where you left off. It captures your data plus all the data-prep work (Data
-  Health fixes, type changes, row filters, and the reshape choice).
-
-**Where it's headed next:**
-
-1. **Become an R package (`foxplots`)** — wrap the whole toolkit into an
-   installable R package that exports both the underlying helper functions *and*
-   launcher functions (e.g. `run_data_explorer()`), so it can be installed once
-   and run anywhere. It ships internally first, but is being built so a public
-   release stays straightforward later.
+Highlights:
+- **One-click report** — HTML or editable Word (`.docx`), pandoc-free, with a
+  "show the R code" toggle.
+- **Save / restore your progress** — a `.rds` of your data + all data prep.
+- **11 chart types** (incl. a bubble option), group comparisons, regression, and
+  a reversible Data Health cleaner with outlier flagging.
 
 The look stays UF/IFAS-themed (blue/orange + the IFAS logo) throughout.
 
 ---
 
-## 1. Prerequisites
+## 1. Install & run
 
-- **R 4.6+**
-- Packages: `shiny`, `bslib`, `DT`, `ggplot2`, `plotly`, `colourpicker`,
-  `dplyr`, `tidyr`, `tidyselect`, `readxl`, `writexl`, `here`, `binom`,
-  `hexbin` (for the hexbin chart), `officer` (for the Word report), and
-  `testthat` (for tests).
-
-Install any you're missing:
+You need **R 4.4+** (and optionally RStudio). Install with `remotes`, which pulls
+in every dependency automatically:
 
 ```r
-install.packages(c("shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
-                   "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here",
-                   "binom", "hexbin", "officer", "testthat"))
+install.packages("remotes")
+remotes::install_local("C:/path/to/FoxPlots")   # the folder you downloaded
+# ...or, with repo access:  remotes::install_github("UFSDACU/FoxPlots")
 ```
 
-> The **HTML** report needs no extra packages — it is built from base R +
-> ggplot2 + `base64enc` (which ships with Shiny), with no pandoc/rmarkdown
-> dependency. The **Word (.docx)** report uses `officer` (also pandoc-free); if
-> it isn't installed, the HTML option still works.
-
----
-
-## 2. Running an app
-
-**Always start from the project folder** (the `.here` anchor lets each app find
-its shared `R/` and `modules/` files). In an R console:
+Then launch any app:
 
 ```r
-setwd("C:/path/to/FoxPlots")          # the folder you cloned/downloaded
-shiny::runApp("apps/data_explorer")   # then launch any app
+library(foxplots)
+run_data_explorer()      # or run_reshape_tool() / run_combine_tool()
 ```
 
-| Command | App | Use it when you want to… |
+| Launcher | App | For… |
 |---|---|---|
-| `runApp("apps/data_explorer")` | **Data Explorer** | do the whole workflow in one place |
-| `runApp("apps/reshape_tool")`  | **Reshape Tool**  | just restructure one table and export it |
-| `runApp("apps/combine_tool")`  | **Combine Tool**  | merge / join / compare **two** tables |
+| `run_data_explorer()` | **Data Explorer** | the whole workflow in one place |
+| `run_reshape_tool()`  | **Reshape Tool**  | restructuring one table |
+| `run_combine_tool()`  | **Combine Tool**  | merging / joining / comparing two tables |
 
-Each app opens in a browser tab. Press **Esc** in the R console (or close the
-tab) to stop it. The same launch works from RStudio's **Run App** button, the VS
-Code R terminal, or `Rscript`. For step-by-step setup in each program, see
-`HOW_TO_USE.md`.
+The package also exports the helper functions for use in your own scripts (e.g.
+`do_stack()`, `grouped_summary()`, `build_full_plot()`); see
+`help(package = "foxplots")`. Step-by-step setup is in `HOW_TO_USE.md`.
 
 ---
 

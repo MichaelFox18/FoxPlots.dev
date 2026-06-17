@@ -4,6 +4,25 @@ Running notes on the AI-assisted "document then rebuild" workflow: what worked, 
 
 ---
 
+## 2026-06-17 — R package conversion (`foxplots`)
+
+The big one: turned the loose-files kit into an installable R package, walking Michael through it. End state: `library(foxplots); run_data_explorer()`, plus the helper API exported. **R CMD check: 1 WARNING (non-ASCII), 0 errors, 0 notes**; all 332 tests pass inside the clean install.
+
+**Structure.**
+- `DESCRIPTION` (Imports incl. tibble/datasets/graphics found during check; officer/hexbin/here in Suggests; `Depends: R (>= 4.4.0)` because we use base `%||%`), `LICENSE` (MIT, holder Michael Fox — easy to change), `R/foxplots-package.R` (`"_PACKAGE"` + `@import shiny/bslib/ggplot2`, since those were used unqualified everywhere).
+- `modules/*.R` → `R/` (a package loads only `R/`). `www/` → `inst/www/`; `uf_logo_uri()` now resolves via `system.file()` (was `here::here`). `apps/*/app.R` → three exported builder functions `*_app()` + `run_*()` launchers in `R/run_*.R` (UI/server moved in; internal modules resolve from inside the package namespace); thin `inst/apps/*/app.R` deploy entries call the builder. Old `apps/` + `dev/` harnesses removed.
+- Tests: added `tests/testthat.R` runner; `setup.R` no longer sources `R/` (the package is loaded). `testthat::test_local()` / `R CMD check` run them against the namespace, so internal functions are still reachable from tests.
+
+**Exports.** 43 total — 6 launchers + `uf_logo_uri` + 36 helper functions (the `do_*` family, `grouped_summary`/`proportions_summary`, `compare_*`, `fit_model`/`model_interpretation`, `report_spec`/`build_report_*`/`render_report`, `build_session_state` & friends, `read_file_data`, `apply_filters`, theme atoms, classifiers). Did the `@export` tagging with a one-off script that only tags functions with an existing `#'` block. Then a second script marked all remaining internal documented functions `@noRd` (cleans `man/` to the public API and kills the "undocumented argument" warnings); added real `@param` to the 7 exported functions that were missing them.
+
+**Check fixes.** NOTE "no visible global" → qualified base calls: `datasets::mtcars`, `graphics::plot.new/text`, `stats::fitted/residuals/setNames`. WARNING "undeclared import 'tibble'" → added to Imports (do_sort/do_transpose use it).
+
+**Gotchas.** Anything loading the package (`load_all`, `roxygenise` via pkgload, `R CMD check` tests) must run under **PowerShell** (Shiny segfaults under git-bash). `here::here` now anchors on `DESCRIPTION`, so the `.here` file is redundant (kept, `.Rbuildignore`d). `.Rbuildignore` excludes dev docs (BUILD_LOG/CLAUDE/HOW_TO/dev/apps); `.gitignore` excludes `*.tar.gz` + `*.Rcheck/`.
+
+**Deferred:** the lone **non-ASCII WARNING** (×, ±, →, é, “”, — etc. in UI strings across ~17 files) — needs a careful string-only `\uXXXX` pass before any public/CRAN release; not a blocker for install/run. Also pending: README §3–5 (apps/architecture/developer) + CLAUDE.md still describe the loose-files layout. **Next:** non-ASCII cleanup + finish the doc rewrite; then a milestone push to UFSDACU.
+
+---
+
 ## 2026-06-17 — Bubble chart (size-on-scatter) + repo migration & HOW_TO rewrite
 
 Two small things. (1) Migrated a clean snapshot to the coworker repo and rewrote HOW_TO. (2) Added the bubble chart Michael asked about.

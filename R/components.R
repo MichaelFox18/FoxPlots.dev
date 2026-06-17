@@ -23,6 +23,7 @@ UF_COLORS <- c(UF_BLUE, UF_ORANGE, "#2ca25f", "#8856a7")
 #' flatly base (Lato font) with a UF-blue navbar and orange secondary —
 #' identical to the existing Data Explorer. Pass to a page_*()'s `theme` arg.
 #' @return a bslib::bs_theme object.
+#' @export
 uf_theme <- function() {
   bslib::bs_theme(
     bootswatch  = "flatly",
@@ -42,15 +43,17 @@ uf_theme <- function() {
 #' Locate the white IFAS logo and return it as an inlined base64 data URI.
 #'
 #' Inlining (rather than a www/ `src`) means the logo renders no matter how the
-#' app is launched. Resolves the kit's www/ via here::here(), with a working-
-#' directory fallback; returns NULL (text-only title) if the file genuinely
-#' can't be found, so an app never errors on startup. base64enc ships with
-#' Shiny, so it is always available.
+#' app is launched. Resolves the installed package's `inst/www/` via
+#' system.file(), with dev-mode fallbacks; returns NULL (text-only title) if the
+#' file genuinely can't be found, so an app never errors on startup. base64enc
+#' ships with Shiny, so it is always available.
 #' @return a data: URI string, or NULL.
+#' @export
 uf_logo_uri <- function() {
   cands <- c(
-    tryCatch(here::here("www", "IFAS-White.png"), error = function(e) NA_character_),
-    "www/IFAS-White.png"
+    system.file("www", "IFAS-White.png", package = "foxplots"),
+    tryCatch(here::here("inst", "www", "IFAS-White.png"), error = function(e) NA_character_),
+    "inst/www/IFAS-White.png"
   )
   cands <- cands[!is.na(cands) & nzchar(cands)]
   f <- cands[file.exists(cands)]
@@ -62,6 +65,7 @@ uf_logo_uri <- function() {
 #' @param text The app title shown next to the logo.
 #' @param logo Optional pre-resolved data URI; defaults to uf_logo_uri().
 #' @return a shiny tag suitable for a page_navbar(title = ).
+#' @export
 uf_title <- function(text, logo = uf_logo_uri()) {
   shiny::tags$span(
     if (!is.null(logo))
@@ -75,6 +79,7 @@ uf_title <- function(text, logo = uf_logo_uri()) {
 #' optional text input overrides an auto-generated label (axis titles, etc.).
 #' @param custom The user-entered string (may be NULL/blank).
 #' @param default The fallback label.
+#' @export
 label_or <- function(custom, default) {
   if (!is.null(custom) && nzchar(trimws(custom))) custom else default
 }
@@ -98,6 +103,7 @@ function DEcopy(id, btn){
 #' @param ... Tooltip content (passed to bslib::tooltip).
 #' @param placement Tooltip placement ("right", "top", ...).
 #' @return a bslib tooltip tag.
+#' @export
 info_tip <- function(..., placement = "right") {
   bslib::tooltip(
     shiny::tags$span(

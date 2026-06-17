@@ -25,6 +25,7 @@ SESSION_STATE_VERSION <- 1L
 #' @param reshape A list of the reshape module's settings (op + inputs), or NULL.
 #' @param created A POSIXct timestamp.
 #' @return A list tagged with class "foxplots_session".
+#' @export
 build_session_state <- function(data, data_raw = NULL, filters = list(),
                                 source = NULL, reshape = NULL,
                                 created = Sys.time()) {
@@ -52,6 +53,7 @@ build_session_state <- function(data, data_raw = NULL, filters = list(),
 #' @param x An object read back from a session file.
 #' @return TRUE if usable, otherwise a one-line character reason (so the caller
 #'   can show a friendly message).
+#' @export
 validate_session_state <- function(x) {
   if (is.null(x))                        return("the file is empty or unreadable")
   if (!inherits(x, "foxplots_session"))  return("this isn't a FoxPlots session file")
@@ -69,6 +71,9 @@ validate_session_state <- function(x) {
 }
 
 #' One-line human summary of a session (for a restore notification / preview).
+#' @param x A session object from [build_session_state()].
+#' @return A one-line character description (or "" if `x` isn't a session).
+#' @export
 session_state_summary <- function(x) {
   if (!inherits(x, "foxplots_session")) return("")
   nf <- length(x$filters %||% list())
@@ -81,6 +86,10 @@ session_state_summary <- function(x) {
           format(x$created %||% Sys.time(), "%Y-%m-%d %H:%M"))
 }
 
-#' Write / read a session file (thin saveRDS / readRDS wrappers).
+#' Write a session object to an `.rds` file (thin saveRDS wrapper).
+#' @param state A session object from [build_session_state()].
+#' @param file Output path.
+#' @return `file`, invisibly.
+#' @export
 save_session <- function(state, file) { saveRDS(state, file); invisible(file) }
 load_session <- function(file) tryCatch(readRDS(file), error = function(e) NULL)
