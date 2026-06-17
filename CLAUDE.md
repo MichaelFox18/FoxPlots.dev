@@ -20,8 +20,9 @@ The kit is built and the original roadmap is done. What exists:
 
 - **Three runnable apps** (`apps/`): `data_explorer` (the full pipeline: About → Import → Reshape → Summarize → Visualize → Compare Groups → Regression → Export → Report), `reshape_tool` (import → reshape → export), and `combine_tool` (import two tables → combine → export).
 - **Nine modules** (`modules/`): `mod_import` (upload/clean/recast + Data Health + **row filter** + profile), `mod_reshape` (stack/split/transpose/sort/subset), `mod_summarize`, `mod_visualize` (1–4 plots, 7 chart types, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square, assumptions, effect sizes), `mod_regression`, `mod_export` (data + charts + summary + model), `mod_combine` (concatenate/join/update/compare), `mod_report` (one-click self-contained HTML report of the whole session).
-- **Twelve pure helper files** (`R/`), all unit-tested — see layout below.
-- **A testthat suite** (`tests/testthat/`, ~244 expectations) covering every `do_*`/helper. Modules are verified with `shiny::testServer` smoke checks (not committed; run ad hoc).
+- **Thirteen pure helper files** (`R/`), all unit-tested — see layout below.
+- **A testthat suite** (`tests/testthat/`, ~278 expectations) covering every `do_*`/helper. Modules are verified with `shiny::testServer` smoke checks (not committed; run ad hoc).
+- **Session save/restore** (`helpers_state.R`): the Import tab can download a versioned `.rds` of the data-prep stage (working data + raw + filters + reshape settings) and restore it. Wired via a shared `session_store` reactiveValues passed to `importServer`/`reshapeServer` — the one sanctioned app-wide-state use of a shared store (reshape *publishes* its settings; a restore *stages* them for the reshape sync-observer to consume).
 
 To extend it, follow the same path every existing feature took: **pure helper + its test → thin module (`mod_*`) that calls it → a `dev/run_*.R` harness → wire it into an app.**
 
@@ -59,7 +60,8 @@ To extend it, follow the same path every existing feature took: **pure helper + 
 │   ├── helpers_reshape.R        # do_stack/do_split/do_transpose/do_sort/do_subset
 │   ├── helpers_combine.R        # do_concatenate/do_join/do_update/compare_tables
 │   ├── helpers_compare.R        # compare_groups_numeric/compare_categorical, assumptions, effect sizes
-│   └── helpers_report.R         # report_spec + build_report_html (pandoc-free self-contained HTML) + render_report
+│   ├── helpers_report.R         # report_spec + build_report_html (pandoc-free self-contained HTML) + render_report
+│   └── helpers_state.R          # build/validate/summarize a session + save/load (.rds save-restore)
 ├── modules/                     # mod_<feature>.R, each <feature>UI(id) + <feature>Server(id, ...)
 │   ├── mod_import.R   mod_reshape.R   mod_summarize.R   mod_visualize.R
 │   ├── mod_compare.R   mod_regression.R   mod_export.R   mod_combine.R   mod_report.R
@@ -75,6 +77,7 @@ To extend it, follow the same path every existing feature took: **pure helper + 
 └── tests/testthat/              # setup.R sources R/; test-<area>.R per helper file
     ├── test-reshape.R  test-io.R  test-stats.R  test-plot.R  test-report.R
     ├── test-model.R    test-clean.R  test-combine.R  test-compare.R  test-filter.R
+    ├── test-state.R
 ```
 
 ---

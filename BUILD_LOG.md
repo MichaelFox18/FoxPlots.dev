@@ -4,6 +4,22 @@ Running notes on the AI-assisted "document then rebuild" workflow: what worked, 
 
 ---
 
+## 2026-06-17 — New feature: session Save/Restore (+ heatmap variable-picker fix)
+
+Feature 2 of the polish phase. Plus a quick heatmap usability fix from Michael's testing.
+
+**Heatmap fix (committed first).** On a wide dataset the correlation heatmap rendered *every* numeric column and was unreadable. Root cause was deeper than the picker default: `build_corr_heatmap`, `generate_corr_code`, AND `chart_hint` all fell back to "all numeric" whenever fewer than two columns were selected — so even clearing the selection redrew everything. Made the selection authoritative (`intersect(p$corr_vars, numeric); require >= 2; else NULL`) in all three, and defaulted the picker to **empty with a placeholder** (Michael's preferred "loads blank, fills as you pick" option). `test-plot.R` +7 (no-fallback behavior). PowerShell smoke: 3 chosen → 9 tiles, not all 12.
+
+**Save/Restore (this session's main build).** Scope per the locked direction: a downloadable `.rds` capturing the **data-prep stage** — working data (post Health-fix/recast) + the raw upload + row filters + the reshape op/settings; analysis tabs intentionally not saved.
+- **`R/helpers_state.R` (pure + thin I/O).** `build_session_state()` → a versioned, `foxplots_session`-classed list (`SESSION_STATE_VERSION = 1`); `validate_session_state()` → TRUE or a one-line reason (rejects non-session files and *newer* versions); `session_state_summary()` → a one-line description for the restore toast; `save_session`/`load_session` = thin saveRDS/readRDS. No new package deps (RDS is base).
+- **`tests/testthat/test-state.R`** — 27 expectations (build, defaults, validate happy/sad incl. future-version + corrupt data/filters, summary contents, on-disk round-trip via `withr::local_tempfile`). **Suite 278 green** (was 251).
+- **Wiring via a shared `session_store` reactiveValues** created in `app.R` and passed to `importServer(store=)` + `reshapeServer(store=)` — the sanctioned app-wide-state use. `mod_reshape` *publishes* its current inputs to `store$reshape_state` (so Import's Save can include them) and, on restore, the app stages the saved settings in `store$pending_reshape` which the **reshape sync-observer consumes** in the same pass that repopulates the column pickers (choices+selection set together → no repopulate-vs-restore race). `mod_import` gained a "Save / restore session" card (rendered only when a store is wired, so the mini-apps are untouched): a Save download + a Restore fileInput; restore validates, stages reshape, then sets `rv$data_raw/filters/source` and finally `rv$data` (last, so one downstream flush sees everything). Mini-apps pass no store and are unchanged.
+- **Design notes / gotchas.** Restore order matters: stage `pending_reshape` and set `rv$data` LAST so `data_in()` fires once with all state in place. Column pickers restore race-free because the sync-observer sets choices+selected together; the only best-effort bit is the Sort "descending" checkboxes (governed by a separate `input$sort_cols` observer) — acceptable, noted. `session$returnValue()` still isn't a method here — read the named returned reactive (`filtered()`) inside `testServer`.
+
+PowerShell smoke: app assembles; `testServer(importServer, store=)` — load mtcars (32) → filter cyl≥6 (21) → save → wipe → **restore → 32 rows, 1 filter, re-filters to 21**; `testServer(reshapeServer, store=)` consumes a staged `pending_reshape` (cleared to NULL). Docs updated (README roadmap/Import, CLAUDE.md layout+counts+a conventions note, this log). **Next:** Michael to exercise Save→close→Restore in the live app; the report-formatting polish is still queued (`report-formatting-todo`); then start the `foxplots` package conversion.
+
+---
+
 ## 2026-06-16 — New feature: one-click HTML Report (+ direction locked for packaging)
 
 Kicked off the "polish then package" plan's first headline feature. Direction questions answered (saved to memory `project-direction-2026-06`): end goal is an R **package `foxplots`** (exports helpers + `run_*()` launchers), internal-first but public-ready; build **features before packaging** to keep a demo-able app in hand for a **team-meeting demo in ~2 weeks**. Two features queued: HTML **report** (this entry) then **save/restore** (`.rds` of the import+prep state). Report scope chosen: self-contained HTML, auto-includes everything produced this session, audience-both via a **show-code toggle**.

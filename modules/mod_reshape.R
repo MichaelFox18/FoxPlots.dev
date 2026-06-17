@@ -149,33 +149,89 @@ reshapeUI <- function(id) {
   )
 }
 
-reshapeServer <- function(id, data_in) {
+reshapeServer <- function(id, data_in, store = NULL) {
   moduleServer(id, function(input, output, session) {
 
-    # Keep the column pickers in sync with whatever data flows in.
+    # Keep the column pickers in sync with whatever data flows in. On a session
+    # restore, the app stages the saved settings in store$pending_reshape; this
+    # same observer re-applies them (column pickers get choices + the saved
+    # selection together, so there's no repopulate-vs-restore race), then clears
+    # the pending payload so it only applies once.
     observeEvent(data_in(), {
       df <- data_in()
       req(is.data.frame(df))
       cols <- names(df)
+      pend <- if (!is.null(store)) store$pending_reshape else NULL
+      # saved selection for a column picker, intersected with current columns;
+      # falls back to the supplied default when nothing was saved.
+      gcol <- function(field, default) {
+        v <- if (is.list(pend)) pend[[field]] else NULL
+        if (is.null(v)) default else intersect(v, cols)
+      }
       updateSelectizeInput(session, "stack_cols", choices = cols,
-                           selected = character(0))
+                           selected = gcol("stack_cols", character(0)))
       updateSelectInput(session, "value_col", choices = cols,
-                        selected = utils::tail(cols, 1))
+                        selected = gcol("value_col", utils::tail(cols, 1)))
       updateSelectInput(session, "split_by", choices = cols,
-                        selected = cols[[1]])
+                        selected = gcol("split_by", cols[[1]]))
       updateSelectizeInput(session, "group_cols", choices = cols,
-                           selected = character(0))
+                           selected = gcol("group_cols", character(0)))
       # "(none)" first so transpose defaults to generated V1.. headers.
       updateSelectInput(session, "transpose_names_from",
                         choices = c("(none — use V1, V2…)" = "", cols),
-                        selected = "")
+                        selected = gcol("transpose_names_from", ""))
       updateSelectizeInput(session, "sort_cols", choices = cols,
-                           selected = character(0))
+                           selected = gcol("sort_cols", character(0)))
       updateSelectizeInput(session, "subset_cols", choices = cols,
-                           selected = character(0))
+                           selected = gcol("subset_cols", character(0)))
       updateSelectizeInput(session, "subset_stratify", choices = cols,
-                           selected = character(0))
+                           selected = gcol("subset_stratify", character(0)))
+
+      # Non-column settings (no competing observers) — apply the saved values.
+      if (is.list(pend)) {
+        updateRadioButtons(session, "op", selected = pend$op %||% "none")
+        if (!is.null(pend$label_to))         updateTextInput(session, "label_to", value = pend$label_to)
+        if (!is.null(pend$value_to))         updateTextInput(session, "value_to", value = pend$value_to)
+        if (!is.null(pend$values_fn))        updateSelectInput(session, "values_fn", selected = pend$values_fn)
+        if (!is.null(pend$transpose_id_col)) updateTextInput(session, "transpose_id_col", value = pend$transpose_id_col)
+        if (!is.null(pend$subset_sample))    updateRadioButtons(session, "subset_sample", selected = pend$subset_sample)
+        if (!is.null(pend$subset_n))         updateNumericInput(session, "subset_n", value = pend$subset_n)
+        if (!is.null(pend$subset_prop))      updateNumericInput(session, "subset_prop", value = pend$subset_prop)
+        if (!is.null(pend$subset_seed) && !is.na(pend$subset_seed))
+          updateNumericInput(session, "subset_seed", value = pend$subset_seed)
+        if (!is.null(pend$sort_desc))
+          updateCheckboxGroupInput(session, "sort_desc",
+                                   choices = gcol("sort_cols", character(0)),
+                                   selected = pend$sort_desc)
+        store$pending_reshape <- NULL   # consume once
+      }
     }, ignoreNULL = TRUE)
+
+    # Publish the current reshape settings so the app's Save can include them.
+    if (!is.null(store)) {
+      observe({
+        store$reshape_state <- list(
+          op                   = input$op %||% "none",
+          stack_cols           = input$stack_cols,
+          label_to             = input$label_to,
+          value_to             = input$value_to,
+          value_col            = input$value_col,
+          split_by             = input$split_by,
+          group_cols           = input$group_cols,
+          values_fn            = input$values_fn,
+          transpose_names_from = input$transpose_names_from,
+          transpose_id_col     = input$transpose_id_col,
+          sort_cols            = input$sort_cols,
+          sort_desc            = input$sort_desc,
+          subset_cols          = input$subset_cols,
+          subset_sample        = input$subset_sample,
+          subset_n             = input$subset_n,
+          subset_prop          = input$subset_prop,
+          subset_stratify      = input$subset_stratify,
+          subset_seed          = input$subset_seed
+        )
+      })
+    }
 
     # The "descending for" checkboxes track whatever sort keys are chosen,
     # preserving any boxes already ticked.

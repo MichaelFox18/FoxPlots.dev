@@ -139,6 +139,8 @@ The tabs run left to right, and **each one feeds the next**:
    as one-click, reversible fixes; **Change Variable Types** recasts a column;
    **Filter rows** keeps only the rows matching conditions you set (e.g. team is
    any of LAL/BOS, points ≥ 20) — everything downstream uses the filtered data.
+   **Save / restore session** lets you download a `.rds` of your data and all of
+   this prep (and your reshape choice) and reload it later to continue.
 2. **Reshape** *(optional)* — Stack, Split, Transpose, Sort, or Subset. Leave it
    on **None** to pass your data through untouched.
 3. **Summarize** — counts/means/medians/SD/SE/IQR by group, or **Proportions**

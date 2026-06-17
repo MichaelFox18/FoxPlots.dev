@@ -27,6 +27,7 @@ source(here::here("R", "helpers_model.R"))
 source(here::here("R", "helpers_reshape.R"))
 source(here::here("R", "helpers_compare.R"))
 source(here::here("R", "helpers_report.R"))
+source(here::here("R", "helpers_state.R"))
 source(here::here("modules", "mod_import.R"))
 source(here::here("modules", "mod_reshape.R"))
 source(here::here("modules", "mod_summarize.R"))
@@ -120,8 +121,13 @@ ui <- page_navbar(
 )
 
 server <- function(input, output, session) {
-  imported   <- importServer("imp")              # Import    -> reactive(data | NULL)
-  working    <- reshapeServer("rs", imported)    # Reshape   -> reactive(working data)
+  # Shared session store (app-wide state): lets Save gather the reshape stage's
+  # settings and a Restore stage them back, without modules reaching into each
+  # other. Only Import + Reshape touch it.
+  session_store <- reactiveValues(reshape_state = NULL, pending_reshape = NULL)
+
+  imported   <- importServer("imp", store = session_store)  # Import -> reactive(data|NULL)
+  working    <- reshapeServer("rs", imported, store = session_store)  # Reshape -> working data
   summary_t  <- summarizeServer("sm", working)   # Summarize -> reactive(summary table)
   viz        <- visualizeServer("viz", working)  # Visualize -> reactive(list(plots, code))
   plots      <- reactive(viz()$plots)            #   the ggplot list (for Export + Report)

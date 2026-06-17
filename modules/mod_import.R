@@ -40,7 +40,10 @@ importUI <- function(id,
                    class = "btn-outline-primary w-100", icon = icon("table")),
       hr(),
       actionButton(ns("clear_data"), "Clear data",
-                   class = "btn-outline-danger w-100", icon = icon("trash"))
+                   class = "btn-outline-danger w-100", icon = icon("trash")),
+      # Save / restore session controls — rendered only when the app wires a
+      # shared session store into importServer (the mini-apps don't).
+      uiOutput(ns("session_ui"))
     ),
     card(
       card_header(icon("broom"), " Data Health"),
@@ -81,7 +84,7 @@ importUI <- function(id,
   )
 }
 
-importServer <- function(id, examples = NULL) {
+importServer <- function(id, examples = NULL, store = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -452,6 +455,61 @@ importServer <- function(id, examples = NULL) {
       DT::datatable(utils::head(d, 200), rownames = FALSE,
                     options = list(pageLength = 10, scrollX = TRUE))
     })
+
+    # ── Save / restore session (only when a shared store is wired in) ──
+    # The store lets the app gather the reshape stage's settings too: mod_reshape
+    # publishes them to store$reshape_state, and a restore stages them in
+    # store$pending_reshape for the reshape sync-observer to consume.
+    if (!is.null(store)) {
+      output$session_ui <- renderUI({
+        tagList(
+          hr(), h6("Save / restore session"),
+          if (!is.null(rv$data))
+            downloadButton(ns("save_session"), "Save progress (.rds)",
+                           class = "btn-outline-success btn-sm w-100 mb-2")
+          else
+            helpText("Load data to enable saving."),
+          fileInput(ns("restore_session"), NULL, accept = ".rds",
+                    buttonLabel = "Restore…", placeholder = "open a saved .rds"),
+          helpText("Saves your data, Data Health fixes, type changes, filters, ",
+                   "and reshape choice — reload it later to pick up where you ",
+                   "left off.")
+        )
+      })
+
+      output$save_session <- downloadHandler(
+        filename = function() sprintf("foxplots-session_%s.rds", Sys.Date()),
+        content  = function(file) {
+          validate(need(!is.null(rv$data), "Load data before saving."))
+          st <- build_session_state(
+            data = rv$data, data_raw = rv$data_raw, filters = rv$filters,
+            source = rv$source, reshape = store$reshape_state)
+          save_session(st, file)
+        }
+      )
+
+      observeEvent(input$restore_session, {
+        req(input$restore_session)
+        st <- load_session(input$restore_session$datapath)
+        ok <- validate_session_state(st)
+        if (!isTRUE(ok)) {
+          showNotification(paste("Couldn't restore that file —", ok),
+                           type = "error", duration = 8)
+          return()
+        }
+        # Stage the reshape settings BEFORE the data change, so the reshape
+        # sync-observer sees them when data_in() fires.
+        store$pending_reshape <- st$reshape
+        rv$data_raw     <- st$data_raw %||% st$data
+        rv$filters      <- if (is.list(st$filters)) st$filters else list()
+        rv$source       <- st$source %||% "restored session"
+        rv$upload       <- NULL; rv$sheets <- NULL; rv$loaded_sheet <- NULL
+        rv$file_token   <- rv$file_token + 1L          # reset the upload box
+        rv$data         <- st$data                     # set last → triggers downstream
+        showNotification(paste("Restored:", session_state_summary(st)),
+                         type = "message", duration = 7)
+      })
+    }
 
     # Pattern A: the next stage reads the FILTERED working data.
     filtered

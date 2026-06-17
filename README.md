@@ -25,14 +25,14 @@ working app you run right now (see *Running an app* below).
   a reproducible methods document. It is **pandoc-free** (assembled as plain HTML
   with embedded charts), so it renders the same from RStudio, VS Code, a bare
   `Rscript`, or a deployed app — no extra software to install.
+- ✅ **Save / restore your progress** — on the Import tab, **Save progress**
+  downloads a small `.rds` session file; **Restore** re-loads it later to pick up
+  where you left off. It captures your data plus all the data-prep work (Data
+  Health fixes, type changes, row filters, and the reshape choice).
 
-**Where it's headed next** (in order — each step keeps a working app in hand):
+**Where it's headed next:**
 
-1. **Save / restore your progress** — download a small session file (`.rds`) and
-   re-upload it later to pick up where you left off. It restores your data plus
-   all the data-prep work (Data Health fixes, type changes, reshape, and row
-   filters).
-2. **Become an R package (`foxplots`)** — wrap the whole toolkit into an
+1. **Become an R package (`foxplots`)** — wrap the whole toolkit into an
    installable R package that exports both the underlying helper functions *and*
    launcher functions (e.g. `run_data_explorer()`), so it can be installed once
    and run anywhere. It ships internally first, but is being built so a public
@@ -96,7 +96,9 @@ Tabs run **left → right**, each feeding the next:
    rows/cols, duplicates, whitespace, NA markers) as opt-in, **reversible**
    fixes; **Change Variable Types** recasts a column (e.g. a numeric code → a
    factor); **Filter rows** keeps only the rows you want; and the **profile**
-   and **summary** describe every column.
+   and **summary** describe every column. **Save / restore session** here
+   downloads (or reloads) a `.rds` capturing your data and all of this prep —
+   plus your reshape choice — so you can continue later.
 2. **Reshape** — *(optional)* Stack, Split, Transpose, Sort, or Subset. Defaults
    to **None (pass-through)**, so by default your data flows on unchanged.
 3. **Summarize** — count / mean / median / mode / min / max / SD / SE / IQR by
