@@ -90,8 +90,12 @@ chart_hint <- function(df, p) {
   if (pt == "bar" && cont_x)
     return(sprintf("<b>%s</b> looks continuous (%s distinct values), so a bar chart draws many thin bars. A <b>histogram</b> is usually the better choice for a numeric variable.",
                    xv, format(n_x, big.mark = ",")))
-  if (pt == "boxplot" && cont_x)
-    return(sprintf("<b>%s</b> looks continuous, so you'll get one box per value. Box plots group a numeric Y by a <b>categorical</b> X.", xv))
+  if (pt %in% c("boxplot", "violin", "meanerror") && cont_x)
+    return(sprintf("<b>%s</b> looks continuous, so you'll get one group per value. This chart groups a numeric Y by a <b>categorical</b> X.", xv))
+  if (pt == "density" && is_discrete_col(x))
+    return(sprintf("<b>%s</b> is categorical. A density plot needs a <b>numeric</b> X &mdash; for categories a <b>bar chart</b> reads better.", xv))
+  if (pt == "hexbin" && is_discrete_col(x))
+    return(sprintf("<b>%s</b> is categorical. Hexbin bins a dense <b>numeric</b> X against a numeric Y &mdash; try a <b>bar chart</b> for categories.", xv))
   if (pt == "pie" && cont_x)
     return(sprintf("<b>%s</b> looks continuous, which makes an unreadable pie. Pie charts need a <b>categorical</b> variable with a handful of values.", xv))
   barlim <- p$cat_limit %||% BAR_MAX
@@ -260,20 +264,25 @@ build_full_plot <- function(df, p) {
   yv <- if (!is.null(p$y) && nzchar(p$y) && p$y != "__count__") p$y else NULL
   cv <- if (!is.null(p$color) && nzchar(p$color) && p$color != "__none__") p$color else NULL
 
-  if (pt %in% c("scatter", "line", "boxplot") && is.null(yv)) return(NULL)
+  if (pt %in% c("scatter", "line", "boxplot", "violin", "meanerror", "hexbin") &&
+      is.null(yv)) return(NULL)
   if (!is.null(yv) && !yv %in% names(df)) return(NULL)
-  if (pt == "histogram" && !is.numeric(df[[xv]])) return(NULL)
+  if (pt %in% c("histogram", "density") && !is.numeric(df[[xv]])) return(NULL)
+  if (pt == "hexbin" && (!is.numeric(df[[xv]]) || !is.numeric(df[[yv]]))) return(NULL)
 
   if (!is.null(cv) && cv %in% names(df)) {
     if (is.numeric(df[[cv]]) && dplyr::n_distinct(df[[cv]]) <= 10)
       df[[cv]] <- as.factor(df[[cv]])
-    # bar / histogram / boxplot group by category; a still-continuous numeric
-    # group (>10 distinct) can't define boxes/bars, so drop it.
-    if (pt %in% c("histogram", "bar", "boxplot") && is.numeric(df[[cv]]))
+    # These types group by category; a still-continuous numeric group (>10
+    # distinct) can't define boxes/violins/bars, so drop it.
+    if (pt %in% c("histogram", "bar", "boxplot", "violin", "meanerror", "density") &&
+        is.numeric(df[[cv]]))
       cv <- NULL
   } else {
     cv <- NULL
   }
+  # Hexbin colours by count, not by a grouping variable.
+  if (pt == "hexbin") cv <- NULL
 
   size  <- p$size %||% 2
   col   <- p$color_hex %||% UF_BLUE
@@ -435,6 +444,65 @@ build_full_plot <- function(df, p) {
                                     outlier.alpha = 0.6,
                                     position = position_dodge2(preserve = "single"))
 
+  } else if (pt == "violin") {
+    # Like a boxplot, but the width shows where the data bunches up. Categorical
+    # X (coerce a numeric X so each value gets its own violin); quartile lines
+    # inside echo the box.
+    if (is.numeric(df[[xv]])) df[[xv]] <- as.factor(df[[xv]])
+    aes_m <- if (!is.null(cv)) aes(x = .data[[xv]], y = .data[[yv]], fill = .data[[cv]])
+             else               aes(x = .data[[xv]], y = .data[[yv]])
+    p_obj <- ggplot(df, aes_m)
+    p_obj <- if (is.null(cv))
+               p_obj + geom_violin(fill = col, alpha = alpha, trim = FALSE)
+             else
+               p_obj + geom_violin(alpha = alpha, trim = FALSE,
+                                   position = position_dodge(width = 0.9))
+
+  } else if (pt == "density") {
+    # Smoothed distribution of a numeric X; overlay one curve per group.
+    if (!is.null(cv))
+      p_obj <- ggplot(df, aes(x = .data[[xv]], fill = .data[[cv]], color = .data[[cv]])) +
+               geom_density(alpha = alpha * 0.6)
+    else
+      p_obj <- ggplot(df, aes(x = .data[[xv]])) +
+               geom_density(fill = col, color = col, alpha = alpha)
+    ylab <- "Density"
+
+  } else if (pt == "meanerror") {
+    # Group means with error bars (SE or SD), points, and a connecting line.
+    # stat_summary computes the summaries straight from the raw Y — no manual
+    # aggregation needed.
+    if (is.numeric(df[[xv]])) df[[xv]] <- as.factor(df[[xv]])
+    # SE via ggplot2's mean_se; SD computed in base R (mean_sdl would pull in Hmisc).
+    fdata <- if (identical(p$err_type %||% "se", "sd"))
+               function(z) { z <- z[!is.na(z)]; m <- mean(z); s <- stats::sd(z)
+                             data.frame(y = m, ymin = m - s, ymax = m + s) }
+             else ggplot2::mean_se
+    aes_m <- if (!is.null(cv))
+               aes(x = .data[[xv]], y = .data[[yv]], color = .data[[cv]], group = .data[[cv]])
+             else aes(x = .data[[xv]], y = .data[[yv]], group = 1)
+    p_obj <- ggplot(df, aes_m)
+    if (is.null(cv)) {
+      p_obj <- p_obj +
+        stat_summary(fun = mean, geom = "line", color = col, linewidth = size * 0.4) +
+        stat_summary(fun.data = fdata, geom = "errorbar", width = 0.2, color = col) +
+        stat_summary(fun = mean, geom = "point", size = size * 1.6, color = col)
+    } else {
+      dpos <- position_dodge(width = 0.4)
+      p_obj <- p_obj +
+        stat_summary(fun = mean, geom = "line", position = dpos, linewidth = size * 0.4) +
+        stat_summary(fun.data = fdata, geom = "errorbar", width = 0.2, position = dpos) +
+        stat_summary(fun = mean, geom = "point", size = size * 1.6, position = dpos)
+    }
+    ylab <- label_or(p$ylab %||% "", paste0("Mean of ", yv,
+                     sprintf(" (±%s)", toupper(p$err_type %||% "se"))))
+
+  } else if (pt == "hexbin") {
+    # 2D density for a dense scatter: bin (x, y) into hexagons coloured by count.
+    p_obj <- ggplot(df, aes(x = .data[[xv]], y = .data[[yv]])) +
+      geom_hex(bins = bins) +
+      scale_fill_gradient(low = "#dce6f5", high = UF_BLUE, name = "Count")
+
   } else if (pt == "pie") {
     use_count <- is.null(yv)
     pie_df <- if (use_count) {
@@ -500,10 +568,11 @@ build_full_plot <- function(df, p) {
     is_sqrt <- startsWith(ls, "sqrt")
     axis    <- sub("^(log|sqrt)", "", ls)
     if (axis %in% c("x", "both") && is.numeric(df[[xv]]) &&
-        pt %in% c("scatter", "line", "histogram"))
+        pt %in% c("scatter", "line", "histogram", "density", "hexbin"))
       p_obj <- p_obj + (if (is_sqrt) scale_x_sqrt() else scale_x_log10())
     if (axis %in% c("y", "both") &&
-        pt %in% c("scatter", "line", "bar", "histogram", "boxplot"))
+        pt %in% c("scatter", "line", "bar", "histogram", "boxplot",
+                  "violin", "meanerror", "hexbin"))
       p_obj <- p_obj + (if (is_sqrt) scale_y_sqrt() else scale_y_log10())
   }
 
@@ -513,7 +582,7 @@ build_full_plot <- function(df, p) {
 
   if (isTRUE(p$flip)) p_obj <- p_obj + coord_flip()
 
-  uses_color <- pt %in% c("scatter", "line")
+  uses_color <- pt %in% c("scatter", "line", "meanerror")
   base_theme <- theme_call(p$theme, 13) +
     theme(
       plot.title      = element_text(hjust = 0.5, face = "bold", size = 14,
@@ -536,10 +605,12 @@ build_full_plot <- function(df, p) {
                                       margin = margin(3, 3, 3, 3)),
       strip.background = element_rect(fill = "#eef1f5", color = NA))
 
+  # Hexbin's fill is the bin count, not a grouping variable.
+  fill_lab <- if (pt == "hexbin") "Count" else if (!uses_color) cv else NULL
   p_obj + base_theme + labs(
     title = title, subtitle = subtitle, x = xlab, y = ylab,
     color = if (uses_color) cv else NULL,
-    fill  = if (!uses_color) cv else NULL
+    fill  = fill_lab
   )
 }
 
@@ -592,22 +663,26 @@ generate_code <- function(df, p) {
   facet_v <- if (!is.null(p$facet) && nzchar(p$facet) &&
                  p$facet != "__none__" && p$facet %in% names(df)) p$facet else NULL
 
-  if (pt %in% c("scatter", "line", "boxplot") && is.null(yv))
+  if (pt %in% c("scatter", "line", "boxplot", "violin", "meanerror", "hexbin") &&
+      is.null(yv))
     return("# Select a Y variable to generate code for this chart type.")
 
   pre <- character(0)
   if (!is.null(cv) && cv %in% names(df)) {
     if (is.numeric(df[[cv]]) && dplyr::n_distinct(df[[cv]]) <= 10)
       pre <- c(pre, sprintf('df[["%s"]] <- as.factor(df[["%s"]])', cv, cv))
-    if (pt %in% c("histogram", "bar") && is.numeric(df[[cv]]) &&
-        dplyr::n_distinct(df[[cv]]) > 10) cv <- NULL
+    if (pt %in% c("histogram", "bar", "boxplot", "violin", "meanerror", "density") &&
+        is.numeric(df[[cv]]) && dplyr::n_distinct(df[[cv]]) > 10) cv <- NULL
   } else {
     cv <- NULL
   }
+  if (pt == "hexbin") cv <- NULL
 
-  # Boxplot X is categorical — coerce a numeric X so each value gets its own box.
-  if (pt == "boxplot" && is.numeric(df[[xv]]))
+  # These types use a categorical X — coerce a numeric X so each value is a group.
+  if (pt %in% c("boxplot", "violin", "meanerror") && is.numeric(df[[xv]]))
     pre <- c(pre, sprintf('df[["%s"]] <- as.factor(df[["%s"]])', xv, xv))
+  if (pt == "hexbin")
+    pre <- c(pre, "# Note: geom_hex() needs the 'hexbin' package installed.")
 
   barmax <- p$cat_limit %||% BAR_MAX
   if (pt == "bar" && is_discrete_col(df[[xv]]) && dplyr::n_distinct(df[[xv]]) > barmax)
@@ -630,7 +705,7 @@ generate_code <- function(df, p) {
   xlab  <- label_or(p$xlab %||% "", xv)
   ylab  <- if (!is.null(yv)) label_or(p$ylab %||% "", yv) else NULL
 
-  uses_color  <- pt %in% c("scatter", "line")
+  uses_color  <- pt %in% c("scatter", "line", "meanerror")
   needs_dplyr <- (pt %in% c("bar", "line") && !is.null(yv)) || pt == "pie"
 
   scale_line <- NULL
@@ -694,8 +769,8 @@ generate_code <- function(df, p) {
   else if (!is.null(yv))                        aes_inner <- paste0(aes_inner, sprintf(", y = %s", bq(yv)))
   if (!is.null(cv)) aes_inner <- paste0(
     aes_inner, sprintf(", %s = %s", if (uses_color) "color" else "fill", bq(cv)))
-  if (pt == "line" && is.null(cv)) aes_inner <- paste0(aes_inner, ", group = 1")
-  if (pt == "line" && !is.null(cv)) aes_inner <- paste0(aes_inner, sprintf(", group = %s", bq(cv)))
+  if (pt %in% c("line", "meanerror") && is.null(cv)) aes_inner <- paste0(aes_inner, ", group = 1")
+  if (pt %in% c("line", "meanerror") && !is.null(cv)) aes_inner <- paste0(aes_inner, sprintf(", group = %s", bq(cv)))
 
   if (pt %in% c("bar", "line") && !is.null(yv)) {
     grp_cols <- paste(c(bq(xv), if (!is.null(cv)) bq(cv)), collapse = ", ")
@@ -739,11 +814,40 @@ generate_code <- function(df, p) {
     boxplot = if (is.null(cv))
                 sprintf('geom_boxplot(fill = %s, alpha = %s)', qq(col), alpha)
               else
-                sprintf('geom_boxplot(alpha = %s)', alpha)
+                sprintf('geom_boxplot(alpha = %s)', alpha),
+    violin  = if (is.null(cv))
+                sprintf('geom_violin(fill = %s, alpha = %s, trim = FALSE)', qq(col), alpha)
+              else
+                sprintf('geom_violin(alpha = %s, trim = FALSE, position = position_dodge(width = 0.9))', alpha),
+    density = if (is.null(cv))
+                sprintf('geom_density(fill = %s, color = %s, alpha = %s)', qq(col), qq(col), alpha)
+              else
+                sprintf('geom_density(alpha = %s)', round((p$alpha %||% 0.8) * 0.6, 2)),
+    meanerror = {
+      errfun <- if (identical(p$err_type %||% "se", "sd"))
+                  'fun.data = function(z) {z <- z[!is.na(z)]; m <- mean(z); s <- sd(z); data.frame(y = m, ymin = m - s, ymax = m + s)}'
+                else 'fun.data = mean_se'
+      if (is.null(cv))
+        sprintf(paste0('stat_summary(fun = mean, geom = "line", color = %s) +\n  ',
+                       'stat_summary(%s, geom = "errorbar", width = 0.2, color = %s) +\n  ',
+                       'stat_summary(fun = mean, geom = "point", size = %s, color = %s)'),
+                qq(col), errfun, qq(col), round(size * 1.6, 2), qq(col))
+      else
+        sprintf(paste0('stat_summary(fun = mean, geom = "line", position = position_dodge(width = 0.4)) +\n  ',
+                       'stat_summary(%s, geom = "errorbar", width = 0.2, position = position_dodge(width = 0.4)) +\n  ',
+                       'stat_summary(fun = mean, geom = "point", size = %s, position = position_dodge(width = 0.4))'),
+                errfun, round(size * 1.6, 2))
+    },
+    hexbin = sprintf('geom_hex(bins = %s) +\n  scale_fill_gradient(low = "#dce6f5", high = %s, name = "Count")',
+                     bins, qq(UF_BLUE))
   )
 
   if (pt %in% c("bar", "histogram") && is.null(yv)) ylab <- "Count"
   if (pt == "histogram") ylab <- "Count"
+  if (pt == "density")   ylab <- "Density"
+  if (pt == "meanerror")
+    ylab <- label_or(p$ylab %||% "",
+                     paste0("Mean of ", yv, sprintf(" (±%s)", toupper(p$err_type %||% "se"))))
 
   labs_parts <- c(labs_parts, sprintf("x = %s", qq(xlab)))
   if (!is.null(ylab)) labs_parts <- c(labs_parts, sprintf("y = %s", qq(ylab)))
@@ -779,10 +883,11 @@ generate_code <- function(df, p) {
     is_sqrt <- startsWith(ls, "sqrt")
     axis    <- sub("^(log|sqrt)", "", ls)
     if (axis %in% c("x", "both") && is.numeric(df[[xv]]) &&
-        pt %in% c("scatter", "line", "histogram"))
+        pt %in% c("scatter", "line", "histogram", "density", "hexbin"))
       lines <- c(lines, if (is_sqrt) "scale_x_sqrt()" else "scale_x_log10()")
     if (axis %in% c("y", "both") &&
-        pt %in% c("scatter", "line", "bar", "histogram", "boxplot"))
+        pt %in% c("scatter", "line", "bar", "histogram", "boxplot",
+                  "violin", "meanerror", "hexbin"))
       lines <- c(lines, if (is_sqrt) "scale_y_sqrt()" else "scale_y_log10()")
   }
 

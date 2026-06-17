@@ -24,7 +24,9 @@ plot_slot_panel <- function(ns, i) {
     selectInput(pid("_type"), "Chart type",
                 choices = c("Scatter Plot" = "scatter", "Line Graph" = "line",
                             "Bar Chart" = "bar", "Histogram" = "histogram",
-                            "Box Plot" = "boxplot", "Pie Chart" = "pie",
+                            "Density Plot" = "density", "Box Plot" = "boxplot",
+                            "Violin Plot" = "violin", "Mean ± Error" = "meanerror",
+                            "Pie Chart" = "pie", "Hexbin (2D density)" = "hexbin",
                             "Correlation Heatmap" = "heatmap")),
     uiOutput(oid("_x")),
     uiOutput(oid("_y")),
@@ -64,8 +66,18 @@ plot_slot_panel <- function(ns, i) {
                   choices = c("Mean" = "mean", "Median" = "median", "Sum" = "sum"))
     ),
     conditionalPanel(
-      cond("_type", "== 'histogram'"),
+      sprintf("%s || %s", cond("_type", "== 'histogram'"), cond("_type", "== 'hexbin'")),
       sliderInput(pid("_bins"), "Bins", min = 5, max = 60, value = 30, step = 1)
+    ),
+    conditionalPanel(
+      cond("_type", "== 'meanerror'"),
+      selectInput(pid("_errtype"),
+                  tagList("Error bars show", info_tip(
+                    "Standard error of the mean (±SE) — how precisely the mean is ",
+                    "estimated; or one standard deviation (±SD) — how spread out ",
+                    "the data are.")),
+                  choices = c("Standard error (±SE)" = "se",
+                              "Standard deviation (±SD)" = "sd"))
     ),
     uiOutput(oid("_catlimit")),
 
@@ -234,7 +246,7 @@ visualizeServer <- function(id, data_in) {
           req(is.data.frame(data_in())); reset()
           ty <- input[[paste0("mp", idx, "_type")]] %||% "scatter"
           if (identical(ty, "heatmap")) return(NULL)
-          if (identical(ty, "histogram"))
+          if (ty %in% c("histogram", "density", "hexbin"))
             return(selectInput(ns(paste0("mp", idx, "_xvar")),
                                "X variable (numeric)", choices = cols_num()))
           lbl <- if (identical(ty, "pie")) "Category (one slice per value)"
@@ -245,8 +257,8 @@ visualizeServer <- function(id, data_in) {
           req(is.data.frame(data_in())); reset()
           ty <- input[[paste0("mp", idx, "_type")]]; req(ty)
           if (ty == "heatmap") return(NULL)
-          if (ty == "histogram")
-            return(helpText("Histograms use only an X variable."))
+          if (ty %in% c("histogram", "density"))
+            return(helpText("This chart uses only an X variable."))
           if (ty == "pie")
             return(selectInput(ns(paste0("mp", idx, "_yvar")),
               tagList("Slice size", info_tip(
@@ -260,7 +272,7 @@ visualizeServer <- function(id, data_in) {
         output[[paste0("ui_mp", idx, "_color")]] <- renderUI({
           req(is.data.frame(data_in())); reset()
           ty <- input[[paste0("mp", idx, "_type")]]; req(ty)
-          if (ty %in% c("pie", "heatmap")) return(NULL)
+          if (ty %in% c("pie", "heatmap", "hexbin")) return(NULL)
           selectInput(ns(paste0("mp", idx, "_colorvar")),
                       "Color / group by (optional)",
                       choices = c("None" = "__none__", cols_all()))
@@ -327,6 +339,7 @@ visualizeServer <- function(id, data_in) {
         color_hex   = input[[paste0("mp", i, "_color")]],
         size        = input[[paste0("mp", i, "_size")]],
         bins        = input[[paste0("mp", i, "_bins")]],
+        err_type    = input[[paste0("mp", i, "_errtype")]] %||% "se",
         bar_agg     = input[[paste0("mp", i, "_baragg")]],
         bar_line    = isTRUE(input[[paste0("mp", i, "_barline")]]),
         line_agg    = input[[paste0("mp", i, "_lineagg")]] %||% "mean",

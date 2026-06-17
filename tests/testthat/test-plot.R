@@ -44,6 +44,47 @@ test_that("generate_corr_code honours the selection and never falls back to all"
   expect_error(parse(text = code), NA)             # syntactically valid
 })
 
+# ---- new chart types: violin / density / mean±error / hexbin -----------------
+
+test_that("generate_code emits parseable code for the new chart types", {
+  df <- data.frame(g = rep(letters[1:3], 4), x = 1:12, y = (1:12) * 1.5)
+  specs <- list(
+    violin     = list(type = "violin",    x = "g", y = "y"),
+    density    = list(type = "density",   x = "x"),
+    density_g  = list(type = "density",   x = "x", color = "g"),
+    meanerr_se = list(type = "meanerror", x = "g", y = "y", err_type = "se"),
+    meanerr_sd = list(type = "meanerror", x = "g", y = "y", err_type = "sd"),
+    hexbin     = list(type = "hexbin",    x = "x", y = "y", bins = 20))
+  for (nm in names(specs)) {
+    code <- generate_code(df, specs[[nm]])
+    expect_true(grepl("ggplot", code), info = nm)
+    expect_error(parse(text = code), NA)          # runnable R
+  }
+})
+
+test_that("generate_code picks the right geom / summary per new type", {
+  df <- data.frame(g = rep(letters[1:3], 4), x = 1:12, y = (1:12) * 1.5)
+  expect_true(grepl("geom_violin",  generate_code(df, list(type = "violin",  x = "g", y = "y"))))
+  expect_true(grepl("geom_density", generate_code(df, list(type = "density", x = "x"))))
+  expect_true(grepl("geom_hex",     generate_code(df, list(type = "hexbin",  x = "x", y = "y"))))
+  se <- generate_code(df, list(type = "meanerror", x = "g", y = "y", err_type = "se"))
+  expect_true(grepl("mean_se", se, fixed = TRUE))
+  sd <- generate_code(df, list(type = "meanerror", x = "g", y = "y", err_type = "sd"))
+  expect_false(grepl("mean_sdl", sd, fixed = TRUE))   # base-R SD, no Hmisc
+  expect_true(grepl("ymin = m - s", sd, fixed = TRUE))
+})
+
+test_that("chart_hint steers numeric/categorical X for the new types", {
+  df <- data.frame(num = 1:12, cat = rep(letters[1:2], 6))   # num: 12 distinct (>10)
+  # density / hexbin want a numeric X
+  expect_true(grepl("numeric", chart_hint(df, list(type = "density", x = "cat"))))
+  expect_true(grepl("numeric", chart_hint(df, list(type = "hexbin",  x = "cat", y = "num"))))
+  expect_null(chart_hint(df, list(type = "density", x = "num")))
+  # violin / mean±error want a categorical X (a continuous one triggers a hint)
+  expect_true(grepl("continuous", chart_hint(df, list(type = "violin",    x = "num", y = "num"))))
+  expect_true(grepl("continuous", chart_hint(df, list(type = "meanerror", x = "num", y = "num"))))
+})
+
 # ---- generate_code -----------------------------------------------------------
 
 test_that("generate_code emits parseable ggplot2 for a scatter", {
