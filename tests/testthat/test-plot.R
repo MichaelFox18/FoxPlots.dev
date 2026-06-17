@@ -21,6 +21,29 @@ test_that("chart_hint needs >= 2 numeric columns for a heatmap", {
   expect_true(grepl("2 numeric", msg))
 })
 
+test_that("chart_hint prompts to pick variables for a heatmap (no show-all)", {
+  df <- data.frame(a = 1:5, b = 2:6, c = 3:7)   # 3 numeric columns available
+  # nothing selected -> prompt to pick, even though the data has enough columns
+  expect_true(grepl("Pick at least", chart_hint(df, list(type = "heatmap"))))
+  # only one selected -> still prompt
+  expect_true(grepl("Pick at least",
+                    chart_hint(df, list(type = "heatmap", corr_vars = "a"))))
+  # two selected -> good to go
+  expect_null(chart_hint(df, list(type = "heatmap", corr_vars = c("a", "b"))))
+})
+
+test_that("generate_corr_code honours the selection and never falls back to all", {
+  df <- data.frame(a = 1:5, b = 2:6, c = 3:7, d = 4:8)
+  # no selection -> a friendly comment, not code over every column
+  expect_true(grepl("Pick at least two",
+                    generate_corr_code(df, list(type = "heatmap"))))
+  # two chosen -> code subsets to exactly those and parses
+  code <- generate_corr_code(df, list(type = "heatmap", corr_vars = c("a", "c")))
+  expect_true(grepl('num[, c("a", "c")]', code, fixed = TRUE))
+  expect_false(grepl('"b"', code, fixed = TRUE))   # unchosen column absent
+  expect_error(parse(text = code), NA)             # syntactically valid
+})
+
 # ---- generate_code -----------------------------------------------------------
 
 test_that("generate_code emits parseable ggplot2 for a scatter", {

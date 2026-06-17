@@ -268,11 +268,13 @@ visualizeServer <- function(id, data_in) {
         output[[paste0("ui_mp", idx, "_corrvars")]] <- renderUI({
           req(is.data.frame(data_in())); reset()
           nums <- cols_num()
-          selectInput(ns(paste0("mp", idx, "_corrvarsv")),
+          selectizeInput(ns(paste0("mp", idx, "_corrvarsv")),
                       tagList("Variables", info_tip(
-                        "Numeric columns to correlate — defaults to all; pick a ",
-                        "subset to focus the matrix.")),
-                      choices = nums, selected = nums, multiple = TRUE)
+                        "Pick the numeric columns to correlate. The heatmap starts ",
+                        "empty and fills in as you add variables, so a wide dataset ",
+                        "stays readable — choose two or more.")),
+                      choices = nums, selected = character(0), multiple = TRUE,
+                      options = list(placeholder = "pick variables to correlate…"))
         })
         output[[paste0("ui_mp", idx, "_hint")]] <- renderUI({
           req(is.data.frame(data_in()), input[[paste0("mp", idx, "_type")]])

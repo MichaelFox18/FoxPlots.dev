@@ -69,9 +69,11 @@ chart_hint <- function(df, p) {
   if (is.null(df) || is.null(p$type)) return(NULL)
   if (identical(p$type, "heatmap")) {
     nums <- names(df)[vapply(df, is.numeric, logical(1))]
-    sel  <- p$corr_vars
-    k    <- if (!is.null(sel) && length(sel) >= 2) length(intersect(sel, nums)) else length(nums)
-    if (k < 2) return("A correlation heatmap needs at least <b>2 numeric columns</b> selected.")
+    sel  <- intersect(p$corr_vars %||% character(0), nums)
+    if (length(nums) < 2)
+      return("A correlation heatmap needs at least <b>2 numeric columns</b> in the data.")
+    if (length(sel) < 2)
+      return("Pick at least <b>2 numeric variables</b> to build the correlation heatmap.")
     return(NULL)
   }
   if (is.null(p$x) || !nzchar(p$x)) return(NULL)
@@ -209,11 +211,13 @@ trend_label_text <- function(df, xv, yv, meth, deg) {
   sprintf("y = %.3g %+.3g·x,  R² = %.3f", co[1], co[2], r2)
 }
 
-# Correlation heatmap over the numeric columns (or a chosen subset).
+# Correlation heatmap over the user-chosen numeric columns. The selection is
+# authoritative — with fewer than two columns chosen we render nothing (rather
+# than defaulting to every numeric column), so a wide dataset starts blank and
+# fills in as the user picks, instead of dumping an unreadable wall of tiles.
 build_corr_heatmap <- function(df, p) {
-  num <- names(df)[vapply(df, is.numeric, logical(1))]
-  sel <- p$corr_vars
-  if (!is.null(sel) && length(sel) >= 2) num <- intersect(sel, num)
+  allnum <- names(df)[vapply(df, is.numeric, logical(1))]
+  num    <- intersect(p$corr_vars %||% character(0), allnum)
   if (length(num) < 2) return(NULL)
   method <- p$corr_method %||% "pearson"
   cm <- suppressWarnings(stats::cor(df[num], use = "pairwise.complete.obs", method = method))
@@ -548,18 +552,16 @@ bq <- function(n) {
 qq <- function(s) sprintf('"%s"', gsub('"', '\\\\"', s))
 
 generate_corr_code <- function(df, p) {
-  num <- names(df)[vapply(df, is.numeric, logical(1))]
-  sel <- p$corr_vars
-  if (!is.null(sel) && length(sel) >= 2) num <- intersect(sel, num)
+  allnum <- names(df)[vapply(df, is.numeric, logical(1))]
+  num    <- intersect(p$corr_vars %||% character(0), allnum)
   if (length(num) < 2)
-    return("# A correlation heatmap needs at least two numeric columns.")
+    return("# Pick at least two numeric variables to build the correlation heatmap.")
   method <- p$corr_method %||% "pearson"
   title  <- if (!is.null(p$title) && nzchar(trimws(p$title))) p$title
             else sprintf("Correlation Heatmap (%s)", tools::toTitleCase(method))
-  pre <- "num <- df[sapply(df, is.numeric)]"
-  if (!is.null(sel) && length(sel) >= 2)
-    pre <- c(pre, sprintf("num <- num[, c(%s)]",
-                          paste(vapply(num, qq, character(1)), collapse = ", ")))
+  pre <- c("num <- df[sapply(df, is.numeric)]",
+           sprintf("num <- num[, c(%s)]",
+                   paste(vapply(num, qq, character(1)), collapse = ", ")))
   pre <- c(pre,
            sprintf('cm  <- cor(num, use = "pairwise.complete.obs", method = "%s")', method),
            "dd  <- as.data.frame(as.table(cm))")
