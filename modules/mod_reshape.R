@@ -26,7 +26,8 @@ reshapeUI <- function(id) {
                     "Split  (tall → wide)"        = "split",
                     "Transpose  (swap rows/cols)" = "transpose",
                     "Sort  (reorder rows)"        = "sort",
-                    "Subset  (rows / columns)"    = "subset"),
+                    "Subset  (rows / columns)"    = "subset",
+                    "Summary  (stats by group)"   = "summary"),
         selected = "none"
       ),
 
@@ -136,6 +137,29 @@ reshapeUI <- function(id) {
         ),
         helpText("Keep a subset of columns and/or a sample of rows. ",
                  "Stratifying samples the same fraction within each group.")
+      ),
+
+      # ---- Summary controls ----
+      conditionalPanel(
+        condition = sprintf("input['%s'] == 'summary'", ns("op")),
+        selectizeInput(
+          ns("summary_groups"),
+          tagList("Group by", info_tip(
+            "Category column(s) that define the groups — one summary row per ",
+            "combination.")),
+          choices = NULL, multiple = TRUE,
+          options = list(placeholder = "pick grouping column(s)")
+        ),
+        selectizeInput(
+          ns("summary_vars"),
+          tagList("Summarize (numeric)", info_tip(
+            "Numeric column(s) to summarize within each group.")),
+          choices = NULL, multiple = TRUE,
+          options = list(placeholder = "pick numeric column(s)")
+        ),
+        helpText("Builds a new table — count, mean, median, mode, min, max, SD, ",
+                 "SE, and IQR of each numeric column within each group — that ",
+                 "then flows downstream like any reshaped table.")
       )
     ),
 
@@ -186,6 +210,11 @@ reshapeServer <- function(id, data_in, store = NULL) {
                            selected = gcol("subset_cols", character(0)))
       updateSelectizeInput(session, "subset_stratify", choices = cols,
                            selected = gcol("subset_stratify", character(0)))
+      grps <- groupable_cols(df); nums <- numeric_cols(df)
+      updateSelectizeInput(session, "summary_groups", choices = grps,
+                           selected = gcol("summary_groups", utils::head(grps, 1)))
+      updateSelectizeInput(session, "summary_vars", choices = nums,
+                           selected = gcol("summary_vars", utils::head(nums, 1)))
 
       # Non-column settings (no competing observers) — apply the saved values.
       if (is.list(pend)) {
@@ -228,7 +257,9 @@ reshapeServer <- function(id, data_in, store = NULL) {
           subset_n             = input$subset_n,
           subset_prop          = input$subset_prop,
           subset_stratify      = input$subset_stratify,
-          subset_seed          = input$subset_seed
+          subset_seed          = input$subset_seed,
+          summary_groups       = input$summary_groups,
+          summary_vars         = input$summary_vars
         )
       })
     }
@@ -320,6 +351,19 @@ reshapeServer <- function(id, data_in, store = NULL) {
           if (is.null(seed) || is.na(seed)) seed <- NULL
           do_subset(df, cols = cols, sample = smp, size = size,
                     stratify_by = strat, seed = seed)
+        },
+
+        summary = {
+          groups <- input$summary_groups
+          vars   <- input$summary_vars
+          validate(need(length(groups) >= 1L,
+                        "Pick at least one grouping column."))
+          validate(need(length(vars) >= 1L,
+                        "Pick at least one numeric column to summarize."))
+          out <- grouped_summary(df, vars, groups)
+          validate(need(!is.null(out),
+                        "Couldn't summarize with those selections."))
+          out
         }
       )
     })
