@@ -66,7 +66,8 @@ Open R and paste this once to install everything the apps use:
 ```r
 install.packages(c(
   "shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
-  "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here", "binom"
+  "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here", "binom",
+  "officer"
 ))
 ```
 
@@ -150,10 +151,11 @@ The tabs run left to right, and **each one feeds the next**:
    chi-square between two categories, with assumption checks and effect sizes.
 6. **Regression** — fit a model and read a plain-English interpretation.
 7. **Export** — download your data, charts, summary, or model results.
-8. **Report** — one click bundles the whole session into a single self-contained
-   HTML report (data overview, summary, charts, comparison, regression), with an
-   optional "show the R code" toggle. It needs no extra software and opens in any
-   browser.
+8. **Report** — one click bundles the whole session (data overview, summary,
+   charts, comparison, regression) into a report, with an optional "show the R
+   code" toggle. Choose **HTML** (one self-contained file that opens in any
+   browser) or an editable **Word `.docx`** you can open in Word / Google Docs to
+   cut sections and add your own write-up.
 
 Whatever you do on Import + Reshape is the data the rest of the app uses.
 

@@ -18,13 +18,14 @@ working app you run right now (see *Running an app* below).
 
 **Just shipped:**
 
-- ✅ **Downloadable report** — a one-click, self-contained **HTML** report
-  (Report tab in Data Explorer) that auto-assembles everything you produced in a
-  session: data overview, summaries, charts, group comparisons, and regression.
-  A **"show the R code"** toggle switches it between a clean results write-up and
-  a reproducible methods document. It is **pandoc-free** (assembled as plain HTML
-  with embedded charts), so it renders the same from RStudio, VS Code, a bare
-  `Rscript`, or a deployed app — no extra software to install.
+- ✅ **Downloadable report** — a one-click report (Report tab in Data Explorer)
+  that auto-assembles everything you produced in a session: data overview,
+  summaries, charts, group comparisons, and regression. Choose **HTML** (one
+  polished, self-contained file for sharing/archiving) or **Word `.docx`** (fully
+  editable — cut sections, add your own intro, notes, or bios). A **"show the R
+  code"** toggle switches either between a clean results write-up and a
+  reproducible methods document. Both are **pandoc-free**, so they render the
+  same from RStudio, VS Code, a bare `Rscript`, or a deployed app.
 - ✅ **Save / restore your progress** — on the Import tab, **Save progress**
   downloads a small `.rds` session file; **Restore** re-loads it later to pick up
   where you left off. It captures your data plus all the data-prep work (Data
@@ -46,20 +47,21 @@ The look stays UF/IFAS-themed (blue/orange + the IFAS logo) throughout.
 
 - **R 4.6+**
 - Packages: `shiny`, `bslib`, `DT`, `ggplot2`, `plotly`, `colourpicker`,
-  `dplyr`, `tidyr`, `tidyselect`, `readxl`, `writexl`, `here`, `binom`, and
-  `testthat` (for tests).
+  `dplyr`, `tidyr`, `tidyselect`, `readxl`, `writexl`, `here`, `binom`,
+  `officer` (for the Word report), and `testthat` (for tests).
 
 Install any you're missing:
 
 ```r
 install.packages(c("shiny", "bslib", "DT", "ggplot2", "plotly", "colourpicker",
                    "dplyr", "tidyr", "tidyselect", "readxl", "writexl", "here",
-                   "binom", "testthat"))
+                   "binom", "officer", "testthat"))
 ```
 
-> The HTML report needs **no extra packages** — it is built from base R +
+> The **HTML** report needs no extra packages — it is built from base R +
 > ggplot2 + `base64enc` (which ships with Shiny), with no pandoc/rmarkdown
-> dependency, so it works wherever the apps run.
+> dependency. The **Word (.docx)** report uses `officer` (also pandoc-free); if
+> it isn't installed, the HTML option still works.
 
 ---
 
@@ -112,8 +114,9 @@ Tabs run **left → right**, each feeding the next:
    plain-English interpretation and diagnostic plots.
 7. **Export** — download the (reshaped) data (CSV/Excel/RDS), the **charts**
    (PNG/PDF), the **summary**, and the **regression** results.
-8. **Report** — one click bundles the whole session into a single self-contained
-   **HTML** report, with an optional "show the R code" toggle.
+8. **Report** — one click bundles the whole session into a report: **HTML** (a
+   single self-contained file) or an editable **Word `.docx`**, with an optional
+   "show the R code" toggle.
 
 > **The pipeline is live:** whatever you do on Import + Reshape is the "working
 > data" that Summarize, Visualize, Compare Groups, Regression, and Export all

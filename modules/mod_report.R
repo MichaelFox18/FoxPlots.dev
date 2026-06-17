@@ -24,16 +24,23 @@ reportUI <- function(id) {
       width = 320,
       h5("Build report"),
       textInput(ns("title"), "Report title", value = "Data Explorer Report"),
+      radioButtons(ns("format"),
+        tagList("Format", info_tip(
+          "Web page = one polished, self-contained HTML file, great for sharing ",
+          "or archiving. Word = an editable .docx you can open in Word / Google ",
+          "Docs to delete sections and add your own text (intro, bios, notes).")),
+        choices = c("Web page (HTML)" = "html", "Word document (.docx)" = "docx"),
+        selected = "html"),
       checkboxInput(ns("show_code"),
         tagList("Include the R code", info_tip(
           "Adds reproducible R (ggplot2, the model, the tests) under each ",
           "section — turn off for a clean, non-technical results write-up.")),
         value = FALSE),
       hr(),
-      downloadButton(ns("download"), "Download report (.html)",
+      downloadButton(ns("download"), "Download report",
                      class = "btn-primary w-100"),
-      helpText("One self-contained HTML file — charts and styling are embedded, ",
-               "so it opens in any browser with nothing else attached.")
+      helpText("HTML is one self-contained file that opens in any browser. ",
+               "Word is fully editable — cut sections, add your own write-up.")
     ),
     card(
       card_header(icon("file-lines"), " Your report"),
@@ -99,11 +106,13 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
     })
 
     output$download <- downloadHandler(
-      filename = function() paste0(safe_stem(), ".html"),
+      filename = function()
+        paste0(safe_stem(), if (identical(input$format, "docx")) ".docx" else ".html"),
       content  = function(file) {
         d <- data_in()
         validate(need(is.data.frame(d),
                       "Import data on the Import tab before building a report."))
+        fmt <- input$format %||% "html"
         spec <- report_spec(
           data        = d,
           summary_tbl = read_opt(summary_tbl),
@@ -115,7 +124,7 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
           show_code   = isTRUE(input$show_code),
           logo        = uf_logo_uri())
         withProgress(message = "Building report…", value = 0.4, {
-          render_report(spec, file)
+          render_report(spec, file, format = fmt)
           incProgress(0.6)
         })
       }

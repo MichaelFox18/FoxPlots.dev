@@ -30,14 +30,24 @@ html_escape <- function(x) {
   gsub("\"", "&quot;", x, fixed = TRUE)
 }
 
-#' Format one display cell: round numbers, blank out NA.
-.report_cell <- function(x) {
+#' Format one display cell as plain text: round numbers, blank out NA. No HTML
+#' escaping (so it's reusable for Word) — the HTML path escapes on top.
+.fmt_cell <- function(x) {
   if (length(x) != 1L) x <- x[1]
   if (is.na(x)) return("")
   if (is.numeric(x)) {
     if (is.finite(x) && x == round(x)) format(x, big.mark = ",")
     else format(round(as.numeric(x), 4), big.mark = ",")
-  } else html_escape(x)
+  } else as.character(x)
+}
+
+#' HTML display cell = the plain cell, escaped.
+.report_cell <- function(x) html_escape(.fmt_cell(x))
+
+#' Plain-text p-value (no HTML entity) — for the Word path.
+.p_txt <- function(p) {
+  if (is.null(p) || is.na(p)) return("N/A")
+  if (p < 0.001) "< 0.001" else as.character(round(p, 4))
 }
 
 #' Render a data frame as an HTML <table>. Pure (base R string building).
@@ -360,7 +370,167 @@ build_report_html <- function(spec, plot_uris = character(0),
     "</div></body></html>")
 }
 
+# --- Word (.docx) document (officer) ----------------------------------------
+# Same report_spec, a second renderer. Tables carry the exact data the app
+# produced (re-rendered as native, editable Word tables); charts embed as PNGs.
+# Needs the `officer` package; the module/app only calls this when the user
+# picks the Word format.
+
+# A data frame with every cell formatted to display text (rounds numbers, blanks
+# NA) — handles factor columns without leaking their integer codes.
+.display_df <- function(df) {
+  as.data.frame(
+    lapply(df, function(col) {
+      if (is.numeric(col)) vapply(col, .fmt_cell, character(1))
+      else vapply(as.character(col), .fmt_cell, character(1))
+    }),
+    stringsAsFactors = FALSE, check.names = FALSE
+  )
+}
+
+.docx_add_table <- function(doc, df, caption = NULL) {
+  if (is.null(df) || !is.data.frame(df) || !nrow(df))
+    return(officer::body_add_par(doc, "(nothing to show)", style = "Normal"))
+  if (!is.null(caption))
+    doc <- officer::body_add_par(doc, caption, style = "heading 3")
+  officer::body_add_table(doc, .display_df(df), style = "table_template",
+                          first_row = TRUE)
+}
+
+# Add a (possibly multi-line) R code block as monospace paragraphs.
+.docx_add_code <- function(doc, code) {
+  if (is.null(code) || !nzchar(code)) return(doc)
+  mono <- officer::fp_text(font.family = "Consolas", font.size = 9)
+  for (ln in strsplit(code, "\n", fixed = TRUE)[[1]])
+    doc <- officer::body_add_fpar(
+      doc, officer::fpar(officer::ftext(if (nzchar(ln)) ln else " ", mono)))
+  doc
+}
+
+.docx_section_comparison <- function(doc, spec) {
+  r   <- spec$comparison
+  sig <- !is.na(r$p_value) && r$p_value < 0.05
+  doc <- officer::body_add_par(doc, "Group comparison", style = "heading 1")
+  if (identical(r$mode, "cat")) {
+    doc <- officer::body_add_par(doc, sprintf(
+      "%s association between %s and %s (p = %s). Cramér's V = %s (%s).",
+      if (sig) "Significant" else "No significant", r$var1, r$var2,
+      .p_txt(r$p_value), round(r$cramers_v, 3),
+      effect_magnitude("Cramér's V", r$cramers_v)), style = "Normal")
+    stats_tbl <- data.frame(
+      Statistic = c("Chi-square", "df", "Cramér's V", "N"),
+      Value = c(round(r$statistic, 3), r$df, round(r$cramers_v, 3), r$n),
+      check.names = FALSE)
+    doc <- .docx_add_table(doc, stats_tbl, "Test statistics")
+    doc <- .docx_add_table(
+      doc, cbind(` ` = rownames(r$table), as.data.frame.matrix(r$table)),
+      "Contingency table")
+  } else {
+    eff <- if (!is.na(r$effect_value))
+      sprintf(" Effect size (%s) = %s (%s).", r$effect_name,
+              round(r$effect_value, 3),
+              effect_magnitude(r$effect_name, r$effect_value)) else ""
+    doc <- officer::body_add_par(doc, sprintf(
+      "%s difference in %s across %s (%s, p = %s).%s",
+      if (sig) "Significant" else "No significant", r$outcome, r$group,
+      r$test, .p_txt(r$p_value), eff), style = "Normal")
+    doc <- .docx_add_table(doc, r$group_stats, "Group statistics")
+    if (!is.null(r$posthoc))
+      doc <- .docx_add_table(doc, r$posthoc, "Pairwise comparisons (Tukey HSD)")
+  }
+  if (isTRUE(spec$show_code)) doc <- .docx_add_code(doc, spec$compare_code)
+  doc
+}
+
+.docx_section_regression <- function(doc, spec, reg_paths) {
+  m <- spec$model; info <- spec$model_interp
+  f <- gsub("\\s+", " ", paste(deparse(stats::formula(m)), collapse = " "))
+  sig <- !is.na(info$overall_p) && info$overall_p < 0.05
+  doc <- officer::body_add_par(doc, "Regression", style = "heading 1")
+  doc <- officer::body_add_par(doc, sprintf("Model: %s", f), style = "Normal")
+  doc <- officer::body_add_par(doc, sprintf(
+    "R-squared = %s (adjusted %s) — explains %s%% of the variance. %s (p = %s).",
+    info$r2, info$adj_r2, round(info$r2 * 100, 1),
+    if (sig) "Overall model is significant" else "Overall model is not significant",
+    .p_txt(info$overall_p)), style = "Normal")
+  co <- as.data.frame(summary(m)$coefficients, check.names = FALSE)
+  co <- cbind(Term = rownames(co), co); rownames(co) <- NULL
+  doc <- .docx_add_table(doc, co, "Coefficients")
+  sig_txt <- if (length(info$significant)) paste(info$significant, collapse = ", ") else "none"
+  doc <- officer::body_add_par(doc, sprintf("Significant predictor(s): %s.", sig_txt),
+                               style = "Normal")
+  if (length(reg_paths)) {
+    doc <- officer::body_add_par(doc, "Diagnostics", style = "heading 2")
+    for (p in reg_paths)
+      if (!is.na(p) && file.exists(p))
+        doc <- officer::body_add_img(doc, p, width = 5, height = 5 * 4 / 5.5)
+  }
+  if (isTRUE(spec$show_code)) doc <- .docx_add_code(doc, spec$regression_code)
+  doc
+}
+
+#' Build the report as an editable Word document (an officer `rdocx`).
+#'
+#' @param spec A list from report_spec().
+#' @param plot_paths Character vector of PNG file paths aligned to spec$plots.
+#' @param reg_paths PNG file paths for the regression diagnostics (0–2).
+#' @return An `rdocx` object (print() it to a .docx file).
+build_report_docx <- function(spec, plot_paths = character(0),
+                              reg_paths = character(0)) {
+  if (!requireNamespace("officer", quietly = TRUE))
+    stop("The 'officer' package is required for Word reports. install.packages('officer')")
+  sec <- spec$sections
+  doc <- officer::read_docx()
+  doc <- officer::body_add_par(doc, spec$title, style = "heading 1")
+  doc <- officer::body_add_par(doc, sprintf(
+    "Generated %s — UF/IFAS Data Explorer",
+    format(spec$generated, "%B %d, %Y at %H:%M")), style = "Normal")
+
+  if (isTRUE(sec[["overview"]])) {
+    g <- spec$glance
+    doc <- officer::body_add_par(doc, "Data overview", style = "heading 1")
+    doc <- officer::body_add_par(doc, sprintf(
+      "%s rows x %s columns — %d numeric, %d categorical, %d date; %s complete rows.",
+      format(g$n, big.mark = ","), g$m, g$num, g$cat, g$date,
+      format(g$complete, big.mark = ",")), style = "Normal")
+    doc <- .docx_add_table(doc, spec$profile, "Columns")
+  }
+  if (isTRUE(sec[["summary"]])) {
+    doc <- officer::body_add_par(doc, "Summary", style = "heading 1")
+    doc <- .docx_add_table(doc, spec$summary)
+    if (isTRUE(spec$show_code)) doc <- .docx_add_code(doc, spec$summary_code)
+  }
+  if (isTRUE(sec[["charts"]])) {
+    doc <- officer::body_add_par(doc, "Charts", style = "heading 1")
+    for (i in seq_along(spec$plots)) {
+      doc <- officer::body_add_par(doc, paste("Chart", i), style = "heading 2")
+      pp <- if (i <= length(plot_paths)) plot_paths[[i]] else NA_character_
+      if (!is.na(pp) && file.exists(pp))
+        doc <- officer::body_add_img(doc, pp, width = 6, height = 6 * 4.5 / 7)
+      if (isTRUE(spec$show_code) && length(spec$plot_code) >= i)
+        doc <- .docx_add_code(doc, spec$plot_code[[i]])
+    }
+  }
+  if (isTRUE(sec[["comparison"]])) doc <- .docx_section_comparison(doc, spec)
+  if (isTRUE(sec[["regression"]])) doc <- .docx_section_regression(doc, spec, reg_paths)
+  doc
+}
+
 # --- rasterization + file output (impure) -----------------------------------
+
+#' Rasterize one ggplot to a temp PNG file; returns the path (or NA). For the
+#' Word path, which embeds images from files rather than data URIs.
+plot_to_png_file <- function(plot, width = 7, height = 4.5, dpi = 110) {
+  if (is.null(plot)) return(NA_character_)
+  tmp <- tempfile(fileext = ".png")
+  ok <- tryCatch({
+    ggplot2::ggsave(tmp, plot = plot, width = width, height = height,
+                    dpi = dpi, units = "in", device = "png", bg = "white")
+    TRUE
+  }, error = function(e) FALSE)
+  if (!ok || !file.exists(tmp)) return(NA_character_)
+  tmp
+}
 
 #' Rasterize one ggplot to a base64 PNG data URI. Requires ggplot2 attached.
 plot_to_data_uri <- function(plot, width = 7, height = 4.5, dpi = 110) {
@@ -376,15 +546,38 @@ plot_to_data_uri <- function(plot, width = 7, height = 4.5, dpi = 110) {
   base64enc::dataURI(file = tmp, mime = "image/png")
 }
 
-#' Render a report spec to a self-contained .html file. Rasterizes the charts
-#' (and regression diagnostics, if a model is present) and writes the document.
+#' Render a report spec to a file. HTML = a self-contained .html (charts as
+#' base64 data URIs); Word = an editable .docx via officer (charts as embedded
+#' PNGs). Both rasterize the charts and, if a model is present, the regression
+#' diagnostics.
 #'
 #' @param spec A list from report_spec().
 #' @param file Output path.
+#' @param format "html" or "docx".
 #' @param width,height,dpi Per-chart image size.
 #' @return `file`, invisibly.
-render_report <- function(spec, file, width = 7, height = 4.5, dpi = 110) {
+render_report <- function(spec, file, format = c("html", "docx"),
+                          width = 7, height = 4.5, dpi = 110) {
   stopifnot(is.list(spec))
+  format <- match.arg(format)
+
+  if (identical(format, "docx")) {
+    plot_paths <- if (!is.null(spec$plots))
+      vapply(spec$plots, plot_to_png_file, character(1),
+             width = width, height = height, dpi = dpi)
+    else character(0)
+    reg_paths <- character(0)
+    if (!is.null(spec$model)) {
+      diag <- list(reg_fitted_gg(spec$model), reg_resid_gg(spec$model))
+      reg_paths <- vapply(diag, plot_to_png_file, character(1),
+                          width = 5.5, height = 4, dpi = dpi)
+      reg_paths <- reg_paths[!is.na(reg_paths)]
+    }
+    doc <- build_report_docx(spec, plot_paths = plot_paths, reg_paths = reg_paths)
+    print(doc, target = file)
+    return(invisible(file))
+  }
+
   plot_uris <- if (!is.null(spec$plots))
     vapply(spec$plots, plot_to_data_uri, character(1),
            width = width, height = height, dpi = dpi)

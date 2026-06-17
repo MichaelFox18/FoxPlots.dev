@@ -149,3 +149,44 @@ test_that("build_report_html hides code blocks when show_code is FALSE", {
   html <- build_report_html(spec)
   expect_false(grepl("grouped_summary(data", html, fixed = TRUE))
 })
+
+# --- Word (.docx) renderer (officer) ----------------------------------------
+
+test_that("build_report_docx assembles a Word doc with only the used sections", {
+  skip_if_not_installed("officer")
+  spec <- report_spec(
+    mtcars,
+    summary_tbl = grouped_summary(mtcars, "mpg", "cyl"),
+    comparison  = { r <- compare_groups_numeric(mtcars, "mpg", "cyl"); r$mode <- "num"; r },
+    model       = fit_model(mtcars, "mpg", "wt", "linear"),
+    show_code   = TRUE)
+  doc <- build_report_docx(spec)            # no charts -> no image files needed
+  expect_s3_class(doc, "rdocx")
+  txt <- paste(officer::docx_summary(doc)$text, collapse = " | ")
+  expect_true(grepl("Data overview", txt))
+  expect_true(grepl("Summary", txt))
+  expect_true(grepl("Group comparison", txt))
+  expect_true(grepl("Regression", txt))
+  # show_code on -> the reproducible call appears as text
+  expect_true(grepl("lm(mpg ~ wt", txt, fixed = TRUE))
+  # a real Word table was added (not just paragraphs)
+  expect_true(any(officer::docx_summary(doc)$content_type == "table cell"))
+})
+
+test_that("render_report writes a .docx and an .html file", {
+  skip_if_not_installed("officer")
+  spec <- report_spec(mtcars, summary_tbl = grouped_summary(mtcars, "mpg", "cyl"))
+  fd <- withr::local_tempfile(fileext = ".docx")
+  render_report(spec, fd, format = "docx")
+  expect_true(file.exists(fd) && file.info(fd)$size > 1000)
+
+  fh <- withr::local_tempfile(fileext = ".html")
+  render_report(spec, fh, format = "html")
+  expect_true(file.exists(fh) && file.info(fh)$size > 1000)
+})
+
+test_that(".fmt_cell rounds numbers and blanks NA without HTML escaping", {
+  expect_equal(.fmt_cell(1.23456), "1.2346")
+  expect_equal(.fmt_cell(NA), "")
+  expect_equal(.fmt_cell("a < b"), "a < b")   # no escaping in the plain path
+})
