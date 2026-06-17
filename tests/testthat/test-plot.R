@@ -95,6 +95,22 @@ test_that("generate_code emits parseable ggplot2 for a scatter", {
   expect_silent(parse(text = code))          # it's runnable R
 })
 
+test_that("scatter 'size by' makes a bubble chart (size aesthetic + scale)", {
+  df <- data.frame(x = 1:10, y = (1:10) * 2, z = c(1, 5, 2, 8, 3, 7, 4, 9, 6, 10))
+  code <- generate_code(df, list(type = "scatter", x = "x", y = "y", size_by = "z"))
+  expect_true(grepl("size = z", code, fixed = TRUE))            # mapped, not fixed
+  expect_true(grepl("scale_size_continuous", code, fixed = TRUE))
+  expect_false(grepl("geom_point(size =", code, fixed = TRUE))  # size not also fixed
+  expect_error(parse(text = code), NA)
+  # a non-numeric size_by is ignored (still a plain scatter)
+  df2 <- data.frame(x = 1:4, y = 1:4, g = letters[1:4])
+  plain <- generate_code(df2, list(type = "scatter", x = "x", y = "y", size_by = "g"))
+  expect_false(grepl("scale_size_continuous", plain, fixed = TRUE))
+  # size_by only applies to scatter, not e.g. a line
+  ln <- generate_code(df, list(type = "line", x = "x", y = "y", size_by = "z"))
+  expect_false(grepl("scale_size_continuous", ln, fixed = TRUE))
+})
+
 test_that("generate_code prompts for a chart type up front", {
   expect_match(generate_code(data.frame(x = 1), list()), "Choose a chart type")
 })

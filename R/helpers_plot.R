@@ -284,7 +284,14 @@ build_full_plot <- function(df, p) {
   # Hexbin colours by count, not by a grouping variable.
   if (pt == "hexbin") cv <- NULL
 
-  size  <- p$size %||% 2
+  # "Size by" turns a scatter into a bubble chart: point size maps to a numeric
+  # variable. Only honoured for scatter, and only for a real numeric column.
+  sizev <- if (identical(pt, "scatter") && !is.null(p$size_by) &&
+               nzchar(p$size_by) && p$size_by != "__none__" &&
+               p$size_by %in% names(df) && is.numeric(df[[p$size_by]]))
+             p$size_by else NULL
+
+  size  <- p[["size"]] %||% 2   # [[ ]] not $ — $ would partial-match p$size_by
   col   <- p$color_hex %||% UF_BLUE
   bins  <- p$bins %||% 30
   alpha <- p$alpha %||% 0.8
@@ -326,14 +333,18 @@ build_full_plot <- function(df, p) {
   p_obj <- NULL
 
   if (pt == "scatter") {
-    aes_m <- if (!is.null(cv)) aes(x = .data[[xv]], y = .data[[yv]], color = .data[[cv]])
-             else               aes(x = .data[[xv]], y = .data[[yv]])
+    aes_m <- aes(x = .data[[xv]], y = .data[[yv]])
+    if (!is.null(cv))    aes_m$colour <- aes(colour = .data[[cv]])$colour
+    if (!is.null(sizev)) aes_m$size   <- aes(size = .data[[sizev]])$size
     pt_geom <- if (isTRUE(p$jitter)) geom_jitter else geom_point
-    p_obj <- ggplot(df, aes_m)
-    p_obj <- if (is.null(cv))
-               p_obj + pt_geom(size = size, alpha = alpha, color = col)
-             else
-               p_obj + pt_geom(size = size, alpha = alpha)
+    # Fix colour only without a colour var, and fix size only without a size var
+    # (otherwise those come from the mapped aesthetics).
+    geom_args <- list(alpha = alpha)
+    if (is.null(cv))    geom_args$color <- col
+    if (is.null(sizev)) geom_args$size  <- size
+    p_obj <- ggplot(df, aes_m) + do.call(pt_geom, geom_args)
+    if (!is.null(sizev))
+      p_obj <- p_obj + scale_size_continuous(range = c(1.5, 8), name = sizev)
     p_obj <- p_obj + smooth_layer()
 
   } else if (pt == "line") {
@@ -662,6 +673,10 @@ generate_code <- function(df, p) {
   cv <- if (!is.null(p$color) && nzchar(p$color) && p$color != "__none__") p$color else NULL
   facet_v <- if (!is.null(p$facet) && nzchar(p$facet) &&
                  p$facet != "__none__" && p$facet %in% names(df)) p$facet else NULL
+  sizev <- if (identical(pt, "scatter") && !is.null(p$size_by) &&
+               nzchar(p$size_by) && p$size_by != "__none__" &&
+               p$size_by %in% names(df) && is.numeric(df[[p$size_by]]))
+             p$size_by else NULL
 
   if (pt %in% c("scatter", "line", "boxplot", "violin", "meanerror", "hexbin") &&
       is.null(yv))
@@ -691,7 +706,7 @@ generate_code <- function(df, p) {
                   sprintf("# To match it, lump the rest: df[[\"%s\"]] <- forcats::fct_lump_n(df[[\"%s\"]], %d)",
                           xv, xv, barmax))
 
-  size  <- p$size %||% 2
+  size  <- p[["size"]] %||% 2   # [[ ]] not $ — $ would partial-match p$size_by
   col   <- p$color_hex %||% UF_BLUE
   bins  <- p$bins %||% 30
   agg   <- if (pt == "line") p$line_agg %||% "mean" else p$bar_agg %||% "sum"
@@ -769,6 +784,7 @@ generate_code <- function(df, p) {
   else if (!is.null(yv))                        aes_inner <- paste0(aes_inner, sprintf(", y = %s", bq(yv)))
   if (!is.null(cv)) aes_inner <- paste0(
     aes_inner, sprintf(", %s = %s", if (uses_color) "color" else "fill", bq(cv)))
+  if (!is.null(sizev)) aes_inner <- paste0(aes_inner, sprintf(", size = %s", bq(sizev)))
   if (pt %in% c("line", "meanerror") && is.null(cv)) aes_inner <- paste0(aes_inner, ", group = 1")
   if (pt %in% c("line", "meanerror") && !is.null(cv)) aes_inner <- paste0(aes_inner, sprintf(", group = %s", bq(cv)))
 
@@ -786,10 +802,13 @@ generate_code <- function(df, p) {
 
   pt_fn <- if (isTRUE(p$jitter)) "geom_jitter" else "geom_point"
   geom_lines <- switch(pt,
-    scatter = if (is.null(cv))
-                sprintf('%s(size = %s, alpha = %s, color = %s)', pt_fn, size, alpha, qq(col))
-              else
-                sprintf('%s(size = %s, alpha = %s)', pt_fn, size, alpha),
+    scatter = {
+      parts <- character(0)
+      if (is.null(sizev)) parts <- c(parts, sprintf("size = %s", size))
+      parts <- c(parts, sprintf("alpha = %s", alpha))
+      if (is.null(cv)) parts <- c(parts, sprintf("color = %s", qq(col)))
+      sprintf("%s(%s)", pt_fn, paste(parts, collapse = ", "))
+    },
     line    = if (is.null(cv))
                 sprintf('geom_line(linewidth = %s, color = %s) +\n  geom_point(size = %s, color = %s)',
                         size * 0.4, qq(col), size * 0.7, qq(col))
@@ -868,6 +887,8 @@ generate_code <- function(df, p) {
   }
   if (!is.null(smooth_line)) lines <- c(lines, smooth_line)
   if (!is.null(scale_line))  lines <- c(lines, scale_line)
+  if (!is.null(sizev))
+    lines <- c(lines, sprintf('scale_size_continuous(range = c(1.5, 8), name = %s)', qq(sizev)))
 
   if (isTRUE(p$reg_overlay) && isTRUE(p$trend_label) &&
       pt %in% c("scatter", "line") && !is.null(yv)) {

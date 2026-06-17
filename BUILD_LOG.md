@@ -4,6 +4,18 @@ Running notes on the AI-assisted "document then rebuild" workflow: what worked, 
 
 ---
 
+## 2026-06-17 — Bubble chart (size-on-scatter) + repo migration & HOW_TO rewrite
+
+Two small things. (1) Migrated a clean snapshot to the coworker repo and rewrote HOW_TO. (2) Added the bubble chart Michael asked about.
+
+**Repo / docs.** Created the coworker-visible repo `UFSDACU/FoxPlots` (remote `ufsdacu`) and pushed a **single trailer-free "Initial commit"** via an orphan branch (dev history + `origin` untouched). HARD RULE going forward: the UFSDACU repo gets **no `Co-Authored-By` trailers** (CLAUDE.md/BUILD_LOG content are fine — only the trailer). Future handoffs repeat the orphan clean-export (force push). Milestone-based: routine work → `origin`; publish to UFSDACU on demand. Also rewrote `HOW_TO_USE.md` (it had a garbled fragment + a personal Desktop path + called the root "projects") into three simple steps with generic paths; generalized the README's `setwd` example.
+
+**Bubble chart.** Discussed radar / bubble-map / bubble-chart; Michael picked just the bubble chart (radar = no native ggplot + different data shape + pedagogically iffy; geographic bubble *map* = a whole spatial subsystem, deferred). Implemented as a **"Size by (optional)" dropdown on the existing scatter**, not a new type — point size maps to a numeric variable (`scale_size_continuous`), reuses everything, **zero new deps**. Wired `size_by` through `build_full_plot`, `generate_code` (drops the fixed `size` arg + adds the scale when sizing), `slot_params`, and a scatter-only dynamic picker. `test-plot.R` +6.
+
+**Gotcha (real bug caught + fixed):** `$` partial matching — `p$size` silently matched the new `p$size_by` whenever a `size` key was absent (so `size` became the column name "z" → "non-numeric argument to binary operator"). Switched the size-slider reads to exact `p[["size"]]`. In the live app `slot_params` always has both keys so it never bit, but it was a latent footgun. **Suite 330 green** (was 324). Smoke: bubble builds with a size scale and flows through the module; code has `size = …` + `scale_size_continuous`. **Next:** the `foxplots` package conversion.
+
+---
+
 ## 2026-06-17 — Feature round before packaging: 4 chart types, reshape Summary, outlier flagging, About refresh
 
 Michael asked "what else is useful before we package?" and picked: all four proposed chart types, the reshape Summary op, and outlier flagging — plus refresh the About page. Did them as four tested, committed increments (app kept working throughout).

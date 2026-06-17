@@ -109,7 +109,8 @@ Tabs run **left → right**, each feeding the next:
    group, or category **proportions** with confidence intervals.
 4. **Visualize** — 1–4 charts side by side (scatter, line, bar, histogram,
    density, box, violin, mean ± error, pie, hexbin, correlation heatmap), with
-   styling and a **"copy the ggplot2 code"** panel for each.
+   styling and a **"copy the ggplot2 code"** panel for each. A scatter can be
+   **sized by a variable** to make a bubble chart.
 5. **Compare Groups** — t-test / ANOVA (or non-parametric) across groups, or a
    chi-square between two categories, with assumption checks and effect sizes.
 6. **Regression** — fit linear / multiple / polynomial models with a

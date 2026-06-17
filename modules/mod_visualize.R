@@ -31,6 +31,7 @@ plot_slot_panel <- function(ns, i) {
     uiOutput(oid("_x")),
     uiOutput(oid("_y")),
     uiOutput(oid("_color")),
+    uiOutput(oid("_sizeby")),
     uiOutput(oid("_hint")),
 
     conditionalPanel(
@@ -277,6 +278,16 @@ visualizeServer <- function(id, data_in) {
                       "Color / group by (optional)",
                       choices = c("None" = "__none__", cols_all()))
         })
+        output[[paste0("ui_mp", idx, "_sizeby")]] <- renderUI({
+          req(is.data.frame(data_in())); reset()
+          ty <- input[[paste0("mp", idx, "_type")]]; req(ty)
+          if (!identical(ty, "scatter")) return(NULL)
+          selectInput(ns(paste0("mp", idx, "_sizeby")),
+                      tagList("Size by (optional)", info_tip(
+                        "Scale each point by a numeric variable — turns the ",
+                        "scatter into a bubble chart.")),
+                      choices = c("None" = "__none__", cols_num()))
+        })
         output[[paste0("ui_mp", idx, "_corrvars")]] <- renderUI({
           req(is.data.frame(data_in())); reset()
           nums <- cols_num()
@@ -332,6 +343,7 @@ visualizeServer <- function(id, data_in) {
         x           = input[[paste0("mp", i, "_xvar")]],
         y           = input[[paste0("mp", i, "_yvar")]],
         color       = input[[paste0("mp", i, "_colorvar")]],
+        size_by     = input[[paste0("mp", i, "_sizeby")]],
         title       = input[[paste0("mp", i, "_title")]],
         xlab        = input[[paste0("mp", i, "_xlab")]],
         ylab        = input[[paste0("mp", i, "_ylab")]],
