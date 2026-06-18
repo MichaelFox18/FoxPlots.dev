@@ -214,6 +214,10 @@ visualizeServer <- function(id, data_in) {
   moduleServer(id, function(input, output, session) {
     ns    <- session$ns
     reset <- reactiveVal(0L)
+    # Remembered X/Y picks per slot (keys "1x", "1y", …). They persist when the
+    # picker re-renders on a chart-type change, but are cleared on Reset / new
+    # data; a remembered pick is only re-applied if it's still a valid column.
+    sel <- reactiveValues()
 
     cols_all <- reactive({ df <- data_in(); req(is.data.frame(df)); names(df) })
     cols_num <- reactive({
@@ -243,6 +247,20 @@ visualizeServer <- function(id, data_in) {
     for (i in 1:4) {
       local({
         idx <- i
+        # A remembered pick, re-applied only if still a valid choice.
+        keep <- function(axis, valid) {
+          v <- isolate(sel[[paste0(idx, axis)]])
+          if (!is.null(v) && v %in% valid) v else ""
+        }
+        # Record the user's picks so they survive a chart-type change.
+        observeEvent(input[[paste0("mp", idx, "_xvar")]], {
+          v <- input[[paste0("mp", idx, "_xvar")]]
+          if (!is.null(v) && nzchar(v)) sel[[paste0(idx, "x")]] <- v
+        }, ignoreInit = TRUE)
+        observeEvent(input[[paste0("mp", idx, "_yvar")]], {
+          v <- input[[paste0("mp", idx, "_yvar")]]
+          if (!is.null(v) && nzchar(v)) sel[[paste0(idx, "y")]] <- v
+        }, ignoreInit = TRUE)
         output[[paste0("ui_mp", idx, "_x")]] <- renderUI({
           req(is.data.frame(data_in())); reset()
           ty <- input[[paste0("mp", idx, "_type")]] %||% "scatter"
@@ -251,12 +269,12 @@ visualizeServer <- function(id, data_in) {
             return(selectInput(ns(paste0("mp", idx, "_xvar")),
                                "X variable (numeric)",
                                choices = c("Choose a variable…" = "", cols_num()),
-                               selected = ""))
+                               selected = keep("x", cols_num())))
           lbl <- if (identical(ty, "pie")) "Category (one slice per value)"
                  else "X variable"
           selectInput(ns(paste0("mp", idx, "_xvar")), lbl,
                       choices = c("Choose a variable…" = "", cols_all()),
-                      selected = "")
+                      selected = keep("x", cols_all()))
         })
         output[[paste0("ui_mp", idx, "_y")]] <- renderUI({
           req(is.data.frame(data_in())); reset()
@@ -273,7 +291,7 @@ visualizeServer <- function(id, data_in) {
               choices = c("Count of each category" = "__count__", cols_num())))
           selectInput(ns(paste0("mp", idx, "_yvar")), "Y variable",
                       choices = c("Choose a variable…" = "", cols_num()),
-                      selected = "")
+                      selected = keep("y", cols_num()))
         })
         output[[paste0("ui_mp", idx, "_color")]] <- renderUI({
           req(is.data.frame(data_in())); reset()
@@ -400,10 +418,15 @@ visualizeServer <- function(id, data_in) {
     })
 
     observeEvent(input$reset_plots, {
+      for (k in names(sel)) sel[[k]] <- NULL   # forget remembered picks (cleared first)
       reset(reset() + 1L)
       updateRadioButtons(session, "n_plots", selected = 1)
       showNotification("Reset all plot settings to default.", type = "message")
     })
+
+    # New data: forget remembered picks (a leftover pick is also guarded by the
+    # validity check in keep(), but clear so it doesn't linger).
+    observeEvent(data_in(), { for (k in names(sel)) sel[[k]] <- NULL })
 
     output$plots_area <- renderUI({
       req(is.data.frame(data_in()))

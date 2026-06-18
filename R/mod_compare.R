@@ -79,20 +79,17 @@ compareServer <- function(id, data_in) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Populate the variable pickers whenever the working data changes.
+    # Populate the variable choices whenever the working data changes, but leave
+    # them UNSELECTED ("Choose a variable…") so the test only runs once the user
+    # picks — no auto-run on a default selection (slow on large data).
     observeEvent(data_in(), {
       df <- data_in(); req(is.data.frame(df))
-      nums <- numeric_cols(df)
-      cats <- groupable_cols(df)
-      updateSelectInput(session, "outcome", choices = nums,
-                        selected = utils::head(nums, 1))
-      updateSelectInput(session, "group", choices = cats,
-                        selected = utils::head(cats, 1))
-      updateSelectInput(session, "cat1", choices = cats,
-                        selected = utils::head(cats, 1))
-      updateSelectInput(session, "cat2", choices = cats,
-                        selected = utils::head(c(setdiff(cats, utils::head(cats, 1)),
-                                                 cats), 1))
+      ph_n <- c("Choose a variable…" = "", numeric_cols(df))
+      ph_c <- c("Choose a variable…" = "", groupable_cols(df))
+      updateSelectInput(session, "outcome", choices = ph_n, selected = "")
+      updateSelectInput(session, "group",   choices = ph_c, selected = "")
+      updateSelectInput(session, "cat1",    choices = ph_c, selected = "")
+      updateSelectInput(session, "cat2",    choices = ph_c, selected = "")
     }, ignoreNULL = TRUE)
 
     # The current test result (a structured list) or NULL. Warnings from the
