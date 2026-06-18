@@ -249,10 +249,14 @@ visualizeServer <- function(id, data_in) {
           if (identical(ty, "heatmap")) return(NULL)
           if (ty %in% c("histogram", "density", "hexbin"))
             return(selectInput(ns(paste0("mp", idx, "_xvar")),
-                               "X variable (numeric)", choices = cols_num()))
+                               "X variable (numeric)",
+                               choices = c("Choose a variable…" = "", cols_num()),
+                               selected = ""))
           lbl <- if (identical(ty, "pie")) "Category (one slice per value)"
                  else "X variable"
-          selectInput(ns(paste0("mp", idx, "_xvar")), lbl, choices = cols_all())
+          selectInput(ns(paste0("mp", idx, "_xvar")), lbl,
+                      choices = c("Choose a variable…" = "", cols_all()),
+                      selected = "")
         })
         output[[paste0("ui_mp", idx, "_y")]] <- renderUI({
           req(is.data.frame(data_in())); reset()
@@ -268,7 +272,8 @@ visualizeServer <- function(id, data_in) {
                 "within each category instead.")),
               choices = c("Count of each category" = "__count__", cols_num())))
           selectInput(ns(paste0("mp", idx, "_yvar")), "Y variable",
-                      choices = cols_num())
+                      choices = c("Choose a variable…" = "", cols_num()),
+                      selected = "")
         })
         output[[paste0("ui_mp", idx, "_color")]] <- renderUI({
           req(is.data.frame(data_in())); reset()
@@ -456,9 +461,12 @@ visualizeServer <- function(id, data_in) {
         output[[paste0("mp_ly", idx)]] <- plotly::renderPlotly({
           req(is.data.frame(data_in()))
           pr <- slot_params(idx)
-          if (!identical(pr$type, "heatmap")) req(pr$x)
+          if (!identical(pr$type, "heatmap"))
+            validate(need(nzchar(pr$x %||% ""),
+                          "Choose your variables to draw this chart."))
           p <- build_full_plot(data_in(), pr)
-          req(p)
+          validate(need(!is.null(p),
+                        "Finish choosing variables to draw this chart."))
           ply <- plotly::ggplotly(p) |>
             plotly::layout(margin = list(t = 55, b = 55))
           # ggplotly drops a couple of things ggplot got right — clean the
@@ -471,8 +479,13 @@ visualizeServer <- function(id, data_in) {
         output[[paste0("mp_st", idx)]] <- renderPlot({
           req(is.data.frame(data_in()))
           pr <- slot_params(idx)
-          if (!identical(pr$type, "heatmap")) req(pr$x)
-          build_full_plot(data_in(), pr)
+          if (!identical(pr$type, "heatmap"))
+            validate(need(nzchar(pr$x %||% ""),
+                          "Choose your variables to draw this chart."))
+          p <- build_full_plot(data_in(), pr)
+          validate(need(!is.null(p),
+                        "Finish choosing variables to draw this chart."))
+          p
         }, bg = "white")
         output[[paste0("code_plot", idx)]] <- renderText({
           req(is.data.frame(data_in()))
