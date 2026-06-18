@@ -1,5 +1,5 @@
 # ============================================================
-# run_combine_tool.R — import two tables, combine them, export
+# run_combine_tool.R -- import two tables, combine them, export
 # ============================================================
 # The two-table counterpart to the Reshape Tool: a full mod_import for each of
 # the Left and Right tables, then mod_combine, then mod_export.
@@ -32,8 +32,8 @@ combine_tool_app <- function() {
   )
   ex_choices <- c("band_members (name, band)"      = "band_members",
                   "band_instruments (name, plays)" = "band_instruments",
-                  "mtcars (rows 1–16)"             = "mtcars_top",
-                  "mtcars (rows 17–32)"            = "mtcars_bottom")
+                  "mtcars (rows 1\u201316)"             = "mtcars_top",
+                  "mtcars (rows 17\u201332)"            = "mtcars_bottom")
 
   ui <- page_navbar(
     title        = uf_title("Combine Tool"),

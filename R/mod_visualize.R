@@ -1,8 +1,8 @@
 # ============================================================
-# mod_visualize.R — multi-plot charting (1–4 plots)
+# mod_visualize.R -- multi-plot charting (1-4 plots)
 # ============================================================
 # Full-parity port of the original Visualize tab, namespaced as a module:
-# 1–4 plots side by side, 7 chart types, per-plot config accordions,
+# 1-4 plots side by side, 7 chart types, per-plot config accordions,
 # "apply Plot 1 style to all", smart chart-suitability hints, auto
 # static-vs-interactive rendering for big data, and a copy-the-ggplot2-code
 # panel per plot. Thin wrapper over R/helpers_plot.R.
@@ -25,7 +25,7 @@ plot_slot_panel <- function(ns, i) {
                 choices = c("Scatter Plot" = "scatter", "Line Graph" = "line",
                             "Bar Chart" = "bar", "Histogram" = "histogram",
                             "Density Plot" = "density", "Box Plot" = "boxplot",
-                            "Violin Plot" = "violin", "Mean ± Error" = "meanerror",
+                            "Violin Plot" = "violin", "Mean \u00b1 Error" = "meanerror",
                             "Pie Chart" = "pie", "Hexbin (2D density)" = "hexbin",
                             "Correlation Heatmap" = "heatmap")),
     uiOutput(oid("_x")),
@@ -74,11 +74,11 @@ plot_slot_panel <- function(ns, i) {
       cond("_type", "== 'meanerror'"),
       selectInput(pid("_errtype"),
                   tagList("Error bars show", info_tip(
-                    "Standard error of the mean (±SE) — how precisely the mean is ",
-                    "estimated; or one standard deviation (±SD) — how spread out ",
+                    "Standard error of the mean (\u00b1SE) \u2014 how precisely the mean is ",
+                    "estimated; or one standard deviation (\u00b1SD) \u2014 how spread out ",
                     "the data are.")),
-                  choices = c("Standard error (±SE)" = "se",
-                              "Standard deviation (±SD)" = "sd"))
+                  choices = c("Standard error (\u00b1SE)" = "se",
+                              "Standard deviation (\u00b1SD)" = "sd"))
     ),
     uiOutput(oid("_catlimit")),
 
@@ -117,9 +117,9 @@ plot_slot_panel <- function(ns, i) {
         checkboxInput(pid("_regci"), "Show 95% CI band", TRUE),
         colourpicker::colourInput(pid("_regcol"), "Line color", value = UF_ORANGE),
         checkboxInput(pid("_trendlab"),
-                      tagList("Show equation & R² on plot", info_tip(
+                      tagList("Show equation & R\u00b2 on plot", info_tip(
                         "Annotates the chart with the fitted equation (or model ",
-                        "type) and its R².")),
+                        "type) and its R\u00b2.")),
                       FALSE)
       )
     ),
@@ -132,9 +132,9 @@ plot_slot_panel <- function(ns, i) {
           cond("_type", "!= 'heatmap'"),
           selectInput(pid("_palette"),
                       tagList("Color palette", info_tip(
-                        "Colors for grouped charts and pie slices. “Automatic” ",
-                        "keeps the built-in choice; “Colorblind-safe” uses the ",
-                        "Okabe–Ito palette.")),
+                        "Colors for grouped charts and pie slices. \u201cAutomatic\u201d ",
+                        "keeps the built-in choice; \u201cColorblind-safe\u201d uses the ",
+                        "Okabe\u2013Ito palette.")),
                       choices = PALETTES)
         ),
         conditionalPanel(
@@ -154,13 +154,13 @@ plot_slot_panel <- function(ns, i) {
           sprintf("%s && %s", cond("_type", "!= 'pie'"), cond("_type", "!= 'heatmap'")),
           selectInput(pid("_logscale"),
                       tagList("Axis scale", info_tip(
-                        "Transform an axis — log10 for skewed/wide-ranging ",
+                        "Transform an axis \u2014 log10 for skewed/wide-ranging ",
                         "values, sqrt for counts. Continuous axes only.")),
                       choices = c("None" = "none",
-                                  "Log10 — X" = "logx", "Log10 — Y" = "logy",
-                                  "Log10 — both" = "logboth",
-                                  "Sqrt — X" = "sqrtx", "Sqrt — Y" = "sqrty",
-                                  "Sqrt — both" = "sqrtboth"))
+                                  "Log10 \u2014 X" = "logx", "Log10 \u2014 Y" = "logy",
+                                  "Log10 \u2014 both" = "logboth",
+                                  "Sqrt \u2014 X" = "sqrtx", "Sqrt \u2014 Y" = "sqrty",
+                                  "Sqrt \u2014 both" = "sqrtboth"))
         ),
         uiOutput(oid("_facet")),
         selectInput(pid("_legendpos"), "Legend position",
@@ -170,7 +170,7 @@ plot_slot_panel <- function(ns, i) {
           sprintf("%s || %s", cond("_type", "== 'bar'"), cond("_type", "== 'boxplot'")),
           checkboxInput(pid("_flip"),
                         tagList("Horizontal orientation", info_tip(
-                          "Flips the chart on its side — handy when category ",
+                          "Flips the chart on its side \u2014 handy when category ",
                           "labels are long or numerous.")),
                         FALSE)
         ),
@@ -214,7 +214,7 @@ visualizeServer <- function(id, data_in) {
   moduleServer(id, function(input, output, session) {
     ns    <- session$ns
     reset <- reactiveVal(0L)
-    # Remembered X/Y picks per slot (keys "1x", "1y", …). They persist when the
+    # Remembered X/Y picks per slot (keys "1x", "1y", ...). They persist when the
     # picker re-renders on a chart-type change, but are cleared on Reset / new
     # data; a remembered pick is only re-applied if it's still a valid column.
     sel <- reactiveValues()
@@ -268,12 +268,12 @@ visualizeServer <- function(id, data_in) {
           if (ty %in% c("histogram", "density", "hexbin"))
             return(selectInput(ns(paste0("mp", idx, "_xvar")),
                                "X variable (numeric)",
-                               choices = c("Choose a variable…" = "", cols_num()),
+                               choices = c("Choose a variable\u2026" = "", cols_num()),
                                selected = keep("x", cols_num())))
           lbl <- if (identical(ty, "pie")) "Category (one slice per value)"
                  else "X variable"
           selectInput(ns(paste0("mp", idx, "_xvar")), lbl,
-                      choices = c("Choose a variable…" = "", cols_all()),
+                      choices = c("Choose a variable\u2026" = "", cols_all()),
                       selected = keep("x", cols_all()))
         })
         output[[paste0("ui_mp", idx, "_y")]] <- renderUI({
@@ -290,7 +290,7 @@ visualizeServer <- function(id, data_in) {
                 "within each category instead.")),
               choices = c("Count of each category" = "__count__", cols_num())))
           selectInput(ns(paste0("mp", idx, "_yvar")), "Y variable",
-                      choices = c("Choose a variable…" = "", cols_num()),
+                      choices = c("Choose a variable\u2026" = "", cols_num()),
                       selected = keep("y", cols_num()))
         })
         output[[paste0("ui_mp", idx, "_color")]] <- renderUI({
@@ -307,7 +307,7 @@ visualizeServer <- function(id, data_in) {
           if (!identical(ty, "scatter")) return(NULL)
           selectInput(ns(paste0("mp", idx, "_sizeby")),
                       tagList("Size by (optional)", info_tip(
-                        "Scale each point by a numeric variable — turns the ",
+                        "Scale each point by a numeric variable \u2014 turns the ",
                         "scatter into a bubble chart.")),
                       choices = c("None" = "__none__", cols_num()))
         })
@@ -318,9 +318,9 @@ visualizeServer <- function(id, data_in) {
                       tagList("Variables", info_tip(
                         "Pick the numeric columns to correlate. The heatmap starts ",
                         "empty and fills in as you add variables, so a wide dataset ",
-                        "stays readable — choose two or more.")),
+                        "stays readable \u2014 choose two or more.")),
                       choices = nums, selected = character(0), multiple = TRUE,
-                      options = list(placeholder = "pick variables to correlate…"))
+                      options = list(placeholder = "pick variables to correlate\u2026"))
         })
         output[[paste0("ui_mp", idx, "_hint")]] <- renderUI({
           req(is.data.frame(data_in()), input[[paste0("mp", idx, "_type")]])
@@ -352,7 +352,7 @@ visualizeServer <- function(id, data_in) {
           deflt <- min(if (ty == "bar") BAR_MAX else PIE_MAX, nx)
           sliderInput(ns(paste0("mp", idx, "_catlimitv")),
             tagList(sprintf("Maximum %s", unit), info_tip(sprintf(
-              "Keeps the largest categories and groups the rest into one “Other”. Defaults to %d; slide up to %d to show more, or down to simplify.",
+              "Keeps the largest categories and groups the rest into one \u201cOther\u201d. Defaults to %d; slide up to %d to show more, or down to simplify.",
               deflt, cap))),
             min = 2, max = cap, value = deflt, step = 1)
         })
@@ -492,7 +492,7 @@ visualizeServer <- function(id, data_in) {
                         "Finish choosing variables to draw this chart."))
           ply <- plotly::ggplotly(p) |>
             plotly::layout(margin = list(t = 55, b = 55))
-          # ggplotly drops a couple of things ggplot got right — clean the
+          # ggplotly drops a couple of things ggplot got right -- clean the
           # grouped-trace legend names and honour the chosen legend position.
           ply <- clean_plotly_trace_names(ply)
           leg <- plotly_legend_layout(pr$legend_pos)

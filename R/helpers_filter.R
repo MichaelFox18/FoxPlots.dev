@@ -1,15 +1,15 @@
 # ============================================================
-# helpers_filter.R — value-based row filtering
+# helpers_filter.R -- value-based row filtering
 # ============================================================
 # Pure helpers for the Import tab's "Filter rows" panel: keep only the rows
 # that satisfy a set of conditions, combined with AND. A condition is a plain
-# list — list(col, op, value) — so the module can build, store, and describe
+# list -- list(col, op, value) -- so the module can build, store, and describe
 # them without any Shiny in the logic.
 #
-#   numeric   op ∈ between / >= / <= / > / < / == / !=   (value: scalar, or
+#   numeric   op in between / >= / <= / > / < / == / !=   (value: scalar, or
 #             c(lo, hi) for "between")
 #   date      op = between                                (value: c(from, to))
-#   category  op ∈ in / not_in (value: character vector) | contains (value: text)
+#   category  op in in / not_in (value: character vector) | contains (value: text)
 #
 # Rows where the test is NA are dropped (matching dplyr::filter). Unknown
 # columns or unusable values make a condition a no-op rather than an error, so
@@ -71,8 +71,8 @@ apply_filters <- function(df, conditions) {
 #' @export
 describe_condition <- function(cond) {
   lab <- switch(cond$op %||% "",
-    "between" = "is between", ">" = ">", ">=" = "≥", "<" = "<", "<=" = "≤",
-    "==" = "=", "!=" = "≠", "in" = "is any of", "not_in" = "is none of",
+    "between" = "is between", ">" = ">", ">=" = "\u2265", "<" = "<", "<=" = "\u2264",
+    "==" = "=", "!=" = "\u2260", "in" = "is any of", "not_in" = "is none of",
     "contains" = "contains", cond$op %||% "?")
   v <- cond$value
   val <- if (identical(cond$op, "between")) paste(v[1], "and", v[2])

@@ -1,5 +1,5 @@
 # ============================================================
-# mod_combine.R — two-table operations (JMP combine half)
+# mod_combine.R -- two-table operations (JMP combine half)
 # ============================================================
 # Concatenate / Join / Update / Compare two tables. Pattern A with TWO
 # inputs: combineServer(id, left, right) takes two data reactives and
@@ -146,11 +146,11 @@ combineServer <- function(id, left, right) {
       if (!is.data.frame(l) || !is.data.frame(r))
         return("Provide two tables to combine.")
       bn   <- function(x) format(x, big.mark = ",")
-      base <- sprintf("Left %s × %s  +  Right %s × %s",
+      base <- sprintf("Left %s \u00d7 %s  +  Right %s \u00d7 %s",
                       bn(nrow(l)), ncol(l), bn(nrow(r)), ncol(r))
       out <- tryCatch(result(), error = function(e) NULL)
       if (is.null(out)) base
-      else sprintf("%s  →  %s × %s", base, bn(nrow(out)), ncol(out))
+      else sprintf("%s  \u2192  %s \u00d7 %s", base, bn(nrow(out)), ncol(out))
     })
 
     # NULL-safe return for any downstream stage (e.g. Export).

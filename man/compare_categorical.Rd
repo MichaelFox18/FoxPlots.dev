@@ -16,7 +16,7 @@ A list (or NULL) with: table, expected, statistic, df, p_value,
   fisher_p, low_expected (proportion of cells expected < 5), cramers_v, n.
 }
 \description{
-Runs Pearson's chi-square on the contingency table and reports Cramér's V.
+Runs Pearson's chi-square on the contingency table and reports Cramer's V.
 When any expected cell count is < 5 the chi-square approximation is shaky, so
 a Monte-Carlo Fisher's-exact p-value is added as a fallback.
 }

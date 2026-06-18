@@ -4,6 +4,18 @@ Running notes on the AI-assisted "document then rebuild" workflow: what worked, 
 
 ---
 
+## 2026-06-17 — Package polish: non-ASCII cleanup + docs to package layout (R CMD check now OK)
+
+Cleared the last two deferred items from the conversion. **R CMD check: Status OK** (0/0/0), 334 tests pass.
+
+**Non-ASCII (the lone WARNING).** 20 distinct non-ASCII chars, 354 occurrences across R/. Wrote a one-off that uses `getParseData()` to split tokens: **string literals -> `\uXXXX`** (R re-interprets, so the app still shows é/±/→/etc.; source is portable) and **comments -> ASCII approximations** (`─`->`-`, `—`->`--`, `±`->`+/-`, …). Escaped 138 strings, fixed 119 comments -> 0 non-ASCII left; all tests still green (a `±` in a string evaluates to the same glyph, so `grepl("±", …)` tests pass). **Gotcha:** the string-token `gsub` leaked a `é` into one roxygen comment because `effect_magnitude`'s `@param` *quotes* `"Cramér's V"` verbatim — Rd then choked on `\u` as a macro. Fixed that doc line to plain ASCII ("Cramer's V"); re-roxygenised. Lesson logged in CLAUDE.md gotchas: keep roxygen doc text plain ASCII.
+
+**Docs.** Rewrote README §4 (architecture diagram: R/ holds helpers + `mod_*` + `run_*`; launchers replace the `apps/` folder) and §5 (developer commands: `pkgload::load_all()`, `testthat::test_local()`, `R CMD build/check` — not `runApp("dev/...")` / `test_dir`). Updated CLAUDE.md: Current state (package, ~43 exports, Status OK), Packaging convention, the full repo-layout tree (DESCRIPTION/NAMESPACE/inst/man, no modules//apps//dev/), Dev workflow (load_all/roxygenise/test_local/R CMD), and expanded the gotchas (build via PowerShell `R.exe CMD`; \u-in-strings; @noRd internals; the roxygen-\u-leak trap).
+
+Reinstalled. **Both deferred polish items now done — the package is publish-ready.** Next: a milestone clean-export to UFSDACU (orphan commit, no trailer, drop BUILD_LOG) so coworkers get the finished, check-clean package.
+
+---
+
 ## 2026-06-17 — R package conversion (`foxplots`)
 
 The big one: turned the loose-files kit into an installable R package, walking Michael through it. End state: `library(foxplots); run_data_explorer()`, plus the helper API exported. **R CMD check: 1 WARNING (non-ASCII), 0 errors, 0 notes**; all 332 tests pass inside the clean install.

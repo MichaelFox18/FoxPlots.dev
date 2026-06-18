@@ -19,11 +19,11 @@ proportions_summary(df, outcome, groups, conf_level = 0.95, digits = 1)
 }
 \value{
 A tidy data frame [groups..., Level, N, Total, Percent, CI_low,
-  CI_high] (percentages 0–100), or NULL if the inputs aren't usable.
+  CI_high] (percentages 0-100), or NULL if the inputs aren't usable.
 }
 \description{
 For each group, count how many rows fall in each level of `outcome`, then
-report the percentage and an exact (Clopper–Pearson) binomial confidence
+report the percentage and an exact (Clopper-Pearson) binomial confidence
 interval via binom::binom.confint(). The categorical analogue of
-grouped_summary() — "percent of counts by group".
+grouped_summary() -- "percent of counts by group".
 }

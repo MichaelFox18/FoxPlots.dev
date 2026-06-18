@@ -1,5 +1,5 @@
 # ============================================================
-# mod_export.R — the Export stage
+# mod_export.R -- the Export stage
 # ============================================================
 # Download the data that flows in (CSV / Excel / RDS). Optionally also export
 # charts (when a `plots` reactive is supplied, e.g. from mod_visualize) and
@@ -55,8 +55,8 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
     output$caption <- renderText({
       d <- data_in()
       if (is.null(d) || !is.data.frame(d))
-        return("Nothing to export yet — import (and optionally transform) first.")
-      sprintf("%s rows × %s columns will be exported.",
+        return("Nothing to export yet \u2014 import (and optionally transform) first.")
+      sprintf("%s rows \u00d7 %s columns will be exported.",
               format(nrow(d), big.mark = ","), ncol(d))
     })
 
@@ -85,7 +85,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
       }
     )
 
-    # ── Optional: export + preview the summary table (from mod_summarize) ──
+    # -- Optional: export + preview the summary table (from mod_summarize) --
     if (!is.null(summary_tbl)) {
       summ_or_null <- function() tryCatch(summary_tbl(), error = function(e) NULL)
       output$summary_ui <- renderUI({
@@ -116,7 +116,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
       )
     }
 
-    # ── Optional: export charts (from mod_visualize) ──────────
+    # -- Optional: export charts (from mod_visualize) ----------
     if (!is.null(plots)) {
       # Preview the exact grid that will be exported.
       output$charts_preview_ui <- renderUI({
@@ -158,7 +158,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
       )
     }
 
-    # ── Optional: export regression results (from mod_regression) ─
+    # -- Optional: export regression results (from mod_regression) -
     if (!is.null(model)) {
       output$model_ui <- renderUI({
         tagList(
@@ -208,8 +208,8 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
         } else "p = N/A"
         sig <- !is.na(op) && op < 0.05
         tags$p(class = "mt-2 mb-1",
-          tags$b(sprintf("R² = %s", info$r2)),
-          sprintf(" — explains %s%% of the variance. ", round(info$r2 * 100, 1)),
+          tags$b(sprintf("R\u00b2 = %s", info$r2)),
+          sprintf(" \u2014 explains %s%% of the variance. ", round(info$r2 * 100, 1)),
           tags$span(
             style = sprintf("color:%s; font-weight:600;",
                             if (sig) "#2e7d32" else "#c62828"),

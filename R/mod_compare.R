@@ -1,12 +1,12 @@
 # ============================================================
-# mod_compare.R — Compare Groups (hypothesis testing)
+# mod_compare.R -- Compare Groups (hypothesis testing)
 # ============================================================
 # Thin wrapper over R/helpers_compare.R. Two modes:
-#   • Numeric outcome by group — t-test / ANOVA (or Wilcoxon / Kruskal–Wallis),
+#   * Numeric outcome by group -- t-test / ANOVA (or Wilcoxon / Kruskal-Wallis),
 #     with assumption checks (normality, equal variance), effect sizes, Tukey
 #     post-hoc, a boxplot, and a plain-English verdict.
-#   • Two categorical variables — chi-square (with a Fisher's-exact fallback),
-#     the contingency table, Cramér's V, and a grouped bar chart.
+#   * Two categorical variables -- chi-square (with a Fisher's-exact fallback),
+#     the contingency table, Cramer's V, and a grouped bar chart.
 # Returns the current result reactive (a list, or NULL).
 #
 # Requires R/helpers_compare.R, R/helpers_stats.R (numeric_cols/groupable_cols),
@@ -33,12 +33,12 @@ compareUI <- function(id) {
         sprintf("input['%s'] == 'num'", ns("mode")),
         selectInput(ns("outcome"),
           tagList("Outcome (numeric)", info_tip(
-            "The numeric measurement to compare — e.g. mpg.")),
+            "The numeric measurement to compare \u2014 e.g. mpg.")),
           choices = NULL),
         selectInput(ns("group"),
           tagList("Groups (category)", info_tip(
-            "The categorical variable whose levels define the groups — e.g. ",
-            "cyl or transmission. Two levels → t-test; three or more → ANOVA.")),
+            "The categorical variable whose levels define the groups \u2014 e.g. ",
+            "cyl or transmission. Two levels \u2192 t-test; three or more \u2192 ANOVA.")),
           choices = NULL),
         radioButtons(ns("method"), "Test family",
           choices = c("Parametric (t-test / ANOVA)"          = "param",
@@ -58,11 +58,11 @@ compareUI <- function(id) {
         sprintf("input['%s'] == 'cat'", ns("mode")),
         selectInput(ns("cat1"),
           tagList("Variable 1 (category)", info_tip(
-            "First categorical variable — its levels become the table rows.")),
+            "First categorical variable \u2014 its levels become the table rows.")),
           choices = NULL),
         selectInput(ns("cat2"),
           tagList("Variable 2 (category)", info_tip(
-            "Second categorical variable — its levels become the table columns.")),
+            "Second categorical variable \u2014 its levels become the table columns.")),
           choices = NULL)
       ),
 
@@ -80,12 +80,12 @@ compareServer <- function(id, data_in) {
     ns <- session$ns
 
     # Populate the variable choices whenever the working data changes, but leave
-    # them UNSELECTED ("Choose a variable…") so the test only runs once the user
-    # picks — no auto-run on a default selection (slow on large data).
+    # them UNSELECTED ("Choose a variable\u2026") so the test only runs once the user
+    # picks -- no auto-run on a default selection (slow on large data).
     observeEvent(data_in(), {
       df <- data_in(); req(is.data.frame(df))
-      ph_n <- c("Choose a variable…" = "", numeric_cols(df))
-      ph_c <- c("Choose a variable…" = "", groupable_cols(df))
+      ph_n <- c("Choose a variable\u2026" = "", numeric_cols(df))
+      ph_c <- c("Choose a variable\u2026" = "", groupable_cols(df))
       updateSelectInput(session, "outcome", choices = ph_n, selected = "")
       updateSelectInput(session, "group",   choices = ph_c, selected = "")
       updateSelectInput(session, "cat1",    choices = ph_c, selected = "")
@@ -123,13 +123,13 @@ compareServer <- function(id, data_in) {
     output$result_card <- renderUI({
       r <- result()
       if (identical(r$mode, "cat")) {
-        stat_line <- sprintf("χ²(%d, N = %d) = %s,  %s",
+        stat_line <- sprintf("\u03c7\u00b2(%d, N = %d) = %s,  %s",
                              r$df, r$n, round(r$statistic, 3), fmt_p(r$p_value))
         rows <- list(
           tags$li(tags$b("Test: "), "Pearson's chi-square test of independence"),
           tags$li(tags$b("Statistic: "), stat_line),
-          tags$li(tags$b("Cramér's V: "), round(r$cramers_v, 3),
-                  sprintf(" (%s association)", effect_magnitude("Cramér's V", r$cramers_v))))
+          tags$li(tags$b("Cram\u00e9r's V: "), round(r$cramers_v, 3),
+                  sprintf(" (%s association)", effect_magnitude("Cram\u00e9r's V", r$cramers_v))))
         if (!is.na(r$fisher_p))
           rows <- c(rows, list(tags$li(tags$b("Fisher's exact (fallback): "),
                                        fmt_p(r$fisher_p))))
@@ -138,7 +138,7 @@ compareServer <- function(id, data_in) {
                   else if (!is.na(r$df)) sprintf("(%g)", r$df) else ""
         stat_line <- sprintf("%s = %s%s,  %s",
                              if (grepl("ANOVA", r$test)) "F" else
-                             if (grepl("Kruskal", r$test)) "χ²" else
+                             if (grepl("Kruskal", r$test)) "\u03c7\u00b2" else
                              if (grepl("Wilcoxon", r$test)) "W" else "t",
                              round(r$statistic, 3), df_txt, fmt_p(r$p_value))
         rows <- list(
@@ -168,18 +168,18 @@ compareServer <- function(id, data_in) {
                     r$var1, r$var2, fmt_p(r$p_value)),
             sprintf(" No significant association between %s and %s (%s).",
                     r$var1, r$var2, fmt_p(r$p_value)))),
-          tags$p("Strength of association (Cramér's V): ",
+          tags$p("Strength of association (Cram\u00e9r's V): ",
                  tags$b(round(r$cramers_v, 3)),
-                 sprintf(" — %s.", effect_magnitude("Cramér's V", r$cramers_v))),
+                 sprintf(" \u2014 %s.", effect_magnitude("Cram\u00e9r's V", r$cramers_v))),
           if (r$low_expected > 0)
             tags$p(class = "text-warning small",
                    icon("triangle-exclamation"),
-                   sprintf(" %d%% of cells have an expected count below 5, so the chi-square result is approximate — rely on the Fisher's exact p-value (%s) instead.",
+                   sprintf(" %d%% of cells have an expected count below 5, so the chi-square result is approximate \u2014 rely on the Fisher's exact p-value (%s) instead.",
                            round(100 * r$low_expected), fmt_p(r$fisher_p))))
       } else {
         eff <- if (!is.na(r$effect_value))
           tags$p("Effect size (", r$effect_name, "): ", tags$b(round(r$effect_value, 3)),
-                 sprintf(" — a %s effect.", effect_magnitude(r$effect_name, r$effect_value)))
+                 sprintf(" \u2014 a %s effect.", effect_magnitude(r$effect_name, r$effect_value)))
         body <- tagList(
           tags$p(verdict(
             sprintf(" There is a statistically significant difference in %s across %s (%s, %s).",
@@ -192,7 +192,7 @@ compareServer <- function(id, data_in) {
                    "See the Tukey post-hoc table for which specific groups differ."))
       }
       tagList(body, tags$p(class = "text-muted small mt-2",
-        "α = 0.05. Statistical significance does not imply practical importance."))
+        "\u03b1 = 0.05. Statistical significance does not imply practical importance."))
     })
 
     # ---- assumptions (numeric mode) ------------------------------------------
@@ -204,7 +204,7 @@ compareServer <- function(id, data_in) {
       non_normal <- sum(!is.na(nt$Normal) & !nt$Normal)
       norm_msg <- if (non_normal > 0)
         tags$span(class = "text-warning",
-          sprintf("%d group(s) deviate from normality (Shapiro–Wilk p < 0.05). For small samples, prefer the non-parametric option.",
+          sprintf("%d group(s) deviate from normality (Shapiro\u2013Wilk p < 0.05). For small samples, prefer the non-parametric option.",
                   non_normal))
       else tags$span(class = "text-success",
                      "No strong departures from normality detected.")
@@ -281,15 +281,15 @@ compareServer <- function(id, data_in) {
         validate(need(!is.null(r), "Nothing to export yet."))
         con <- file(f, "w"); on.exit(close(con))
         wl <- function(...) writeLines(paste0(...), con)
-        wl("UF/IFAS Data Explorer — Compare Groups")
+        wl("UF/IFAS Data Explorer \u2014 Compare Groups")
         wl("Generated: ", as.character(Sys.time())); wl("")
         if (identical(r$mode, "cat")) {
           wl("Mode: association between two categorical variables")
-          wl("Variables: ", r$var1, " × ", r$var2)
+          wl("Variables: ", r$var1, " \u00d7 ", r$var2)
           wl("Chi-square = ", round(r$statistic, 4), ", df = ", r$df,
              ", ", fmt_p(r$p_value))
-          wl("Cramér's V = ", round(r$cramers_v, 4),
-             " (", effect_magnitude("Cramér's V", r$cramers_v), ")")
+          wl("Cram\u00e9r's V = ", round(r$cramers_v, 4),
+             " (", effect_magnitude("Cram\u00e9r's V", r$cramers_v), ")")
           if (!is.na(r$fisher_p)) wl("Fisher's exact (fallback): ", fmt_p(r$fisher_p))
           wl(""); wl("Contingency table:")
           utils::write.table(as.data.frame.matrix(r$table), con, quote = FALSE,

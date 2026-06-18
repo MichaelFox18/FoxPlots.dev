@@ -11,7 +11,7 @@ build_report_docx(spec, plot_paths = character(0), reg_paths = character(0))
 
 \item{plot_paths}{Character vector of PNG file paths aligned to spec$plots.}
 
-\item{reg_paths}{PNG file paths for the regression diagnostics (0–2).}
+\item{reg_paths}{PNG file paths for the regression diagnostics (0-2).}
 }
 \value{
 An `rdocx` object (print() it to a .docx file).

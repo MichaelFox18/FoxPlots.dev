@@ -1,5 +1,5 @@
 # ============================================================
-# run_reshape_tool.R — focused import -> reshape -> export app
+# run_reshape_tool.R -- focused import -> reshape -> export app
 # ============================================================
 # The same mod_reshape that lives inside the full Data Explorer, bracketed by
 # mod_import and mod_export.

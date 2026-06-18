@@ -1,17 +1,17 @@
 # ============================================================
-# components.R — shared UF/IFAS look-and-feel
+# components.R -- shared UF/IFAS look-and-feel
 # ============================================================
 # The ONE source of truth for the kit's branding: UF colours, the bslib
 # theme, the logo, and small shared UI atoms. Every app pulls its theme
 # from here so the Data Explorer and the standalone tools look identical.
 #
-# Function definitions and plain constants only — nothing here runs until
+# Function definitions and plain constants only -- nothing here runs until
 # an app calls it, so it is safe to source in tests. Requires `shiny` and
 # `bslib` to be attached by the caller (apps already do).
 
 # --- Brand palette ----------------------------------------------------------
 # UF brand blue. The original DataExplorerApp used #003087; the modular plan
-# floated #0021A5. We match the existing app here so the look is identical —
+# floated #0021A5. We match the existing app here so the look is identical --
 # flip the whole kit by changing this one line.
 UF_BLUE   <- "#003087"
 UF_ORANGE <- "#FA4616"
@@ -20,7 +20,7 @@ UF_COLORS <- c(UF_BLUE, UF_ORANGE, "#2ca25f", "#8856a7")
 
 #' The canonical UF/IFAS bslib theme.
 #'
-#' flatly base (Lato font) with a UF-blue navbar and orange secondary —
+#' flatly base (Lato font) with a UF-blue navbar and orange secondary --
 #' identical to the existing Data Explorer. Pass to a page_*()'s `theme` arg.
 #' @return a bslib::bs_theme object.
 #' @export
@@ -75,7 +75,7 @@ uf_title <- function(text, logo = uf_logo_uri()) {
   )
 }
 
-#' Custom label if the user typed one, else a default — used wherever an
+#' Custom label if the user typed one, else a default -- used wherever an
 #' optional text input overrides an auto-generated label (axis titles, etc.).
 #' @param custom The user-entered string (may be NULL/blank).
 #' @param default The fallback label.
@@ -86,7 +86,7 @@ label_or <- function(custom, default) {
 
 # Clipboard helper for "copy the R code" buttons. A button calls
 # DEcopy('<output-id>', this); the id is the (namespaced) verbatim output's DOM
-# id. Inject once via tags$script(HTML(copy_js)) — mod_visualize does this.
+# id. Inject once via tags$script(HTML(copy_js)) -- mod_visualize does this.
 copy_js <- "
 function DEcopy(id, btn){
   var el = document.getElementById(id);

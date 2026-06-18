@@ -12,7 +12,7 @@ build_report_html(spec, plot_uris = character(0), reg_uris = character(0))
 
 \item{plot_uris}{Character vector of data URIs aligned to spec$plots.}
 
-\item{reg_uris}{Character vector of data URIs for regression diagnostics (0–2).}
+\item{reg_uris}{Character vector of data URIs for regression diagnostics (0-2).}
 }
 \value{
 A complete HTML document (character scalar).

@@ -2,7 +2,7 @@
 % Please edit documentation in R/helpers_reshape.R
 \name{do_transpose}
 \alias{do_transpose}
-\title{Transpose a table — swap rows and columns}
+\title{Transpose a table -- swap rows and columns}
 \usage{
 do_transpose(data, names_from = NULL, id_col = "name")
 }

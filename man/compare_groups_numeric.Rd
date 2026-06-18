@@ -32,6 +32,6 @@ A list (or NULL on unusable input) with: test, statistic, df/df2,
 Picks the test from the number of groups and the `parametric` flag:
   parametric, 2 groups  -> Welch (or Student) two-sample t-test  (+ Cohen's d)
   parametric, 3+ groups -> one-way ANOVA + Tukey HSD             (+ eta-squared)
-  non-parametric, 2     -> Wilcoxon rank-sum (Mann–Whitney U)
-  non-parametric, 3+    -> Kruskal–Wallis
+  non-parametric, 2     -> Wilcoxon rank-sum (Mann-Whitney U)
+  non-parametric, 3+    -> Kruskal-Wallis
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/helpers_stats.R
 \name{grouped_summary}
 \alias{grouped_summary}
-\title{Grouped summary statistics — "summary stats by ___".}
+\title{Grouped summary statistics -- "summary stats by ___".}
 \usage{
 grouped_summary(df, vars, groups, digits = 3)
 }
@@ -21,7 +21,7 @@ A tidy data frame [groups..., Variable, N, Mean, Median, Mode, Min,
 }
 \description{
 For each combination of the grouping column(s), report N, mean, median,
-mode, min, max, SD, SE (= SD/√N), and IQR of each chosen numeric variable
+mode, min, max, SD, SE (= SD/sqrtN), and IQR of each chosen numeric variable
 (one row per group, per variable when several are chosen). All stats ignore
 missing values.
 }

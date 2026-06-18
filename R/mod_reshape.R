@@ -1,5 +1,5 @@
 # ============================================================
-# mod_reshape.R — single-table reshape stage (JMP Tables menu)
+# mod_reshape.R -- single-table reshape stage (JMP Tables menu)
 # ============================================================
 # A thin Shiny module over the pure verbs in R/helpers_reshape.R.
 # Pattern A wiring: the server takes the incoming data as a reactive
@@ -19,11 +19,11 @@ reshapeUI <- function(id) {
         ns("op"),
         tagList("Operation", info_tip(
           "Reshaping changes the shape of your table without changing the ",
-          "underlying data — e.g. turning many columns into one (Stack) or ",
+          "underlying data \u2014 e.g. turning many columns into one (Stack) or ",
           "one column into many (Split).")),
         choices = c("None  (pass through)"        = "none",
-                    "Stack  (wide → tall)"        = "stack",
-                    "Split  (tall → wide)"        = "split",
+                    "Stack  (wide \u2192 tall)"        = "stack",
+                    "Split  (tall \u2192 wide)"        = "split",
                     "Transpose  (swap rows/cols)" = "transpose",
                     "Sort  (reorder rows)"        = "sort",
                     "Subset  (rows / columns)"    = "subset",
@@ -61,7 +61,7 @@ reshapeUI <- function(id) {
           tagList("If a group repeats, combine values with", info_tip(
             "Two or more rows want the same output cell. Choose how to merge ",
             "them: mean/median/sum combine numbers; first/last keep one value. ",
-            "Leave on “keep separate” to be warned instead.")),
+            "Leave on \u201ckeep separate\u201d to be warned instead.")),
           choices = c("(keep separate / warn)" = "none", "first" = "first",
                       "last" = "last", "mean" = "mean", "sum" = "sum",
                       "median" = "median"),
@@ -77,12 +77,12 @@ reshapeUI <- function(id) {
         selectInput(ns("transpose_names_from"),
                     tagList("Column to use as new headers", info_tip(
                       "This column's values become the new column names. ",
-                      "Pick “(none)” to get generic V1, V2, … headers instead.")),
+                      "Pick \u201c(none)\u201d to get generic V1, V2, \u2026 headers instead.")),
                     choices = NULL),
         textInput(ns("transpose_id_col"), "Name for the labels column",
                   value = "name"),
         helpText("Swaps rows and columns. The chosen column's values become ",
-                 "the new headers; pick “(none)” to get V1, V2, … instead. ",
+                 "the new headers; pick \u201c(none)\u201d to get V1, V2, \u2026 instead. ",
                  "Mixed-type columns become text.")
       ),
 
@@ -96,7 +96,7 @@ reshapeUI <- function(id) {
         ),
         checkboxGroupInput(ns("sort_desc"), "Descending for", choices = NULL),
         helpText("Rows are ordered by the first column, ties broken by the ",
-                 "next, and so on. Check a column to sort it high → low.")
+                 "next, and so on. Check a column to sort it high \u2192 low.")
       ),
 
       # ---- Subset controls ----
@@ -145,7 +145,7 @@ reshapeUI <- function(id) {
         selectizeInput(
           ns("summary_groups"),
           tagList("Group by", info_tip(
-            "Category column(s) that define the groups — one summary row per ",
+            "Category column(s) that define the groups \u2014 one summary row per ",
             "combination.")),
           choices = NULL, multiple = TRUE,
           options = list(placeholder = "pick grouping column(s)")
@@ -157,8 +157,8 @@ reshapeUI <- function(id) {
           choices = NULL, multiple = TRUE,
           options = list(placeholder = "pick numeric column(s)")
         ),
-        helpText("Builds a new table — count, mean, median, mode, min, max, SD, ",
-                 "SE, and IQR of each numeric column within each group — that ",
+        helpText("Builds a new table \u2014 count, mean, median, mode, min, max, SD, ",
+                 "SE, and IQR of each numeric column within each group \u2014 that ",
                  "then flows downstream like any reshaped table.")
       )
     ),
@@ -202,7 +202,7 @@ reshapeServer <- function(id, data_in, store = NULL) {
                            selected = gcol("group_cols", character(0)))
       # "(none)" first so transpose defaults to generated V1.. headers.
       updateSelectInput(session, "transpose_names_from",
-                        choices = c("(none — use V1, V2…)" = "", cols),
+                        choices = c("(none \u2014 use V1, V2\u2026)" = "", cols),
                         selected = gcol("transpose_names_from", ""))
       updateSelectizeInput(session, "sort_cols", choices = cols,
                            selected = gcol("sort_cols", character(0)))
@@ -216,7 +216,7 @@ reshapeServer <- function(id, data_in, store = NULL) {
       updateSelectizeInput(session, "summary_vars", choices = nums,
                            selected = gcol("summary_vars", utils::head(nums, 1)))
 
-      # Non-column settings (no competing observers) — apply the saved values.
+      # Non-column settings (no competing observers) -- apply the saved values.
       if (is.list(pend)) {
         updateRadioButtons(session, "op", selected = pend$op %||% "none")
         if (!is.null(pend$label_to))         updateTextInput(session, "label_to", value = pend$label_to)
@@ -381,7 +381,7 @@ reshapeServer <- function(id, data_in, store = NULL) {
                     options = list(pageLength = 10, scrollX = TRUE))
     })
 
-    # "before → after" shape line shown on the preview card's tab strip.
+    # "before -> after" shape line shown on the preview card's tab strip.
     output$shape_summary <- renderText({
       din <- data_in()
       if (!is.data.frame(din))
@@ -389,12 +389,12 @@ reshapeServer <- function(id, data_in, store = NULL) {
       out <- tryCatch(result(), error = function(e) NULL)
       bn  <- function(x) format(x, big.mark = ",")
       if (is.null(out))
-        sprintf("Loaded %s × %s — finish choosing the operation.",
+        sprintf("Loaded %s \u00d7 %s \u2014 finish choosing the operation.",
                 bn(nrow(din)), ncol(din))
       else if (identical(input$op %||% "none", "none"))
-        sprintf("Pass-through — %s rows × %s columns", bn(nrow(out)), ncol(out))
+        sprintf("Pass-through \u2014 %s rows \u00d7 %s columns", bn(nrow(out)), ncol(out))
       else
-        sprintf("Reshaped: %s × %s  →  %s × %s",
+        sprintf("Reshaped: %s \u00d7 %s  \u2192  %s \u00d7 %s",
                 bn(nrow(din)), ncol(din), bn(nrow(out)), ncol(out))
     })
 

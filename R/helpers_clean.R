@@ -1,10 +1,10 @@
 # ============================================================
-# helpers_clean.R — Data Health & variable type conversion
+# helpers_clean.R -- Data Health & variable type conversion
 # ============================================================
 # Pure functions for diagnosing common spreadsheet problems and applying
 # opt-in, reversible fixes, plus recasting a single column's type. Detection
 # and the fix transform live together in clean_specs() so they can't drift
-# apart. No Shiny — mod_import.R wraps these. Base R only.
+# apart. No Shiny -- mod_import.R wraps these. Base R only.
 
 # Strings treated as "missing" placeholders. "-"/"." are deliberately excluded
 # so legitimate category values aren't clobbered.
@@ -46,7 +46,7 @@ dates_from_text <- function(x) {
   NULL
 }
 
-# Logical "is this cell blank" — short-circuits on type so it never coerces a
+# Logical "is this cell blank" -- short-circuits on type so it never coerces a
 # numeric column to character (which dominates the cost on large data).
 blank_cell <- function(v) {
   if (is.character(v)) is.na(v) | trimws(v) == "" else is.na(v)
@@ -56,7 +56,7 @@ blank_cell <- function(v) {
 is_real_numeric <- function(x)
   is.numeric(x) && !inherits(x, c("Date", "POSIXct", "POSIXt"))
 
-# Which values of a numeric vector fall outside Tukey's k×IQR fences. k = 1.5 is
+# Which values of a numeric vector fall outside Tukey's kxIQR fences. k = 1.5 is
 # the usual "outlier"; k = 3 (default) is the conservative "far out" / extreme.
 # NA-safe; a constant column (IQR 0) has no outliers.
 outlier_iqr <- function(x, k = 3) {
@@ -196,12 +196,12 @@ clean_specs <- function() list(
   outliers = list(
     default = FALSE,   # opt-in: it flags rather than fixes, and adds a column
     detect = function(df) {
-      # Once flagged, consider it handled — the fix adds a column rather than
+      # Once flagged, consider it handled -- the fix adds a column rather than
       # removing rows, so the outliers are (intentionally) still present.
       if ("is_outlier" %in% names(df)) return(NULL)
       n <- sum(outlier_rows(df, k = 3))
       if (n == 0) return(NULL)
-      sprintf("<b>Extreme outliers:</b> flag %d row(s) with a value far outside the typical range (beyond 3×IQR) by adding an <code>is_outlier</code> column — nothing is deleted; filter or drop them yourself if you want.", n)
+      sprintf("<b>Extreme outliers:</b> flag %d row(s) with a value far outside the typical range (beyond 3\u00d7IQR) by adding an <code>is_outlier</code> column \u2014 nothing is deleted; filter or drop them yourself if you want.", n)
     },
     apply = function(df) {
       r  <- outlier_rows(df, k = 3)

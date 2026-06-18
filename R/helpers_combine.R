@@ -1,7 +1,7 @@
 # ============================================================
-# helpers_combine.R — two-table operations (JMP Tables menu)
+# helpers_combine.R -- two-table operations (JMP Tables menu)
 # ============================================================
-# Pure helpers for the operations that need a SECOND table — the half of
+# Pure helpers for the operations that need a SECOND table -- the half of
 # JMP's Tables menu that doesn't fit the single-table `reshape` module.
 # mod_combine.R is a thin wrapper. dplyr-qualified; no Shiny.
 #
@@ -57,7 +57,7 @@ do_join <- function(left, right, by = NULL,
 #' Update values in one table from another, matched by key.
 #'
 #' JMP Tables > Update. "overwrite" replaces matching values (rows_update);
-#' "fill" only fills blanks in `main` (rows_patch) — the JMP "don't replace
+#' "fill" only fills blanks in `main` (rows_patch) -- the JMP "don't replace
 #' existing columns" behaviour. Updates columns not present in `main` are
 #' ignored; rows in `updates` that don't match `main` are ignored.
 #'
@@ -87,7 +87,7 @@ do_update <- function(main, updates, by = NULL,
 #' Compare two tables and summarise their differences.
 #'
 #' JMP Tables > Compare Data Tables. Returns one row per column (union of both
-#' tables) noting which table it appears in and — when the row counts match —
+#' tables) noting which table it appears in and -- when the row counts match --
 #' how many cells differ in each shared column.
 #'
 #' @param left,right Data frames.

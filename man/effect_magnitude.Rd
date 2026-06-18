@@ -7,7 +7,7 @@
 effect_magnitude(name, value)
 }
 \arguments{
-\item{name}{"Cohen's d", "Eta-squared", or "Cramér's V".}
+\item{name}{"Cohen's d", "Eta-squared", or "Cramer's V".}
 
 \item{value}{The effect-size value.}
 }

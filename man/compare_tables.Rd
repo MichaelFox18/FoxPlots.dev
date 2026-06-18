@@ -14,6 +14,6 @@ A data frame [Column, In_left, In_right, Differing].
 }
 \description{
 JMP Tables > Compare Data Tables. Returns one row per column (union of both
-tables) noting which table it appears in and — when the row counts match —
+tables) noting which table it appears in and -- when the row counts match --
 how many cells differ in each shared column.
 }

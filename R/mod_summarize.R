@@ -1,11 +1,11 @@
 # ============================================================
-# mod_summarize.R — summary statistics by group
+# mod_summarize.R -- summary statistics by group
 # ============================================================
 # Two modes over R/helpers_stats.R, both "by group":
-#   • Means       — count/mean/median/mode/min/max/SD/SE/IQR of numeric vars
+#   * Means       -- count/mean/median/mode/min/max/SD/SE/IQR of numeric vars
 #                   (grouped_summary).
-#   • Proportions — percent of each level of a categorical outcome, with exact
-#                   (Clopper–Pearson) binomial CIs (proportions_summary; needs
+#   * Proportions -- percent of each level of a categorical outcome, with exact
+#                   (Clopper-Pearson) binomial CIs (proportions_summary; needs
 #                   the binom package).
 # Takes the working data as a reactive; returns the current summary table.
 #
@@ -25,7 +25,7 @@ summarizeUI <- function(id) {
       selectizeInput(
         ns("groups"),
         tagList("Grouped by", info_tip(
-          "The variable(s) that define the groups — e.g. cyl. With several, ",
+          "The variable(s) that define the groups \u2014 e.g. cyl. With several, ",
           "you get one row per combination.")),
         choices = NULL, multiple = TRUE,
         options = list(placeholder = "pick grouping variable(s)")
@@ -36,7 +36,7 @@ summarizeUI <- function(id) {
         selectizeInput(
           ns("vars"),
           tagList("Summarize (numeric)", info_tip(
-            "The numeric variable(s) to summarize within each group — e.g. mpg.")),
+            "The numeric variable(s) to summarize within each group \u2014 e.g. mpg.")),
           choices = NULL, multiple = TRUE,
           options = list(placeholder = "pick numeric variable(s)")),
         helpText("Count, mean, median, mode, min, max, SD, SE, and IQR within ",
@@ -48,13 +48,13 @@ summarizeUI <- function(id) {
           ns("outcome"),
           tagList("Outcome (category)", info_tip(
             "The categorical variable whose level percentages you want within ",
-            "each group — e.g. transmission type.")),
+            "each group \u2014 e.g. transmission type.")),
           choices = NULL),
         selectInput(ns("conf"), "Confidence level",
                     choices = c("90%" = "0.90", "95%" = "0.95", "99%" = "0.99"),
                     selected = "0.95"),
         helpText("Percent of each level within each group, with exact ",
-                 "(Clopper–Pearson) binomial confidence intervals.")
+                 "(Clopper\u2013Pearson) binomial confidence intervals.")
       ),
 
       hr(),
@@ -115,7 +115,7 @@ summarizeServer <- function(id, data_in) {
 
     output$caption <- renderText({
       if (!length(input$groups)) return("")
-      g <- paste(input$groups, collapse = " × ")
+      g <- paste(input$groups, collapse = " \u00d7 ")
       if (identical(input$mode, "props")) {
         if (!nzchar(input$outcome %||% "")) return("")
         sprintf("Percent of each level of %s within each %s, with exact %s%% binomial CIs.",

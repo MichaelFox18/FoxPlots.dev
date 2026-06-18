@@ -1,5 +1,5 @@
 # ============================================================
-# helpers_plot.R — chart building, suitability hints & code gen
+# helpers_plot.R -- chart building, suitability hints & code gen
 # ============================================================
 # Pure plotting logic lifted from the original Data Explorer: one
 # build_full_plot() used by every plot slot, the chart-suitability
@@ -12,14 +12,14 @@
 # UF_BLUE / UF_ORANGE come from components.R.
 
 # Above this many rows the Visualize tab renders static (fast) plots instead of
-# interactive plotly ones — ggplotly() gets slow well before a few thousand
+# interactive plotly ones -- ggplotly() gets slow well before a few thousand
 # marks and can make the single-threaded app appear frozen.
 BIG_ROWS   <- 1000
 PIE_MAX    <- 12   # pie slices beyond this are grouped into "Other"
 BREWER_MAX <- 8    # ColorBrewer Set1/Set2 run out past ~8 levels -> viridis
 BAR_MAX    <- 30   # bars beyond this are grouped into "Other"
 
-# Maps the 0.5–5 size slider onto a sensible 0.2–0.9 bar width.
+# Maps the 0.5-5 size slider onto a sensible 0.2-0.9 bar width.
 bar_width <- function(size) 0.2 + (size - 0.5) / 4.5 * 0.7
 
 # Picks an aggregation function for value bar charts.
@@ -193,7 +193,7 @@ palette_code <- function(palette, aes_fn, is_cont, n) {
     s("brewer", 'palette = "Set1"'))
 }
 
-# Builds the "y = a + b·x, R² = ..." annotation for a fitted scatter/line.
+# Builds the "y = a + b-x, R2 = ..." annotation for a fitted scatter/line.
 trend_label_text <- function(df, xv, yv, meth, deg) {
   d <- data.frame(x = df[[xv]], y = df[[yv]])
   d <- d[stats::complete.cases(d), , drop = FALSE]
@@ -202,7 +202,7 @@ trend_label_text <- function(df, xv, yv, meth, deg) {
     fit <- tryCatch(stats::loess(y ~ x, data = d), error = function(e) NULL)
     if (is.null(fit)) return(NULL)
     r2 <- 1 - sum(stats::residuals(fit)^2) / sum((d$y - mean(d$y))^2)
-    return(sprintf("loess fit,  R² = %.3f", r2))
+    return(sprintf("loess fit,  R\u00b2 = %.3f", r2))
   }
   fit <- if (meth == "poly")
            tryCatch(stats::lm(y ~ poly(x, deg, raw = TRUE), data = d), error = function(e) NULL)
@@ -210,13 +210,13 @@ trend_label_text <- function(df, xv, yv, meth, deg) {
            tryCatch(stats::lm(y ~ x, data = d), error = function(e) NULL)
   if (is.null(fit)) return(NULL)
   r2 <- summary(fit)$r.squared
-  if (meth == "poly") return(sprintf("polynomial (degree %d),  R² = %.3f", deg, r2))
+  if (meth == "poly") return(sprintf("polynomial (degree %d),  R\u00b2 = %.3f", deg, r2))
   co <- stats::coef(fit)
-  sprintf("y = %.3g %+.3g·x,  R² = %.3f", co[1], co[2], r2)
+  sprintf("y = %.3g %+.3g\u00b7x,  R\u00b2 = %.3f", co[1], co[2], r2)
 }
 
 # Correlation heatmap over the user-chosen numeric columns. The selection is
-# authoritative — with fewer than two columns chosen we render nothing (rather
+# authoritative -- with fewer than two columns chosen we render nothing (rather
 # than defaulting to every numeric column), so a wide dataset starts blank and
 # fills in as the user picks, instead of dumping an unreadable wall of tiles.
 build_corr_heatmap <- function(df, p) {
@@ -291,7 +291,7 @@ build_full_plot <- function(df, p) {
                p$size_by %in% names(df) && is.numeric(df[[p$size_by]]))
              p$size_by else NULL
 
-  size  <- p[["size"]] %||% 2   # [[ ]] not $ — $ would partial-match p$size_by
+  size  <- p[["size"]] %||% 2   # [[ ]] not $ -- $ would partial-match p$size_by
   col   <- p$color_hex %||% UF_BLUE
   bins  <- p$bins %||% 30
   alpha <- p$alpha %||% 0.8
@@ -380,7 +380,7 @@ build_full_plot <- function(df, p) {
     barmax <- p$cat_limit %||% BAR_MAX
     if (is_discrete_col(df[[xv]]) && dplyr::n_distinct(df[[xv]]) > barmax) {
       df <- lump_bar_x(df, xv, if (has_y) df[[yv]] else NULL, barmax)
-      subtitle <- sprintf("Showing the %d largest categories; the rest are grouped as “Other”.", barmax)
+      subtitle <- sprintf("Showing the %d largest categories; the rest are grouped as \u201cOther\u201d.", barmax)
     }
     if (has_y) {
       grp <- c(xv, cv)
@@ -439,7 +439,7 @@ build_full_plot <- function(df, p) {
   } else if (pt == "boxplot") {
     # A boxplot's X is categorical: one box per distinct X. A numeric X left as
     # continuous draws a single mis-sized box (the "cut-off" look), so coerce it
-    # to a factor — each value gets its own box.
+    # to a factor -- each value gets its own box.
     if (is.numeric(df[[xv]])) df[[xv]] <- as.factor(df[[xv]])
     aes_m <- if (!is.null(cv)) aes(x = .data[[xv]], y = .data[[yv]], fill = .data[[cv]])
              else               aes(x = .data[[xv]], y = .data[[yv]])
@@ -481,7 +481,7 @@ build_full_plot <- function(df, p) {
 
   } else if (pt == "meanerror") {
     # Group means with error bars (SE or SD), points, and a connecting line.
-    # stat_summary computes the summaries straight from the raw Y — no manual
+    # stat_summary computes the summaries straight from the raw Y -- no manual
     # aggregation needed.
     if (is.numeric(df[[xv]])) df[[xv]] <- as.factor(df[[xv]])
     # SE via ggplot2's mean_se; SD computed in base R (mean_sdl would pull in Hmisc).
@@ -506,7 +506,7 @@ build_full_plot <- function(df, p) {
         stat_summary(fun = mean, geom = "point", size = size * 1.6, position = dpos)
     }
     ylab <- label_or(p$ylab %||% "", paste0("Mean of ", yv,
-                     sprintf(" (±%s)", toupper(p$err_type %||% "se"))))
+                     sprintf(" (\u00b1%s)", toupper(p$err_type %||% "se"))))
 
   } else if (pt == "hexbin") {
     # 2D density for a dense scatter: bin (x, y) into hexagons coloured by count.
@@ -540,7 +540,7 @@ build_full_plot <- function(df, p) {
     n_slices   <- nrow(pie_df)
     fill_scale <- pie_fill_scale(p$palette %||% "auto", n_slices, xv)
     subtitle <- if (lumped)
-      paste0("Showing the ", pielim - 1, " largest categories; the rest are grouped as “Other”.")
+      paste0("Showing the ", pielim - 1, " largest categories; the rest are grouped as \u201cOther\u201d.")
     else NULL
 
     return(
@@ -693,7 +693,7 @@ generate_code <- function(df, p) {
   }
   if (pt == "hexbin") cv <- NULL
 
-  # These types use a categorical X — coerce a numeric X so each value is a group.
+  # These types use a categorical X -- coerce a numeric X so each value is a group.
   if (pt %in% c("boxplot", "violin", "meanerror") && is.numeric(df[[xv]]))
     pre <- c(pre, sprintf('df[["%s"]] <- as.factor(df[["%s"]])', xv, xv))
   if (pt == "hexbin")
@@ -706,7 +706,7 @@ generate_code <- function(df, p) {
                   sprintf("# To match it, lump the rest: df[[\"%s\"]] <- forcats::fct_lump_n(df[[\"%s\"]], %d)",
                           xv, xv, barmax))
 
-  size  <- p[["size"]] %||% 2   # [[ ]] not $ — $ would partial-match p$size_by
+  size  <- p[["size"]] %||% 2   # [[ ]] not $ -- $ would partial-match p$size_by
   col   <- p$color_hex %||% UF_BLUE
   bins  <- p$bins %||% 30
   agg   <- if (pt == "line") p$line_agg %||% "mean" else p$bar_agg %||% "sum"
@@ -866,7 +866,7 @@ generate_code <- function(df, p) {
   if (pt == "density")   ylab <- "Density"
   if (pt == "meanerror")
     ylab <- label_or(p$ylab %||% "",
-                     paste0("Mean of ", yv, sprintf(" (±%s)", toupper(p$err_type %||% "se"))))
+                     paste0("Mean of ", yv, sprintf(" (\u00b1%s)", toupper(p$err_type %||% "se"))))
 
   labs_parts <- c(labs_parts, sprintf("x = %s", qq(xlab)))
   if (!is.null(ylab)) labs_parts <- c(labs_parts, sprintf("y = %s", qq(ylab)))
@@ -946,7 +946,7 @@ assemble_code <- function(pre, code, needs_dplyr) {
   paste(c(head_lines, pre, code), collapse = "\n")
 }
 
-# --- Multi-plot drawing / export (base grid — no extra packages) ------------
+# --- Multi-plot drawing / export (base grid -- no extra packages) ------------
 
 # Arrange a list of ggplots into a 1- or 2-column grid on the current device.
 draw_plot_grid <- function(plots) {
@@ -1002,7 +1002,7 @@ plotly_legend_layout <- function(pos) {
     NULL)
 }
 
-# ggplotly() names a dodged/grouped trace "(level,1)" — the trailing ",1" is the
+# ggplotly() names a dodged/grouped trace "(level,1)" -- the trailing ",1" is the
 # panel index, which then leaks into the legend (e.g. a fill of cyl shows
 # "(4,1)", "(6,1)", "(8,1)" instead of "4", "6", "8"). Strip it back to just the
 # level, leaving already-clean trace names untouched.

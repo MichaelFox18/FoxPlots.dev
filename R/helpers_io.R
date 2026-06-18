@@ -1,8 +1,8 @@
 # ============================================================
-# helpers_io.R — reading tabular files robustly
+# helpers_io.R -- reading tabular files robustly
 # ============================================================
 # Pure file-reading helpers, lifted from the original Data Explorer.
-# No Shiny, no reactivity — mod_import.R is a thin wrapper over these.
+# No Shiny, no reactivity -- mod_import.R is a thin wrapper over these.
 # Namespace-qualified (readxl::, utils::) so callers needn't attach the
 # packages.
 
@@ -13,7 +13,7 @@
 #' matches the table's column count (the most common field count among
 #' delimited lines). Given the per-line field counts, return the [start, end]
 #' physical-line span of that table. Only leading/trailing non-matching lines
-#' are trimmed — everything between the first and last data-shaped line is kept,
+#' are trimmed -- everything between the first and last data-shaped line is kept,
 #' so an interior blank or stray line can never drop valid rows.
 #'
 #' @param fields Integer vector of per-line field counts (from count.fields).

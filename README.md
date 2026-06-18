@@ -115,44 +115,55 @@ Right, then **Join by `name`**.
 
 ## 4. How the apps work together
 
-There is **one** implementation of each feature, shared by every app:
+There is **one** implementation of each feature, shared by every app — all in the
+package's `R/`:
 
 ```
-R/   (pure helpers, unit-tested)
-       helpers_io / helpers_clean / helpers_filter / helpers_stats /
-       helpers_plot / helpers_model / helpers_reshape / helpers_combine /
-       helpers_compare / components
-            ↓ (each module is a thin wrapper that calls these)
-modules/   (Shiny modules: mod_import, mod_reshape, mod_summarize,
-            mod_visualize, mod_compare, mod_regression, mod_export, mod_combine)
-            ↓ (apps assemble modules and wire them together)
-apps/   data_explorer · reshape_tool · combine_tool
+R/   the whole package
+       helpers_*  pure, unit-tested data logic (io, clean, filter, stats, plot,
+                  model, reshape, combine, compare, report, state)
+       mod_*      Shiny modules — thin wrappers over the helpers
+       run_*      the app builders + launchers
+            |  (a launcher assembles the modules into an app)
+            v
+   run_data_explorer()  .  run_reshape_tool()  .  run_combine_tool()
 ```
 
-- The **`mod_reshape`** in `reshape_tool` is the *exact same module* as the
-  Reshape tab in `data_explorer`. **`mod_import`** / **`mod_export`** are shared
+- The **`mod_reshape`** in the Reshape Tool is the *exact same module* as the
+  Reshape tab in the Data Explorer. **`mod_import`** / **`mod_export`** are shared
   by all three apps. Fix or improve a module once, and every app gets it.
 - Stages connect by **returns-and-arguments**: each module returns its result as
-  a reactive, and the app passes that into the next module. (e.g. Import returns
-  the data → Reshape takes it and returns the working data → Visualize/Export
-  take that.)
+  a reactive, and the launcher passes that into the next module. (e.g. Import
+  returns the data → Reshape takes it and returns the working data →
+  Visualize/Export take that.)
+- The exported **helper functions** (`do_stack()`, `grouped_summary()`,
+  `fit_model()`, …) are usable on their own in a script — see
+  `help(package = "foxplots")`.
 - Everything wears the same **UF theme** from `R/components.R`.
 
 ---
 
 ## 5. For developers
 
-```r
-# Run one module in isolation (with built-in sample data):
-shiny::runApp("dev/run_reshape.R")
-shiny::runApp("dev/run_combine.R")
+It's a standard R package. From the source folder:
 
-# Run the test suite (~190 checks over the pure helpers):
-testthat::test_dir(here::here("tests/testthat"))
+```r
+# Load the package for interactive development (no install needed):
+pkgload::load_all(".")
+run_data_explorer()
+
+# Run the full test suite (~330 checks):
+testthat::test_local(".")
+```
+
+```sh
+# Full build + checks from the command line:
+R CMD build .
+R CMD check foxplots_*.tar.gz
 ```
 
 To add a feature, follow the path every existing one took: **pure helper + its
-test → a thin `mod_*` module that calls it → a `dev/run_*.R` harness → wire it
-into an app.** See `CLAUDE.md` for conventions and environment gotchas (notably:
+test → a thin `mod_*` module that calls it → wire it into a launcher
+(`run_*.R`).** See `CLAUDE.md` for conventions and environment gotchas (notably:
 on this machine, run anything that loads Shiny via PowerShell `Rscript.exe`, not
 git-bash).

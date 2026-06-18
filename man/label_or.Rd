@@ -2,7 +2,7 @@
 % Please edit documentation in R/components.R
 \name{label_or}
 \alias{label_or}
-\title{Custom label if the user typed one, else a default — used wherever an
+\title{Custom label if the user typed one, else a default -- used wherever an
 optional text input overrides an auto-generated label (axis titles, etc.).}
 \usage{
 label_or(custom, default)
@@ -13,6 +13,6 @@ label_or(custom, default)
 \item{default}{The fallback label.}
 }
 \description{
-Custom label if the user typed one, else a default — used wherever an
+Custom label if the user typed one, else a default -- used wherever an
 optional text input overrides an auto-generated label (axis titles, etc.).
 }

@@ -1,5 +1,5 @@
 # ============================================================
-# mod_regression.R — linear / multiple / polynomial regression
+# mod_regression.R -- linear / multiple / polynomial regression
 # ============================================================
 # Thin wrapper over R/helpers_model.R. Pick a numeric response and one or
 # more numeric predictors, fit the model, and read the summary, a
@@ -17,7 +17,7 @@ regressionUI <- function(id) {
       selectInput(ns("type"),
         tagList("Model type", info_tip(HTML(
           "<b>Simple Linear:</b> one predictor, straight line (Y ~ X).<br>
-           <b>Multiple Linear:</b> two or more predictors (Y ~ X1 + X2 + …).<br>
+           <b>Multiple Linear:</b> two or more predictors (Y ~ X1 + X2 + \u2026).<br>
            <b>Polynomial:</b> curved fit using powers of one predictor."))),
         choices = c("Simple Linear" = "linear", "Multiple Linear" = "multiple",
                     "Polynomial" = "polynomial")),
@@ -127,18 +127,18 @@ regressionServer <- function(id, data_in) {
           sprintf(" The overall model is NOT statistically significant (%s).", p_label)))
       tagList(
         overall_tag,
-        tags$p(tags$b(sprintf("R² = %s", info$r2)), " — explains ",
+        tags$p(tags$b(sprintf("R\u00b2 = %s", info$r2)), " \u2014 explains ",
                tags$b(paste0(round(info$r2 * 100, 1), "%")), " of the variance. ",
                tags$span(style = "color:#555;",
-                         sprintf("(Adj. R² = %s)", info$adj_r2))),
+                         sprintf("(Adj. R\u00b2 = %s)", info$adj_r2))),
         if (length(info$significant))
           tags$p(tags$b(style = "color:#2e7d32;", "Significant (p < 0.05): "),
                  paste(info$significant, collapse = ", ")),
         if (length(info$nonsignificant))
-          tags$p(tags$b(style = "color:#c62828;", "Not significant (p ≥ 0.05): "),
+          tags$p(tags$b(style = "color:#c62828;", "Not significant (p \u2265 0.05): "),
                  paste(info$nonsignificant, collapse = ", ")),
         tags$p(class = "text-muted small mt-2",
-               "α = 0.05. Statistical significance does not imply practical importance.")
+               "\u03b1 = 0.05. Statistical significance does not imply practical importance.")
       )
     })
 

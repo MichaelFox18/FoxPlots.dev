@@ -10,6 +10,6 @@ uf_theme()
 a bslib::bs_theme object.
 }
 \description{
-flatly base (Lato font) with a UF-blue navbar and orange secondary —
+flatly base (Lato font) with a UF-blue navbar and orange secondary --
 identical to the existing Data Explorer. Pass to a page_*()'s `theme` arg.
 }

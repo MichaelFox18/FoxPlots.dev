@@ -20,7 +20,7 @@ A tibble the shape of `main`.
 }
 \description{
 JMP Tables > Update. "overwrite" replaces matching values (rows_update);
-"fill" only fills blanks in `main` (rows_patch) — the JMP "don't replace
+"fill" only fills blanks in `main` (rows_patch) -- the JMP "don't replace
 existing columns" behaviour. Updates columns not present in `main` are
 ignored; rows in `updates` that don't match `main` are ignored.
 }

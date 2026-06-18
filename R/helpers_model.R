@@ -1,5 +1,5 @@
 # ============================================================
-# helpers_model.R — linear / multiple / polynomial regression
+# helpers_model.R -- linear / multiple / polynomial regression
 # ============================================================
 # Pure model helpers lifted from the original Data Explorer: fit a model,
 # pull a plain-English interpretation out of its summary, and build the two

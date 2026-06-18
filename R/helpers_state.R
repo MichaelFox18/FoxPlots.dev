@@ -1,5 +1,5 @@
 # ============================================================
-# helpers_state.R — save / restore a working session
+# helpers_state.R -- save / restore a working session
 # ============================================================
 # A "session" captures the data-prep stage so a user can pick up later: the
 # working data (after Data Health fixes + type recasts), the originally loaded
@@ -78,7 +78,7 @@ session_state_summary <- function(x) {
   if (!inherits(x, "foxplots_session")) return("")
   nf <- length(x$filters %||% list())
   op <- if (is.list(x$reshape) && !is.null(x$reshape$op)) x$reshape$op else "none"
-  sprintf("%s · %s × %s · %d filter%s · reshape: %s · saved %s",
+  sprintf("%s \u00b7 %s \u00d7 %s \u00b7 %d filter%s \u00b7 reshape: %s \u00b7 saved %s",
           x$source %||% "session",
           format(x$n %||% nrow(x$data), big.mark = ","),
           x$m %||% ncol(x$data),

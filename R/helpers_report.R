@@ -1,18 +1,18 @@
 # ============================================================
-# helpers_report.R — assemble a session into a self-contained HTML report
+# helpers_report.R -- assemble a session into a self-contained HTML report
 # ============================================================
 # Builds a single, portable .html report from whatever the user produced in a
 # session: a data overview, the grouped summary, the charts, a group comparison,
-# and a regression. Deliberately PANDOC-FREE — the HTML is assembled as a plain
+# and a regression. Deliberately PANDOC-FREE -- the HTML is assembled as a plain
 # string with inlined CSS and base64-embedded plot images, so it renders the
 # same from RStudio, VS Code, a bare Rscript, or a deployed app, with no extra
 # system software. mod_report.R is a thin wrapper over these.
 #
 # Split for testability:
-#   • report_spec()        — pure: normalize the session artifacts into a spec.
-#   • summary_code() / compare_code() / regression_code() — pure: reproducible R.
-#   • df_to_html() / html_escape() / build_report_html() — pure: string output.
-#   • plot_to_data_uri() / render_report() — the only impure bits (rasterize a
+#   * report_spec()        -- pure: normalize the session artifacts into a spec.
+#   * summary_code() / compare_code() / regression_code() -- pure: reproducible R.
+#   * df_to_html() / html_escape() / build_report_html() -- pure: string output.
+#   * plot_to_data_uri() / render_report() -- the only impure bits (rasterize a
 #     ggplot to a PNG data URI, write the file). Smoke-tested, not unit-tested.
 #
 # Reuses data_glance()/column_profile() (helpers_stats), model_interpretation()
@@ -32,7 +32,7 @@ html_escape <- function(x) {
 }
 
 #' Format one display cell as plain text: round numbers, blank out NA. No HTML
-#' escaping (so it's reusable for Word) — the HTML path escapes on top.
+#' escaping (so it's reusable for Word) -- the HTML path escapes on top.
 #' @noRd
 .fmt_cell <- function(x) {
   if (length(x) != 1L) x <- x[1]
@@ -47,7 +47,7 @@ html_escape <- function(x) {
 #' @noRd
 .report_cell <- function(x) html_escape(.fmt_cell(x))
 
-#' Plain-text p-value (no HTML entity) — for the Word path.
+#' Plain-text p-value (no HTML entity) -- for the Word path.
 #' @noRd
 .p_txt <- function(p) {
   if (is.null(p) || is.na(p)) return("N/A")
@@ -284,13 +284,13 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
       vcl, if (sig) "Significant" else "No significant", html_escape(r$var1),
       html_escape(r$var2), .report_p(r$p_value))
     stats_tbl <- data.frame(
-      Statistic = c("Chi-square", "df", "Cramér's V", "N"),
+      Statistic = c("Chi-square", "df", "Cram\u00e9r's V", "N"),
       Value = c(round(r$statistic, 3), r$df, round(r$cramers_v, 3), r$n),
       check.names = FALSE)
     body <- paste0(
       "<p>", verdict, "</p>",
-      "<p class=\"note\">Association strength (Cramér's V): ",
-      effect_magnitude("Cramér's V", r$cramers_v), ".</p>",
+      "<p class=\"note\">Association strength (Cram\u00e9r's V): ",
+      effect_magnitude("Cram\u00e9r's V", r$cramers_v), ".</p>",
       df_to_html(stats_tbl, "Test statistics"),
       df_to_html(cbind(` ` = rownames(r$table), as.data.frame.matrix(r$table)),
                  "Contingency table"))
@@ -317,7 +317,7 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
   sig <- !is.na(info$overall_p) && info$overall_p < 0.05
   vcl <- if (sig) "verdict-sig" else "verdict-ns"
   headline <- sprintf(
-    "<p><b>Model:</b> <code>%s</code></p><p><b>R&sup2; = %s</b> (adjusted %s) — explains %s%% of the variance. <span class=\"%s\">%s (%s).</span></p>",
+    "<p><b>Model:</b> <code>%s</code></p><p><b>R&sup2; = %s</b> (adjusted %s) \u2014 explains %s%% of the variance. <span class=\"%s\">%s (%s).</span></p>",
     html_escape(f), info$r2, info$adj_r2, round(info$r2 * 100, 1), vcl,
     if (sig) "Overall model is significant" else "Overall model is not significant",
     .report_p(info$overall_p))
@@ -341,7 +341,7 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
 #'
 #' @param spec A list from report_spec().
 #' @param plot_uris Character vector of data URIs aligned to spec$plots.
-#' @param reg_uris Character vector of data URIs for regression diagnostics (0–2).
+#' @param reg_uris Character vector of data URIs for regression diagnostics (0-2).
 #' @return A complete HTML document (character scalar).
 #' @export
 build_report_html <- function(spec, plot_uris = character(0),
@@ -373,7 +373,7 @@ build_report_html <- function(spec, plot_uris = character(0),
     "</style></head><body><div class=\"report\">",
     "<header class=\"masthead\">", logo_html,
     "<div><h1>", html_escape(spec$title), "</h1>",
-    "<p class=\"meta\">Generated ", when, " · UF/IFAS Data Explorer</p></div></header>",
+    "<p class=\"meta\">Generated ", when, " \u00b7 UF/IFAS Data Explorer</p></div></header>",
     "<div class=\"toc\"><b>Contents</b><ul>", toc, "</ul></div>",
     paste0(parts, collapse = ""),
     "<footer>Generated by the UF/IFAS Data Explorer. ",
@@ -388,7 +388,7 @@ build_report_html <- function(spec, plot_uris = character(0),
 # picks the Word format.
 
 # A data frame with every cell formatted to display text (rounds numbers, blanks
-# NA) — handles factor columns without leaking their integer codes.
+# NA) -- handles factor columns without leaking their integer codes.
 .display_df <- function(df) {
   as.data.frame(
     lapply(df, function(col) {
@@ -424,12 +424,12 @@ build_report_html <- function(spec, plot_uris = character(0),
   doc <- officer::body_add_par(doc, "Group comparison", style = "heading 1")
   if (identical(r$mode, "cat")) {
     doc <- officer::body_add_par(doc, sprintf(
-      "%s association between %s and %s (p = %s). Cramér's V = %s (%s).",
+      "%s association between %s and %s (p = %s). Cram\u00e9r's V = %s (%s).",
       if (sig) "Significant" else "No significant", r$var1, r$var2,
       .p_txt(r$p_value), round(r$cramers_v, 3),
-      effect_magnitude("Cramér's V", r$cramers_v)), style = "Normal")
+      effect_magnitude("Cram\u00e9r's V", r$cramers_v)), style = "Normal")
     stats_tbl <- data.frame(
-      Statistic = c("Chi-square", "df", "Cramér's V", "N"),
+      Statistic = c("Chi-square", "df", "Cram\u00e9r's V", "N"),
       Value = c(round(r$statistic, 3), r$df, round(r$cramers_v, 3), r$n),
       check.names = FALSE)
     doc <- .docx_add_table(doc, stats_tbl, "Test statistics")
@@ -460,7 +460,7 @@ build_report_html <- function(spec, plot_uris = character(0),
   doc <- officer::body_add_par(doc, "Regression", style = "heading 1")
   doc <- officer::body_add_par(doc, sprintf("Model: %s", f), style = "Normal")
   doc <- officer::body_add_par(doc, sprintf(
-    "R-squared = %s (adjusted %s) — explains %s%% of the variance. %s (p = %s).",
+    "R-squared = %s (adjusted %s) \u2014 explains %s%% of the variance. %s (p = %s).",
     info$r2, info$adj_r2, round(info$r2 * 100, 1),
     if (sig) "Overall model is significant" else "Overall model is not significant",
     .p_txt(info$overall_p)), style = "Normal")
@@ -484,7 +484,7 @@ build_report_html <- function(spec, plot_uris = character(0),
 #'
 #' @param spec A list from report_spec().
 #' @param plot_paths Character vector of PNG file paths aligned to spec$plots.
-#' @param reg_paths PNG file paths for the regression diagnostics (0–2).
+#' @param reg_paths PNG file paths for the regression diagnostics (0-2).
 #' @return An `rdocx` object (print() it to a .docx file).
 #' @export
 build_report_docx <- function(spec, plot_paths = character(0),
@@ -495,14 +495,14 @@ build_report_docx <- function(spec, plot_paths = character(0),
   doc <- officer::read_docx()
   doc <- officer::body_add_par(doc, spec$title, style = "heading 1")
   doc <- officer::body_add_par(doc, sprintf(
-    "Generated %s — UF/IFAS Data Explorer",
+    "Generated %s \u2014 UF/IFAS Data Explorer",
     format(spec$generated, "%B %d, %Y at %H:%M")), style = "Normal")
 
   if (isTRUE(sec[["overview"]])) {
     g <- spec$glance
     doc <- officer::body_add_par(doc, "Data overview", style = "heading 1")
     doc <- officer::body_add_par(doc, sprintf(
-      "%s rows x %s columns — %d numeric, %d categorical, %d date; %s complete rows.",
+      "%s rows x %s columns \u2014 %d numeric, %d categorical, %d date; %s complete rows.",
       format(g$n, big.mark = ","), g$m, g$num, g$cat, g$date,
       format(g$complete, big.mark = ",")), style = "Normal")
     doc <- .docx_add_table(doc, spec$profile, "Columns")

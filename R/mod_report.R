@@ -1,19 +1,19 @@
 # ============================================================
-# mod_report.R — one-click session report (self-contained HTML)
+# mod_report.R -- one-click session report (self-contained HTML)
 # ============================================================
 # The capstone stage: assembles whatever the user produced this session into a
-# single, portable .html report — data overview, summary, charts, group
-# comparison, regression — with an optional "show the R code" toggle. Thin
+# single, portable .html report -- data overview, summary, charts, group
+# comparison, regression -- with an optional "show the R code" toggle. Thin
 # wrapper over R/helpers_report.R (which is pandoc-free, so this works anywhere).
 #
 # reportServer(id, data_in, summary_tbl = NULL, plots = NULL, plot_code = NULL,
 #              comparison = NULL, model = NULL)
-#   data_in     : reactive(data frame | NULL)            — required
-#   summary_tbl : reactive(data frame | NULL)            — from mod_summarize
-#   plots       : reactive(list of ggplots | NULL)       — from mod_visualize
-#   plot_code   : reactive(list of code strings | NULL)  — aligned to `plots`
-#   comparison  : reactive(list | NULL)                  — from mod_compare
-#   model       : reactive(lm | NULL)                    — from mod_regression
+#   data_in     : reactive(data frame | NULL)            -- required
+#   summary_tbl : reactive(data frame | NULL)            -- from mod_summarize
+#   plots       : reactive(list of ggplots | NULL)       -- from mod_visualize
+#   plot_code   : reactive(list of code strings | NULL)  -- aligned to `plots`
+#   comparison  : reactive(list | NULL)                  -- from mod_compare
+#   model       : reactive(lm | NULL)                    -- from mod_regression
 # Each optional reactive may be NULL (a mini-app that omits a stage); a section
 # appears in the report only when its reactive yields usable content.
 
@@ -34,19 +34,19 @@ reportUI <- function(id) {
       checkboxInput(ns("show_code"),
         tagList("Include the R code", info_tip(
           "Adds reproducible R (ggplot2, the model, the tests) under each ",
-          "section — turn off for a clean, non-technical results write-up.")),
+          "section \u2014 turn off for a clean, non-technical results write-up.")),
         value = FALSE),
       hr(),
       downloadButton(ns("download"), "Download report",
                      class = "btn-primary w-100"),
       helpText("HTML is one self-contained file that opens in any browser. ",
-               "Word is fully editable — cut sections, add your own write-up.")
+               "Word is fully editable \u2014 cut sections, add your own write-up.")
     ),
     card(
       card_header(icon("file-lines"), " Your report"),
       tags$p(class = "px-1",
         "The report auto-assembles everything you've produced this session. ",
-        "Sections appear only for the stages you actually used — so build a ",
+        "Sections appear only for the stages you actually used \u2014 so build a ",
         "summary, charts, a comparison, or a model on the earlier tabs and ",
         "they'll show up here."),
       tags$h6(class = "mt-2 mb-1", "Included right now:"),
@@ -84,7 +84,7 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
         icon(if (ok) "circle-check" else "circle",
              class = if (ok) "text-success" else "text-muted"),
         tags$span(style = "margin-left:6px;", label),
-        if (!ok) tags$span(class = "text-muted small", " — not added yet"))
+        if (!ok) tags$span(class = "text-muted small", " \u2014 not added yet"))
       tags$ul(class = "list-unstyled",
         item(a$overview,   "Data overview (always included)"),
         item(a$summary,    "Summary table"),
@@ -123,7 +123,7 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
           title       = label_or(input$title, "Data Explorer Report"),
           show_code   = isTRUE(input$show_code),
           logo        = uf_logo_uri())
-        withProgress(message = "Building report…", value = 0.4, {
+        withProgress(message = "Building report\u2026", value = 0.4, {
           render_report(spec, file, format = fmt)
           incProgress(0.6)
         })

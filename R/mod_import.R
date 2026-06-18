@@ -1,8 +1,8 @@
 # ============================================================
-# mod_import.R — the Import stage
+# mod_import.R -- the Import stage
 # ============================================================
 # Upload a file (CSV / Excel / TSV / RDS) or load a built-in example, with the
-# text-file parse options and an Excel worksheet picker — plus a Data Health
+# text-file parse options and an Excel worksheet picker -- plus a Data Health
 # panel (diagnose + opt-in reversible fixes), a Change-Variable-Types tool, an
 # at-a-glance summary, and a per-column profile. Pattern A: importServer()
 # RETURNS the working data as a reactive (NULL until loaded) for the next stage.
@@ -10,7 +10,7 @@
 # so "Revert to original" can restore it.
 #
 # Requires R/helpers_io.R (read_file_data), R/helpers_clean.R (clean_specs,
-# convert_column, …), and R/helpers_stats.R (friendly_type, column_profile,
+# convert_column, ...), and R/helpers_stats.R (friendly_type, column_profile,
 # data_glance).
 
 importUI <- function(id,
@@ -34,14 +34,14 @@ importUI <- function(id,
       selectInput(ns("dec"), "Decimal point",
                   choices = c("Period (.)" = ".", "Comma (,)" = ",")),
       hr(),
-      h6("…or load an example"),
+      h6("\u2026or load an example"),
       selectInput(ns("example"), NULL, choices = example_choices),
       actionButton(ns("load_example"), "Load example",
                    class = "btn-outline-primary w-100", icon = icon("table")),
       hr(),
       actionButton(ns("clear_data"), "Clear data",
                    class = "btn-outline-danger w-100", icon = icon("trash")),
-      # Save / restore session controls — rendered only when the app wires a
+      # Save / restore session controls -- rendered only when the app wires a
       # shared session store into importServer (the mini-apps don't).
       uiOutput(ns("session_ui"))
     ),
@@ -114,8 +114,8 @@ importServer <- function(id, examples = NULL, store = NULL) {
       rv$file_token  # take a dependency: bumping the token resets the input
       fileInput(ns("file"), NULL,
                 accept      = c(".csv", ".tsv", ".txt", ".xlsx", ".xls", ".rds"),
-                buttonLabel = "Browse…",
-                placeholder = "CSV, Excel, TSV, RDS…")
+                buttonLabel = "Browse\u2026",
+                placeholder = "CSV, Excel, TSV, RDS\u2026")
     })
 
     # Read the current upload (rv$upload) for the chosen Excel sheet (or NULL
@@ -132,7 +132,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
         nh <- attr(d, "n_skip_head") %||% 0L
         nt <- attr(d, "n_skip_tail") %||% 0L
         showNotification(
-          if (!is.null(sheet)) sprintf("Loaded %s — sheet “%s”", u$name, sheet)
+          if (!is.null(sheet)) sprintf("Loaded %s \u2014 sheet \u201c%s\u201d", u$name, sheet)
           else paste("Loaded:", u$name),
           type = "message")
         if (nh > 0 || nt > 0)
@@ -156,7 +156,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
       load_upload(sheet = if (length(rv$sheets)) rv$sheets[[1]] else NULL)
     })
 
-    # Worksheet picker — only for a multi-sheet Excel workbook.
+    # Worksheet picker -- only for a multi-sheet Excel workbook.
     output$ui_sheet <- renderUI({
       if (length(rv$sheets) < 2) return(NULL)
       selectInput(ns("sheet"), "Worksheet", choices = rv$sheets,
@@ -186,7 +186,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
       showNotification("Cleared the loaded data.", type = "message")
     })
 
-    # ── Data Health: diagnose + opt-in, reversible fixes ──────
+    # -- Data Health: diagnose + opt-in, reversible fixes ------
     output$data_health_ui <- renderUI({
       if (is.null(rv$data))
         return(helpText("Load a dataset to run a quick health check."))
@@ -199,14 +199,14 @@ importServer <- function(id, examples = NULL, store = NULL) {
       if (!length(iss))
         return(tagList(
           div(class = "alert alert-success py-2 px-3", icon("circle-check"),
-              if (cleaned) " All clear — fixes applied. Your data is ready to explore."
-              else         " No common data issues detected — your data is ready to explore."),
+              if (cleaned) " All clear \u2014 fixes applied. Your data is ready to explore."
+              else         " No common data issues detected \u2014 your data is ready to explore."),
           revert_btn))
       ids  <- unname(vapply(iss, `[[`, character(1), "id"))
       defs <- unname(vapply(iss, `[[`, logical(1), "default"))
       nms  <- unname(lapply(iss, function(z) HTML(z$desc)))
       tagList(
-        tags$p(sprintf("Spotted %d potential issue%s. Tick the fixes you want, then Apply — everything is reversible:",
+        tags$p(sprintf("Spotted %d potential issue%s. Tick the fixes you want, then Apply \u2014 everything is reversible:",
                        length(iss), if (length(iss) == 1) "" else "s")),
         checkboxGroupInput(ns("dh_fixes"), NULL, choiceNames = nms,
                            choiceValues = ids, selected = ids[defs]),
@@ -236,7 +236,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
       showNotification("Reverted to the originally uploaded data.", type = "message")
     })
 
-    # ── Change variable types (e.g. a numeric code -> factor) ──
+    # -- Change variable types (e.g. a numeric code -> factor) --
     output$convert_ui <- renderUI({
       if (is.null(rv$data))
         return(helpText("Load a dataset to change column types."))
@@ -249,7 +249,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
           "that's really a category or code (e.g. ", tags$code("cyl"),
           " = 4/6/8) should be a ", tags$b("factor"),
           " so it's treated as distinct groups in charts, grouping, and ",
-          "regression — not as a quantity."),
+          "regression \u2014 not as a quantity."),
         layout_columns(
           col_widths = c(6, 6),
           selectInput(ns("ct_col"),  "Column",     choices = choices),
@@ -258,8 +258,8 @@ importServer <- function(id, examples = NULL, store = NULL) {
         actionButton(ns("ct_apply"), "Convert",
                      class = "btn-primary btn-sm", icon = icon("right-left")),
         tags$div(class = "form-text mt-2",
-          "Values that can't be converted become missing (NA) — you'll be told ",
-          "how many. Use Data Health's “Revert to original” to undo all changes.")
+          "Values that can't be converted become missing (NA) \u2014 you'll be told ",
+          "how many. Use Data Health's \u201cRevert to original\u201d to undo all changes.")
       )
     })
 
@@ -270,18 +270,18 @@ importServer <- function(id, examples = NULL, store = NULL) {
       x   <- rv$data[[col]]
       cur <- friendly_type(x); if (cur == "text") cur <- "character"
       if (identical(cur, to)) {
-        showNotification(sprintf("“%s” is already that type (%s).", col, cur),
+        showNotification(sprintf("\u201c%s\u201d is already that type (%s).", col, cur),
                          type = "warning"); return()
       }
       res <- tryCatch(convert_column(x, to), error = function(e) e)
       if (inherits(res, "error")) {
-        showNotification(sprintf("Couldn't convert “%s” to %s: %s", col, to,
+        showNotification(sprintf("Couldn't convert \u201c%s\u201d to %s: %s", col, to,
                                  conditionMessage(res)),
                          type = "error", duration = 8); return()
       }
       new_na <- sum(is.na(res) & !is.na(x))
       rv$data[[col]] <- res
-      msg <- sprintf("Converted “%s” to %s.", col, to)
+      msg <- sprintf("Converted \u201c%s\u201d to %s.", col, to)
       if (new_na > 0)
         msg <- paste0(msg, sprintf(" %d value%s couldn't be parsed and became NA.",
                                    new_na, if (new_na == 1) "" else "s"))
@@ -289,7 +289,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
                        duration = 6)
     })
 
-    # ── Filter rows (value-based; multiple conditions AND'd) ──
+    # -- Filter rows (value-based; multiple conditions AND'd) --
     # filtered() = the working copy with the active conditions applied. This is
     # what flows downstream and what the preview/summary/profile below describe.
     filtered <- reactive({
@@ -303,7 +303,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
         return(helpText("Load a dataset to filter its rows."))
       tagList(
         tags$p(class = "mb-2",
-          "Keep only the rows that match your conditions — add as many as you ",
+          "Keep only the rows that match your conditions \u2014 add as many as you ",
           "like and they combine with ", tags$b("AND"), "."),
         layout_columns(
           col_widths = c(4, 4, 4),
@@ -320,7 +320,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
       req(rv$data, input$filter_col %in% names(rv$data))
       x  <- rv$data[[input$filter_col]]
       ch <- if (is_num_col(x))
-              c("is between" = "between", "is ≥" = ">=", "is ≤" = "<=",
+              c("is between" = "between", "is \u2265" = ">=", "is \u2264" = "<=",
                 "is >" = ">", "is <" = "<", "equals" = "==", "does not equal" = "!=")
             else if (is_date_x(x)) c("is between" = "between")
             else c("is any of" = "in", "is none of" = "not_in",
@@ -398,7 +398,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
                 format(n, big.mark = ",")))
       if (!length(rv$filters))
         return(tagList(tags$hr(),
-          helpText("No filters yet — all rows pass through."), count_txt))
+          helpText("No filters yet \u2014 all rows pass through."), count_txt))
       chips <- lapply(seq_along(rv$filters), function(i)
         div(class = "d-flex align-items-center gap-2 mb-1",
             tags$span(class = "badge text-bg-primary",
@@ -412,7 +412,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
               count_txt)
     })
 
-    # ── At-a-glance summary + column profile (of the filtered data) ──
+    # -- At-a-glance summary + column profile (of the filtered data) --
     output$glance_ui <- renderUI({
       req(filtered()); g <- data_glance(filtered())
       pct <- if (g$n) round(100 * g$complete / g$n) else 0
@@ -440,9 +440,9 @@ importServer <- function(id, examples = NULL, store = NULL) {
     output$caption <- renderText({
       d <- rv$data
       if (is.null(d))
-        return("No data loaded yet — upload a file or load an example.")
+        return("No data loaded yet \u2014 upload a file or load an example.")
       fd  <- filtered()
-      txt <- sprintf("%s — %s rows × %s columns", rv$source %||% "data",
+      txt <- sprintf("%s \u2014 %s rows \u00d7 %s columns", rv$source %||% "data",
                      format(nrow(fd), big.mark = ","), ncol(fd))
       if (nrow(fd) < nrow(d))
         txt <- paste0(txt, sprintf("  (filtered from %s)",
@@ -456,7 +456,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
                     options = list(pageLength = 10, scrollX = TRUE))
     })
 
-    # ── Save / restore session (only when a shared store is wired in) ──
+    # -- Save / restore session (only when a shared store is wired in) --
     # The store lets the app gather the reshape stage's settings too: mod_reshape
     # publishes them to store$reshape_state, and a restore stages them in
     # store$pending_reshape for the reshape sync-observer to consume.
@@ -470,9 +470,9 @@ importServer <- function(id, examples = NULL, store = NULL) {
           else
             helpText("Load data to enable saving."),
           fileInput(ns("restore_session"), NULL, accept = ".rds",
-                    buttonLabel = "Restore…", placeholder = "open a saved .rds"),
+                    buttonLabel = "Restore\u2026", placeholder = "open a saved .rds"),
           helpText("Saves your data, Data Health fixes, type changes, filters, ",
-                   "and reshape choice — reload it later to pick up where you ",
+                   "and reshape choice \u2014 reload it later to pick up where you ",
                    "left off.")
         )
       })
@@ -493,7 +493,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
         st <- load_session(input$restore_session$datapath)
         ok <- validate_session_state(st)
         if (!isTRUE(ok)) {
-          showNotification(paste("Couldn't restore that file —", ok),
+          showNotification(paste("Couldn't restore that file \u2014", ok),
                            type = "error", duration = 8)
           return()
         }
@@ -505,7 +505,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
         rv$source       <- st$source %||% "restored session"
         rv$upload       <- NULL; rv$sheets <- NULL; rv$loaded_sheet <- NULL
         rv$file_token   <- rv$file_token + 1L          # reset the upload box
-        rv$data         <- st$data                     # set last → triggers downstream
+        rv$data         <- st$data                     # set last -> triggers downstream
         showNotification(paste("Restored:", session_state_summary(st)),
                          type = "message", duration = 7)
       })

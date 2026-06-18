@@ -1,8 +1,8 @@
 # ============================================================
-# helpers_reshape.R — pure data-reshaping verbs (JMP Tables menu)
+# helpers_reshape.R -- pure data-reshaping verbs (JMP Tables menu)
 # ============================================================
 # Single-table reshape operations as plain, validated, testable
-# functions. No reactivity, no Shiny calls — mod_reshape.R is a thin
+# functions. No reactivity, no Shiny calls -- mod_reshape.R is a thin
 # wrapper that calls these. House style is set by do_stack(): validate
 # inputs up front with a clear error, then delegate to tidyr.
 #
@@ -164,7 +164,7 @@ do_subset <- function(data, cols = NULL, sample = c("all", "n", "prop"),
   tibble::as_tibble(out)
 }
 
-#' Transpose a table — swap rows and columns
+#' Transpose a table -- swap rows and columns
 #'
 #' JMP Tables > Transpose. Implemented as a pivot round-trip (keeps types saner
 #' than t(), which forces a matrix). One column can supply the new column

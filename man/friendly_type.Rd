@@ -2,7 +2,7 @@
 % Please edit documentation in R/helpers_stats.R
 \name{friendly_type}
 \alias{friendly_type}
-\title{A plain-English column type for display ("numeric", "factor", "date", …).}
+\title{A plain-English column type for display ("numeric", "factor", "date", ...).}
 \usage{
 friendly_type(x)
 }
@@ -13,5 +13,5 @@ friendly_type(x)
 A length-1 character label.
 }
 \description{
-A plain-English column type for display ("numeric", "factor", "date", …).
+A plain-English column type for display ("numeric", "factor", "date", ...).
 }

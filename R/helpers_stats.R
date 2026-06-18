@@ -1,9 +1,9 @@
 # ============================================================
-# helpers_stats.R — grouped summaries & column classification
+# helpers_stats.R -- grouped summaries & column classification
 # ============================================================
 # Pure stats helpers lifted from the original Data Explorer, plus the
 # column classifiers the UI uses to populate variable pickers. No Shiny,
-# no reactivity — mod_summarize.R is a thin wrapper over these.
+# no reactivity -- mod_summarize.R is a thin wrapper over these.
 
 # NA-safe scalar reducers: return NA on an empty / too-small group instead of
 # warning or returning Inf/NaN (e.g. min() of an all-NA group).
@@ -25,10 +25,10 @@
   as.numeric(names(tb)[which.max(tb)])
 }
 
-#' Grouped summary statistics — "summary stats by ___".
+#' Grouped summary statistics -- "summary stats by ___".
 #'
 #' For each combination of the grouping column(s), report N, mean, median,
-#' mode, min, max, SD, SE (= SD/√N), and IQR of each chosen numeric variable
+#' mode, min, max, SD, SE (= SD/sqrtN), and IQR of each chosen numeric variable
 #' (one row per group, per variable when several are chosen). All stats ignore
 #' missing values.
 #'
@@ -69,9 +69,9 @@ grouped_summary <- function(df, vars, groups, digits = 3) {
 #' Proportions of a categorical outcome within each group, with exact CIs.
 #'
 #' For each group, count how many rows fall in each level of `outcome`, then
-#' report the percentage and an exact (Clopper–Pearson) binomial confidence
+#' report the percentage and an exact (Clopper-Pearson) binomial confidence
 #' interval via binom::binom.confint(). The categorical analogue of
-#' grouped_summary() — "percent of counts by group".
+#' grouped_summary() -- "percent of counts by group".
 #'
 #' @param df A data frame.
 #' @param outcome Name of the categorical outcome column (first is used).
@@ -79,7 +79,7 @@ grouped_summary <- function(df, vars, groups, digits = 3) {
 #' @param conf_level Confidence level for the interval (default 0.95).
 #' @param digits Rounding for the reported percentages.
 #' @return A tidy data frame [groups..., Level, N, Total, Percent, CI_low,
-#'   CI_high] (percentages 0–100), or NULL if the inputs aren't usable.
+#'   CI_high] (percentages 0-100), or NULL if the inputs aren't usable.
 #' @export
 proportions_summary <- function(df, outcome, groups, conf_level = 0.95,
                                 digits = 1) {
@@ -107,7 +107,7 @@ proportions_summary <- function(df, outcome, groups, conf_level = 0.95,
                          "CI_low", "CI_high"), drop = FALSE]
 }
 
-#' A plain-English column type for display ("numeric", "factor", "date", …).
+#' A plain-English column type for display ("numeric", "factor", "date", ...).
 #' @param x A vector (a data-frame column).
 #' @return A length-1 character label.
 #' @export
@@ -184,8 +184,8 @@ numeric_cols <- function(df) {
 
 #' Low-cardinality columns suitable for grouping / faceting.
 #'
-#' Any column with at most `max_levels` distinct values — so categorical and
-#' coded-numeric columns (cyl, a 1–5 rating) qualify, but a high-cardinality ID
+#' Any column with at most `max_levels` distinct values -- so categorical and
+#' coded-numeric columns (cyl, a 1-5 rating) qualify, but a high-cardinality ID
 #' column can't blow up the grouping into thousands of rows.
 #'
 #' @param df A data frame.

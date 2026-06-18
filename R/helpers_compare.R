@@ -1,11 +1,11 @@
 # ============================================================
-# helpers_compare.R — group-comparison hypothesis tests
+# helpers_compare.R -- group-comparison hypothesis tests
 # ============================================================
 # Pure base/stats helpers for the Compare Groups tab:
-#   • compare a NUMERIC outcome across the levels of a categorical group
-#     (t-test / ANOVA, or the rank-based Wilcoxon / Kruskal–Wallis),
-#   • check the two key assumptions (per-group normality, equal variance),
-#   • test association between TWO CATEGORICAL variables (chi-square, with a
+#   * compare a NUMERIC outcome across the levels of a categorical group
+#     (t-test / ANOVA, or the rank-based Wilcoxon / Kruskal-Wallis),
+#   * check the two key assumptions (per-group normality, equal variance),
+#   * test association between TWO CATEGORICAL variables (chi-square, with a
 #     Fisher's-exact fallback when expected counts are small).
 # mod_compare.R is a thin wrapper over these.
 #
@@ -46,7 +46,7 @@ cohens_d <- function(y, g) {
 }
 
 #' Rough magnitude label for a standardised effect size.
-#' @param name "Cohen's d", "Eta-squared", or "Cramér's V".
+#' @param name "Cohen's d", "Eta-squared", or "Cramer's V".
 #' @param value The effect-size value.
 #' @return A character bucket: negligible / small / medium / large (or NA).
 #' @export
@@ -56,7 +56,7 @@ effect_magnitude <- function(name, value) {
   thr <- switch(name,
     "Cohen's d"   = c(0.2, 0.5, 0.8),
     "Eta-squared" = c(0.01, 0.06, 0.14),
-    "Cramér's V"  = c(0.1, 0.3, 0.5),
+    "Cram\u00e9r's V"  = c(0.1, 0.3, 0.5),
     NULL)
   if (is.null(thr)) return(NA_character_)
   if (v < thr[1]) "negligible" else if (v < thr[2]) "small"
@@ -65,7 +65,7 @@ effect_magnitude <- function(name, value) {
 
 # --- assumption checks ------------------------------------------------------
 
-#' Per-group Shapiro–Wilk normality test. W / p are NA where a group is too
+#' Per-group Shapiro-Wilk normality test. W / p are NA where a group is too
 #' small (n < 3), too large (n > 5000), or constant.
 #' @return data.frame(Group, N, W, p_value, Normal).
 #' @noRd
@@ -88,7 +88,7 @@ normality_table <- function(df, outcome, group) {
   do.call(rbind, rows)
 }
 
-#' Brown–Forsythe Levene test (median-centred) for equal variances — pure base
+#' Brown-Forsythe Levene test (median-centred) for equal variances -- pure base
 #' R, more robust to non-normality than Bartlett's. NULL if < 2 groups.
 #' @noRd
 levene_test <- function(y, g) {
@@ -104,15 +104,15 @@ levene_test <- function(y, g) {
        equal = a[["Pr(>F)"]][1] >= 0.05)
 }
 
-# --- numeric outcome × group comparison -------------------------------------
+# --- numeric outcome x group comparison -------------------------------------
 
 #' Compare a numeric outcome across the levels of a categorical group.
 #'
 #' Picks the test from the number of groups and the `parametric` flag:
 #'   parametric, 2 groups  -> Welch (or Student) two-sample t-test  (+ Cohen's d)
 #'   parametric, 3+ groups -> one-way ANOVA + Tukey HSD             (+ eta-squared)
-#'   non-parametric, 2     -> Wilcoxon rank-sum (Mann–Whitney U)
-#'   non-parametric, 3+    -> Kruskal–Wallis
+#'   non-parametric, 2     -> Wilcoxon rank-sum (Mann-Whitney U)
+#'   non-parametric, 3+    -> Kruskal-Wallis
 #'
 #' @param df A data frame.
 #' @param outcome Name of the numeric outcome column.
@@ -170,14 +170,14 @@ compare_groups_numeric <- function(df, outcome, group,
 
   } else if (!parametric && k == 2L) {
     wt <- stats::wilcox.test(y ~ g)
-    res$test      <- "Wilcoxon rank-sum test (Mann–Whitney U)"
+    res$test      <- "Wilcoxon rank-sum test (Mann\u2013Whitney U)"
     res$statistic <- unname(wt$statistic)
     res$df        <- NA_real_
     res$p_value   <- wt$p.value
 
   } else {                                   # non-parametric, 3+ groups
     kt <- stats::kruskal.test(y ~ g)
-    res$test      <- "Kruskal–Wallis test"
+    res$test      <- "Kruskal\u2013Wallis test"
     res$statistic <- unname(kt$statistic)
     res$df        <- unname(kt$parameter)
     res$p_value   <- kt$p.value
@@ -189,7 +189,7 @@ compare_groups_numeric <- function(df, outcome, group,
 
 #' Test association between two categorical variables.
 #'
-#' Runs Pearson's chi-square on the contingency table and reports Cramér's V.
+#' Runs Pearson's chi-square on the contingency table and reports Cramer's V.
 #' When any expected cell count is < 5 the chi-square approximation is shaky, so
 #' a Monte-Carlo Fisher's-exact p-value is added as a fallback.
 #'

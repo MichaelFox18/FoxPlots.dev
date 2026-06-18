@@ -15,7 +15,7 @@ groupable_cols(df, max_levels = 30L)
 Character vector of column names.
 }
 \description{
-Any column with at most `max_levels` distinct values — so categorical and
-coded-numeric columns (cyl, a 1–5 rating) qualify, but a high-cardinality ID
+Any column with at most `max_levels` distinct values -- so categorical and
+coded-numeric columns (cyl, a 1-5 rating) qualify, but a high-cardinality ID
 column can't blow up the grouping into thousands of rows.
 }
