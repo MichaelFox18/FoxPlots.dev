@@ -36,9 +36,18 @@ in every dependency automatically:
 
 ```r
 install.packages("remotes")
-remotes::install_local("C:/path/to/FoxPlots")   # the folder you downloaded
-# ...or, with repo access:  remotes::install_github("UFSDACU/FoxPlots")
+
+# Install straight from GitHub (the usual way):
+remotes::install_github("UFSDACU/FoxPlots")
+
+# ...or from a local copy (on the GitHub page: Code -> Download ZIP, unzip, then):
+# remotes::install_local("C:/path/to/FoxPlots")
 ```
+
+> If this repository is **private**, `install_github()` needs a GitHub token in R
+> (`usethis::create_github_token()` then `gitcreds::gitcreds_set()`). To skip the
+> token, use the **Download ZIP** + `install_local()` route above. If the repo is
+> public, `install_github()` just works.
 
 Then launch any app:
 
