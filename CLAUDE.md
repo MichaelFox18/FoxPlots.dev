@@ -18,11 +18,11 @@ Why modular: the existing `DataExplorerApp.R` is ~2,776 lines in a single namesp
 
 It is now an installable R **package** (`foxplots`); the original roadmap is done. `R CMD check` is clean (`Status: OK`). What exists (all under `R/`):
 
-- **Three apps as launchers**: `run_data_explorer()` (full pipeline: About → Import → Reshape → Summarize → Visualize → Compare Groups → Regression → Export → Report), `run_reshape_tool()` (import → reshape → export), `run_combine_tool()` (import two tables → combine → export). Each has a `*_app()` builder returning the `shinyApp` object.
-- **Nine modules**: `mod_import` (upload/clean/recast + Data Health incl. **outlier flagging** + **row filter** + profile + **session save/restore**), `mod_reshape` (stack/split/transpose/sort/subset/**summary**), `mod_summarize`, `mod_visualize` (1–4 plots, **11 chart types** incl. bubble, lazy render, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square, assumptions, effect sizes), `mod_regression`, `mod_export` (data + charts + summary + model), `mod_combine` (concatenate/join/update/compare), `mod_report` (one-click HTML **or Word** report of the whole session).
-- **Thirteen helper files** (`R/helpers_*` + `components`), all unit-tested.
-- **~43 exported functions** (6 launchers + `uf_logo_uri` + ~36 helpers); internal functions are `@noRd`.
-- **A testthat suite** (`tests/testthat/`, ~334 expectations) run via `R CMD check` / `testthat::test_local()` (Word-report tests `skip_if_not_installed("officer")`). Modules verified with `shiny::testServer` smoke checks (run ad hoc).
+- **Four apps as launchers**: `run_data_explorer()` (full pipeline: About → Import → Reshape → Summarize → Visualize → Compare Groups → Regression → Export → Report), `run_reshape_tool()` (import → reshape → export), `run_combine_tool()` (import two tables → combine → export), `run_lmer_tool()` (import → mixed model → export). Each has a `*_app()` builder returning the `shinyApp` object.
+- **Ten modules**: `mod_import` (upload/clean/recast + Data Health incl. **outlier flagging** + **row filter** + profile + **session save/restore**), `mod_reshape` (stack/split/transpose/sort/subset/**summary**), `mod_summarize`, `mod_visualize` (1–4 plots, **11 chart types** incl. bubble, lazy render, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square, assumptions, effect sizes), `mod_regression`, `mod_export` (data + charts + summary + model; optional `preview` arg), `mod_combine` (concatenate/join/update/compare), `mod_report` (one-click HTML **or Word** report of the whole session), `mod_lmer` (**linear mixed models** via lmerTest/emmeans: ANOVA, fit/variance, residuals, **EMMeans + cld**, interaction test, model comparison).
+- **Fourteen helper files** (`R/helpers_*` + `components`), all unit-tested. `helpers_lmer.R` holds the mixed-model engine (formula/spec builders, `lmer_fit`/`lmer_emmeans`/`lmer_anova`/`lmer_compare`/`lmer_fit_stats`/`lmer_cook`, `make_example_data`), validated against the source repo's `validate_engine.R` reference values.
+- **~46 exported functions** (8 launchers + `uf_logo_uri` + `make_example_data` + ~36 helpers); internal functions are `@noRd`.
+- **A testthat suite** (`tests/testthat/`, ~365 expectations) run via `R CMD check` / `testthat::test_local()` (Word-report tests `skip_if_not_installed("officer")`; the mixed-model engine tests `skip_if_not_installed("lmerTest"/"emmeans")`). Modules verified with `shiny::testServer` smoke checks (run ad hoc; note `testServer` can segfault here — fall back to building the `*UI()`/`*_app()` objects + booting the app over HTTP).
 - **Session save/restore** (`helpers_state.R`): the Import tab can download a versioned `.rds` of the data-prep stage (working data + raw + filters + reshape settings) and restore it. Wired via a shared `session_store` reactiveValues passed to `importServer`/`reshapeServer` — the one sanctioned app-wide-state use of a shared store (reshape *publishes* its settings; a restore *stages* them for the reshape sync-observer to consume).
 
 To extend it, follow the same path every existing feature took: **pure helper + its test → thin module (`mod_*`) that calls it → wire it into a launcher (`run_*.R`) → `roxygenise()` if you exported anything.**
@@ -66,10 +66,12 @@ It's a standard R package (`foxplots`):
 │   ├── helpers_compare.R        # compare_groups_numeric/compare_categorical, assumptions, effect sizes
 │   ├── helpers_report.R         # report_spec + build_report_html / build_report_docx (pandoc-free HTML + editable Word) + render_report
 │   ├── helpers_state.R          # build/validate/summarize a session + save/load (.rds save-restore)
-│   ├── mod_import.R … mod_report.R   # the nine Shiny modules (<feature>UI/<feature>Server)
+│   ├── helpers_lmer.R           # mixed-model engine: formula/emm builders, lmer_fit/_emmeans/_anova/_compare/_fit_stats/_cook, make_example_data
+│   ├── mod_import.R … mod_report.R   # the ten Shiny modules (<feature>UI/<feature>Server), incl. mod_lmer
 │   ├── run_data_explorer.R      # data_explorer_app() builder + run_data_explorer() launcher
 │   ├── run_reshape_tool.R       # reshape_tool_app()  + run_reshape_tool()
-│   └── run_combine_tool.R       # combine_tool_app()  + run_combine_tool()
+│   ├── run_combine_tool.R       # combine_tool_app()  + run_combine_tool()
+│   └── run_lmer_tool.R          # lmer_tool_app()     + run_lmer_tool()
 ├── inst/
 │   ├── www/IFAS-White.png       # logo, found via system.file(); inlined as a data URI
 │   └── apps/<name>/app.R        # thin deploy entries (call foxplots::<name>_app())
@@ -79,14 +81,14 @@ It's a standard R package (`foxplots`):
     └── testthat/                # setup.R (no longer sources R/); test-<area>.R per helper
         ├── test-reshape.R  test-io.R  test-stats.R  test-plot.R  test-report.R
         ├── test-model.R    test-clean.R  test-combine.R  test-compare.R  test-filter.R
-        └── test-state.R
+        └── test-state.R    test-lmer.R
 ```
 
 ---
 
 ## Tech stack
 
-R + `shiny`, `bslib` (layout: `page_navbar`, `layout_sidebar`, `card` — matches the existing app), `DT`, `tidyr`, `dplyr`, `tidyselect`, `ggplot2`, `hexbin` (the hexbin chart), `writexl` / `readxl` / `readr` (import/export), `officer` (the editable Word report — pandoc-free), `here`, and `testthat` for tests. Add packages as needed and note them in the build log.
+R + `shiny`, `bslib` (layout: `page_navbar`, `layout_sidebar`, `card` — matches the existing app), `DT`, `tidyr`, `dplyr`, `tidyselect`, `ggplot2`, `hexbin` (the hexbin chart), `writexl` / `readxl` / `readr` (import/export), `officer` (the editable Word report — pandoc-free), `here`, and `testthat` for tests. The **Mixed Model Review** app adds the mixed-model stack: `lmerTest` (loads `lme4`), `emmeans`, `multcomp` + `multcompView` (the cld letter engine), and `lattice` (the random-effects caterpillar) in Imports; `pbkrtest` (Kenward-Roger df), `performance` / `MuMIn` (R²/ICC), and `influence.ME` are optional (Suggests, graceful `requireNamespace` fallback). Add packages as needed and note them in the build log.
 
 ---
 

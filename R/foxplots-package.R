@@ -11,6 +11,7 @@
 #' @import shiny
 #' @import bslib
 #' @import ggplot2
+#' @importFrom multcompView multcompLetters
 #' @name foxplots-imports
 #' @keywords internal
 NULL

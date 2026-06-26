@@ -3,13 +3,14 @@
 `foxplots` is an **R package**. Once it's installed, you launch any app with a
 single line — no folders to point at, no files to source.
 
-There are three apps:
+There are four apps:
 
 | Launch with | App | What it's for |
 |---|---|---|
 | `run_data_explorer()` | **Data Explorer** | The whole workflow: import → clean → reshape → summarize → visualize → compare → model → report |
 | `run_reshape_tool()`  | **Reshape Tool**  | Just restructure one table (stack / split / transpose / sort / subset / summarize) and export it |
 | `run_combine_tool()`  | **Combine Tool**  | Merge / join / compare **two** tables |
+| `run_lmer_tool()`     | **Mixed Model Review** | Fit linear mixed models (lmer): ANOVA, EMMeans post-hoc, diagnostics |
 
 ---
 
@@ -51,7 +52,7 @@ can take a few minutes the first time; you only do it once (re-run it to update)
 
 ```r
 library(foxplots)
-run_data_explorer()      # or run_reshape_tool() / run_combine_tool()
+run_data_explorer()      # or run_reshape_tool() / run_combine_tool() / run_lmer_tool()
 ```
 
 The app opens in your web browser. To stop it, press **Esc** in the R console

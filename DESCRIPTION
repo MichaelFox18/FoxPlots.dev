@@ -22,9 +22,15 @@ Imports:
     datasets,
     dplyr,
     DT,
+    emmeans,
     ggplot2,
     graphics,
     grDevices,
+    lattice,
+    lme4,
+    lmerTest,
+    multcomp,
+    multcompView,
     plotly,
     readxl,
     shiny,
@@ -37,6 +43,10 @@ Imports:
 Suggests:
     here,
     hexbin,
+    influence.ME,
+    MuMIn,
     officer,
+    pbkrtest,
+    performance,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

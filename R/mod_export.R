@@ -16,7 +16,7 @@
 # the regression preview needs model_interpretation() (helpers_model.R). Only the
 # app that passes those reactives (data_explorer) attaches/sources them.
 
-exportUI <- function(id) {
+exportUI <- function(id, preview = TRUE) {
   ns <- NS(id)
   layout_sidebar(
     sidebar = sidebar(
@@ -36,11 +36,17 @@ exportUI <- function(id) {
       uiOutput(ns("charts_ui")),   # filled only when a plots reactive is given
       uiOutput(ns("model_ui"))     # filled only when a model reactive is given
     ),
-    card(
-      card_header(icon("file-export"), " Data to export"),
-      textOutput(ns("caption")),
-      DT::DTOutput(ns("preview"))
-    ),
+    if (isTRUE(preview))
+      card(
+        card_header(icon("file-export"), " Data to export"),
+        textOutput(ns("caption")),
+        DT::DTOutput(ns("preview"))
+      )
+    else
+      card(
+        card_header(icon("file-export"), " Data to export"),
+        textOutput(ns("caption"))
+      ),
     uiOutput(ns("summary_preview_ui")), # filled only when a summary reactive is given
     uiOutput(ns("charts_preview_ui")),  # filled only when a plots reactive is given
     uiOutput(ns("model_preview_ui"))    # filled only when a model reactive is given
@@ -48,7 +54,7 @@ exportUI <- function(id) {
 }
 
 exportServer <- function(id, data_in, plots = NULL, model = NULL,
-                         summary_tbl = NULL) {
+                         summary_tbl = NULL, preview = TRUE) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -60,12 +66,14 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
               format(nrow(d), big.mark = ","), ncol(d))
     })
 
-    output$preview <- DT::renderDT({
-      d <- data_in()
-      req(is.data.frame(d))
-      DT::datatable(utils::head(d, 200), rownames = FALSE,
-                    options = list(pageLength = 10, scrollX = TRUE))
-    })
+    if (isTRUE(preview)) {
+      output$preview <- DT::renderDT({
+        d <- data_in()
+        req(is.data.frame(d))
+        DT::datatable(utils::head(d, 200), rownames = FALSE,
+                      options = list(pageLength = 10, scrollX = TRUE))
+      })
+    }
 
     # Sanitise the user's file name to a safe stem; fall back if blank.
     safe_stem <- reactive({

@@ -12,11 +12,12 @@ code required. It is an installable **R package** built from reusable Shiny
 
 ## Status
 
-`foxplots` is an **installable R package**. It bundles the whole toolkit — three
+`foxplots` is an **installable R package**. It bundles the whole toolkit — four
 Shiny apps, the modules behind them, and a tested helper foundation — and exports
 both **launcher functions** (`run_data_explorer()`, `run_reshape_tool()`,
-`run_combine_tool()`) and the underlying **helper API** (`do_stack()`,
-`grouped_summary()`, `fit_model()`, …). Install it once and run anywhere.
+`run_combine_tool()`, `run_lmer_tool()`) and the underlying **helper API**
+(`do_stack()`, `grouped_summary()`, `fit_model()`, …). Install it once and run
+anywhere.
 
 Highlights:
 - **One-click report** — HTML or editable Word (`.docx`), pandoc-free, with a
@@ -53,7 +54,7 @@ Then launch any app:
 
 ```r
 library(foxplots)
-run_data_explorer()      # or run_reshape_tool() / run_combine_tool()
+run_data_explorer()      # or run_reshape_tool() / run_combine_tool() / run_lmer_tool()
 ```
 
 | Launcher | App | For… |
@@ -61,6 +62,7 @@ run_data_explorer()      # or run_reshape_tool() / run_combine_tool()
 | `run_data_explorer()` | **Data Explorer** | the whole workflow in one place |
 | `run_reshape_tool()`  | **Reshape Tool**  | restructuring one table |
 | `run_combine_tool()`  | **Combine Tool**  | merging / joining / comparing two tables |
+| `run_lmer_tool()`     | **Mixed Model Review** | fitting linear mixed models (lmer) |
 
 The package also exports the helper functions for use in your own scripts (e.g.
 `do_stack()`, `grouped_summary()`, `build_full_plot()`); see
@@ -68,7 +70,7 @@ The package also exports the helper functions for use in your own scripts (e.g.
 
 ---
 
-## 3. The three apps — separately
+## 3. The four apps — separately
 
 ### Data Explorer — the full pipeline
 Tabs run **left → right**, each feeding the next:
@@ -119,6 +121,28 @@ two separate tables, then:
 
 Built-in demo: load `band_members` on the Left and `band_instruments` on the
 Right, then **Join by `name`**.
+
+### Mixed Model Review — linear mixed models (lmer)
+
+**Import → Mixed Model → Export.** A point-and-click front end for `lmerTest` /
+`emmeans` mixed models: pick a numeric response, up to three fixed effects, and
+one or more grouping (random) factors from drop-downs — no `lmer()` calls to
+write. It returns an ANOVA (Kenward-Roger or Satterthwaite df), fit & variance
+stats (AIC/BIC, marginal & conditional R², ICC, a random-effects caterpillar
+plot), residual diagnostics, **EMMeans** post-hoc comparisons with a compact
+letter display, an omnibus interaction test, model comparison (likelihood-ratio
+test), and a copy-paste R script for everything.
+
+- **Import** is the shared importer — upload a CSV or load the built-in
+  **3-factor RCBD** example, and use **Change Variable Types** to read a numeric
+  code (e.g. `Nitrogen` 0/100/200) as a factor so its levels can be compared.
+- The **Mixed Model** tab also builds **combined (interaction) variables** by
+  pasting two columns into one grouping factor.
+- **Export** downloads the working data (with any created variables); per-table
+  CSVs, plot PNGs and the `.R` script download in place on each result tab.
+
+> This app pulls in the mixed-model stack (`lme4`, `lmerTest`, `emmeans`,
+> `multcomp`), so the **first install is a little heavier** than the other tools.
 
 ---
 
