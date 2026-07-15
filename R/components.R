@@ -114,3 +114,17 @@ info_tip <- function(..., placement = "right") {
     placement = placement
   )
 }
+
+# A compact "About" landing panel for the standalone mini-apps, mirroring the
+# Data Explorer's About tab. `steps` is a character vector rendered as a
+# numbered list. Internal (not exported).
+about_nav_panel <- function(title, lead, steps) {
+  bslib::nav_panel(
+    shiny::tagList(shiny::icon("circle-info"), " About"), value = "about",
+    bslib::card(
+      bslib::card_header(shiny::icon("circle-info"), " ", title),
+      shiny::tags$p(lead),
+      shiny::tags$ol(lapply(steps, shiny::tags$li)),
+      shiny::tags$p(class = "text-muted small",
+        "Hover the grey ? icons for inline help on any control.")))
+}

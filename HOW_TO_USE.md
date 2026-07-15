@@ -3,13 +3,14 @@
 `foxplots` is an **R package**. Once it's installed, you launch any app with a
 single line — no folders to point at, no files to source.
 
-There are four apps:
+There are five apps:
 
 | Launch with | App | What it's for |
 |---|---|---|
 | `run_data_explorer()` | **Data Explorer** | The whole workflow: import → clean → reshape → summarize → visualize → compare → model → report |
 | `run_reshape_tool()`  | **Reshape Tool**  | Just restructure one table (stack / split / transpose / sort / subset / summarize) and export it |
 | `run_combine_tool()`  | **Combine Tool**  | Merge / join / compare **two** tables |
+| `run_compare_groups()` | **Compare Groups** | Just the statistics: do these groups really differ? (t-test / ANOVA / rank tests / chi-square), then download a report |
 | `run_lmer_tool()`     | **Mixed Model Review** | Fit linear mixed models (lmer): ANOVA, EMMeans post-hoc, diagnostics |
 
 ---
@@ -29,22 +30,29 @@ You need the `remotes` package to install foxplots; get it first:
 install.packages("remotes")
 ```
 
-Then install foxplots. Pick whichever fits how you got the project:
+Then install foxplots **straight from GitHub** — this is the normal way, and it
+pulls the whole package and every dependency for you:
 
-- **From a folder you downloaded/cloned** — point at it:
+```r
+remotes::install_github("UFSDACU/FoxPlots")
+```
 
-  ```r
-  remotes::install_local("C:/path/to/FoxPlots")
-  ```
+That single line is also how you **update** later: re-run it any time to pull the
+newest version.
 
-- **From GitHub** (if you have access to the repository):
+<details>
+<summary>Alternative: install from a folder you already downloaded</summary>
 
-  ```r
-  remotes::install_github("UFSDACU/FoxPlots")
-  ```
+On the GitHub page choose **Code → Download ZIP**, unzip it, then point at the
+folder:
+
+```r
+remotes::install_local("C:/path/to/FoxPlots")
+```
+</details>
 
 Either way, the other packages foxplots needs are installed automatically. This
-can take a few minutes the first time; you only do it once (re-run it to update).
+can take a few minutes the first time; you only do it once.
 
 ---
 
@@ -52,7 +60,8 @@ can take a few minutes the first time; you only do it once (re-run it to update)
 
 ```r
 library(foxplots)
-run_data_explorer()      # or run_reshape_tool() / run_combine_tool() / run_lmer_tool()
+run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
+                         #    run_compare_groups() / run_lmer_tool()
 ```
 
 The app opens in your web browser. To stop it, press **Esc** in the R console

@@ -113,11 +113,29 @@ summary_code <- function(summary_tbl) {
 
 #' Reproduce the hypothesis test from a compare_* result list. Infers
 #' categorical vs numeric from the result's own fields (compare_categorical
-#' carries var1/var2; compare_groups_numeric carries outcome/group), so it does
-#' not depend on the $mode tag the module adds.
+#' carries var1/var2; compare_groups_numeric carries outcome/group), except for a
+#' grid, which is tagged $mode = "num_multi" by the module.
 #' @noRd
 compare_code <- function(res) {
   if (is.null(res) || !is.list(res)) return(NULL)
+  # A grid: loop the same test over every outcome x group, then adjust across all.
+  if (identical(res$mode, "num_multi")) {
+    para <- isTRUE(res$grid$results[[1]]$parametric)
+    call <- if (para)
+      "      fit <- aov(data[[o]] ~ factor(data[[g]]))\n      p <- summary(fit)[[1]][[\"Pr(>F)\"]][1]"
+    else
+      "      kt <- kruskal.test(data[[o]] ~ factor(data[[g]]))\n      p <- kt$p.value"
+    return(sprintf(paste0(
+      "outcomes <- c(%s)\ngroups   <- c(%s)\n\n",
+      "res <- data.frame()\nfor (o in outcomes) {\n  for (g in groups) {\n",
+      "%s\n",
+      "      res <- rbind(res, data.frame(outcome = o, group = g, p_value = p))\n",
+      "  }\n}\n",
+      "res$p_adj <- p.adjust(res$p_value, method = \"%s\")\nres"),
+      paste(sprintf("\"%s\"", res$outcomes), collapse = ", "),
+      paste(sprintf("\"%s\"", res$groups), collapse = ", "),
+      call, res$p_adjust %||% "BH"))
+  }
   is_cat <- !is.null(res$var1) && !is.null(res$var2) && is.null(res$outcome)
   if (is_cat)
     return(sprintf("chisq.test(table(data[[\"%s\"]], data[[\"%s\"]]))",
@@ -127,8 +145,12 @@ compare_code <- function(res) {
   test <- if (is.null(res$test)) "" else res$test
   if (grepl("ANOVA", test))
     sprintf("fit <- aov(%s ~ %s, data = data)\nsummary(fit)\nTukeyHSD(fit)", o, g)
-  else if (grepl("Kruskal", test))
-    sprintf("kruskal.test(%s ~ %s, data = data)", o, g)
+  else if (grepl("Kruskal", test)) {
+    ph <- if (identical(res$posthoc_name, "Steel-Dwass"))
+      "\n# all-pairs post-hoc: Steel-Dwass (see PMCMRplus::dscfAllPairsTest)"
+      else "\n# all-pairs post-hoc: Dunn's test (see PMCMRplus::kwAllPairsDunnTest)"
+    paste0(sprintf("kruskal.test(%s ~ %s, data = data)", o, g), ph)
+  }
   else if (grepl("Wilcoxon", test))
     sprintf("wilcox.test(%s ~ %s, data = data)", o, g)
   else {
@@ -274,38 +296,88 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
   paste0("<h2 id=\"charts\">Charts</h2>", paste0(figs, collapse = ""))
 }
 
-.section_comparison <- function(spec) {
-  r <- spec$comparison
+# A matrix (counts / percentages / residuals) as an HTML table with its row
+# names promoted to a leading column.
+.mat_to_html <- function(m, caption) {
+  df_to_html(cbind(` ` = rownames(m), as.data.frame.matrix(m)), caption)
+}
+
+# The body for ONE numeric comparison. Shared by the single-comparison report
+# and every combination of a grid.
+.section_comparison_num <- function(r) {
   sig <- !is.na(r$p_value) && r$p_value < 0.05
   vcl <- if (sig) "verdict-sig" else "verdict-ns"
+  eff <- if (!is.na(r$effect_value))
+    sprintf(" Effect size (%s) = %s (%s).", r$effect_name,
+            round(r$effect_value, 3),
+            effect_magnitude(r$effect_name, r$effect_value)) else ""
+  verdict <- sprintf(
+    "<span class=\"%s\">%s difference in %s across %s</span> (%s, %s).%s",
+    vcl, if (sig) "Significant" else "No significant", html_escape(r$outcome),
+    html_escape(r$group), html_escape(r$test), .report_p(r$p_value), eff)
+  fit_txt <- if (!is.null(r$fit_stats))
+    sprintf(paste0("<p class=\"note\">Summary of fit: R-squared = %s, ",
+                   "adjusted R-squared = %s, RMSE = %s.</p>"),
+            round(r$fit_stats$r_squared, 3), round(r$fit_stats$adj_r_squared, 3),
+            round(r$fit_stats$rmse, 3)) else ""
+  welch_txt <- if (!is.null(r$welch))
+    sprintf(paste0("<p class=\"note\">Welch's ANOVA (unequal variances): ",
+                   "F(%s, %s) = %s, %s.</p>"),
+            round(r$welch$df1), round(r$welch$df2, 1),
+            round(r$welch$statistic, 3), .report_p(r$welch$p_value)) else ""
+  body <- paste0("<p>", verdict, "</p>", df_to_html(r$group_stats, "Group means"))
+  if (!is.null(r$anova_table))
+    body <- paste0(body, df_to_html(r$anova_table, "ANOVA table"), fit_txt, welch_txt)
+  if (!is.null(r$posthoc))
+    body <- paste0(body, df_to_html(r$posthoc, sprintf(
+      "Pairwise comparisons (%s)", r$posthoc_name %||% "post-hoc")))
+  if (!is.null(r$cld))
+    body <- paste0(body, df_to_html(r$cld, "Connecting letters"))
+  body
+}
+
+.section_comparison <- function(spec) {
+  r <- spec$comparison
   if (identical(r$mode, "cat")) {
+    sig <- !is.na(r$p_value) && r$p_value < 0.05
+    vcl <- if (sig) "verdict-sig" else "verdict-ns"
     verdict <- sprintf(
       "<span class=\"%s\">%s association between %s and %s</span> (%s).",
       vcl, if (sig) "Significant" else "No significant", html_escape(r$var1),
       html_escape(r$var2), .report_p(r$p_value))
     stats_tbl <- data.frame(
-      Statistic = c("Chi-square", "df", "Cram\u00e9r's V", "N"),
+      Statistic = c("Chi-square", "df", CRAMERS_V, "N"),
       Value = c(round(r$statistic, 3), r$df, round(r$cramers_v, 3), r$n),
       check.names = FALSE)
     body <- paste0(
       "<p>", verdict, "</p>",
-      "<p class=\"note\">Association strength (Cram\u00e9r's V): ",
-      effect_magnitude("Cram\u00e9r's V", r$cramers_v), ".</p>",
+      "<p class=\"note\">Association strength (", CRAMERS_V, "): ",
+      effect_magnitude(CRAMERS_V, r$cramers_v), ".</p>",
       df_to_html(stats_tbl, "Test statistics"),
-      df_to_html(cbind(` ` = rownames(r$table), as.data.frame.matrix(r$table)),
-                 "Contingency table"))
+      .mat_to_html(r$table, "Contingency table"),
+      .mat_to_html(r$expected, "Expected counts"),
+      .mat_to_html(r$stdres,
+                   "Standardized residuals (|z| &gt; 2 flags a driver cell)"))
+    pcts <- r$pcts %||% character(0)
+    if ("row" %in% pcts)
+      body <- paste0(body, .mat_to_html(r$row_pct, "Row % (each row sums to 100)"))
+    if ("col" %in% pcts)
+      body <- paste0(body, .mat_to_html(r$col_pct,
+                                        "Column % (each column sums to 100)"))
+    if ("total" %in% pcts)
+      body <- paste0(body, .mat_to_html(r$total_pct,
+                                        "Total % (whole table sums to 100)"))
+  } else if (identical(r$mode, "num_multi")) {
+    body <- paste0(
+      sprintf(paste0("<p class=\"note\">One test per outcome x group. p_adj ",
+                     "corrects across all %d combinations (method: %s).</p>"),
+              nrow(r$grid$summary), r$p_adjust %||% "BH"),
+      df_to_html(round_df(r$grid$summary), "All combinations"))
+    for (i in seq_along(r$grid$keys))
+      body <- paste0(body, "<h3>", html_escape(r$grid$keys[i]), "</h3>",
+                     .section_comparison_num(r$grid$results[[i]]))
   } else {
-    eff <- if (!is.na(r$effect_value))
-      sprintf(" Effect size (%s) = %s (%s).", r$effect_name,
-              round(r$effect_value, 3),
-              effect_magnitude(r$effect_name, r$effect_value)) else ""
-    verdict <- sprintf(
-      "<span class=\"%s\">%s difference in %s across %s</span> (%s, %s).%s",
-      vcl, if (sig) "Significant" else "No significant", html_escape(r$outcome),
-      html_escape(r$group), html_escape(r$test), .report_p(r$p_value), eff)
-    body <- paste0("<p>", verdict, "</p>", df_to_html(r$group_stats, "Group statistics"))
-    if (!is.null(r$posthoc))
-      body <- paste0(body, df_to_html(r$posthoc, "Pairwise comparisons (Tukey HSD)"))
+    body <- .section_comparison_num(r)
   }
   code <- if (isTRUE(spec$show_code)) code_block_html(spec$compare_code) else ""
   paste0("<h2 id=\"comparison\">Group comparison</h2>", body, code)
@@ -418,36 +490,80 @@ build_report_html <- function(spec, plot_uris = character(0),
   doc
 }
 
+# A matrix as a Word table with its row names promoted to a leading column.
+.docx_add_mat <- function(doc, m, caption) {
+  .docx_add_table(doc, cbind(` ` = rownames(m), as.data.frame.matrix(m)), caption)
+}
+
+# The body for ONE numeric comparison; shared by the single report and the grid.
+.docx_section_comparison_num <- function(doc, r) {
+  sig <- !is.na(r$p_value) && r$p_value < 0.05
+  eff <- if (!is.na(r$effect_value))
+    sprintf(" Effect size (%s) = %s (%s).", r$effect_name,
+            round(r$effect_value, 3),
+            effect_magnitude(r$effect_name, r$effect_value)) else ""
+  doc <- officer::body_add_par(doc, sprintf(
+    "%s difference in %s across %s (%s, p = %s).%s",
+    if (sig) "Significant" else "No significant", r$outcome, r$group,
+    r$test, .p_txt(r$p_value), eff), style = "Normal")
+  if (!is.null(r$fit_stats))
+    doc <- officer::body_add_par(doc, sprintf(
+      "Summary of fit: R-squared = %s, adjusted R-squared = %s, RMSE = %s.",
+      round(r$fit_stats$r_squared, 3), round(r$fit_stats$adj_r_squared, 3),
+      round(r$fit_stats$rmse, 3)), style = "Normal")
+  if (!is.null(r$welch))
+    doc <- officer::body_add_par(doc, sprintf(
+      "Welch's ANOVA (unequal variances): F(%s, %s) = %s, p = %s.",
+      round(r$welch$df1), round(r$welch$df2, 1),
+      round(r$welch$statistic, 3), .p_txt(r$welch$p_value)), style = "Normal")
+  doc <- .docx_add_table(doc, r$group_stats, "Group means")
+  if (!is.null(r$anova_table))
+    doc <- .docx_add_table(doc, r$anova_table, "ANOVA table")
+  if (!is.null(r$posthoc))
+    doc <- .docx_add_table(doc, r$posthoc, sprintf(
+      "Pairwise comparisons (%s)", r$posthoc_name %||% "post-hoc"))
+  if (!is.null(r$cld))
+    doc <- .docx_add_table(doc, r$cld, "Connecting letters")
+  doc
+}
+
 .docx_section_comparison <- function(doc, spec) {
   r   <- spec$comparison
-  sig <- !is.na(r$p_value) && r$p_value < 0.05
   doc <- officer::body_add_par(doc, "Group comparison", style = "heading 1")
   if (identical(r$mode, "cat")) {
+    sig <- !is.na(r$p_value) && r$p_value < 0.05
     doc <- officer::body_add_par(doc, sprintf(
-      "%s association between %s and %s (p = %s). Cram\u00e9r's V = %s (%s).",
+      "%s association between %s and %s (p = %s). %s = %s (%s).",
       if (sig) "Significant" else "No significant", r$var1, r$var2,
-      .p_txt(r$p_value), round(r$cramers_v, 3),
-      effect_magnitude("Cram\u00e9r's V", r$cramers_v)), style = "Normal")
+      .p_txt(r$p_value), CRAMERS_V, round(r$cramers_v, 3),
+      effect_magnitude(CRAMERS_V, r$cramers_v)), style = "Normal")
     stats_tbl <- data.frame(
-      Statistic = c("Chi-square", "df", "Cram\u00e9r's V", "N"),
+      Statistic = c("Chi-square", "df", CRAMERS_V, "N"),
       Value = c(round(r$statistic, 3), r$df, round(r$cramers_v, 3), r$n),
       check.names = FALSE)
     doc <- .docx_add_table(doc, stats_tbl, "Test statistics")
-    doc <- .docx_add_table(
-      doc, cbind(` ` = rownames(r$table), as.data.frame.matrix(r$table)),
-      "Contingency table")
-  } else {
-    eff <- if (!is.na(r$effect_value))
-      sprintf(" Effect size (%s) = %s (%s).", r$effect_name,
-              round(r$effect_value, 3),
-              effect_magnitude(r$effect_name, r$effect_value)) else ""
+    doc <- .docx_add_mat(doc, r$table,    "Contingency table")
+    doc <- .docx_add_mat(doc, r$expected, "Expected counts")
+    doc <- .docx_add_mat(doc, r$stdres,
+                         "Standardized residuals (|z| > 2 flags a driver cell)")
+    pcts <- r$pcts %||% character(0)
+    if ("row" %in% pcts)
+      doc <- .docx_add_mat(doc, r$row_pct, "Row % (each row sums to 100)")
+    if ("col" %in% pcts)
+      doc <- .docx_add_mat(doc, r$col_pct, "Column % (each column sums to 100)")
+    if ("total" %in% pcts)
+      doc <- .docx_add_mat(doc, r$total_pct, "Total % (whole table sums to 100)")
+  } else if (identical(r$mode, "num_multi")) {
     doc <- officer::body_add_par(doc, sprintf(
-      "%s difference in %s across %s (%s, p = %s).%s",
-      if (sig) "Significant" else "No significant", r$outcome, r$group,
-      r$test, .p_txt(r$p_value), eff), style = "Normal")
-    doc <- .docx_add_table(doc, r$group_stats, "Group statistics")
-    if (!is.null(r$posthoc))
-      doc <- .docx_add_table(doc, r$posthoc, "Pairwise comparisons (Tukey HSD)")
+      "One test per outcome x group. p_adj corrects across all %d combinations (method: %s).",
+      nrow(r$grid$summary), r$p_adjust %||% "BH"), style = "Normal")
+    doc <- .docx_add_table(doc, round_df(r$grid$summary), "All combinations")
+    for (i in seq_along(r$grid$keys)) {
+      doc <- officer::body_add_par(doc, r$grid$keys[i], style = "heading 2")
+      doc <- .docx_section_comparison_num(doc, r$grid$results[[i]])
+    }
+  } else {
+    doc <- .docx_section_comparison_num(doc, r)
   }
   if (isTRUE(spec$show_code)) doc <- .docx_add_code(doc, spec$compare_code)
   doc

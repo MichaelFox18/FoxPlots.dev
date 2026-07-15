@@ -12,8 +12,10 @@ compare_categorical(df, var1, var2)
 \item{var1, var2}{Names of the two categorical columns.}
 }
 \value{
-A list (or NULL) with: table, expected, statistic, df, p_value,
-  fisher_p, low_expected (proportion of cells expected < 5), cramers_v, n.
+A list (or NULL) with: table, expected, row_pct / col_pct / total_pct
+  (percentages of each row, column and the grand total), residuals (Pearson),
+  stdres (standardized, ~N(0,1)), statistic, df, p_value, fisher_p,
+  low_expected (proportion of cells expected < 5), cramers_v, n.
 }
 \description{
 Runs Pearson's chi-square on the contingency table and reports Cramer's V.

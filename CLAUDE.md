@@ -4,9 +4,9 @@
 
 One project covering two complementary halves of a single workflow: **reshaping** data and **exploring** it. Get data in, reshape it into the form you need, then summarize / visualize / model / export it — one pipeline, built from reusable **Shiny modules** on a **shared foundation**.
 
-The same modules assemble into more than one app: a full **Data Explorer** (the whole pipeline) and a focused **reshape mini-app** (import → reshape → export), plus isolated dev harnesses for building a module on its own.
+The same modules assemble into more than one app: a full **Data Explorer** (the whole pipeline) and focused mini-apps — **Reshape** (import → reshape → export), **Combine** (two-table join/concatenate/update/compare), and **Mixed Model Review** (import → mixed model → export). A module can also be developed on its own via `pkgload::load_all()` + a throwaway `shinyApp()`.
 
-The reshape stage recreates JMP's **Tables menu**; the full JMP→R mapping is in `docs/JMP_Tables_Menu_to_R.md` (the spec). **Status: the original roadmap is complete** — the modular kit matches the old monolith feature-for-feature. See "Current state" below.
+The reshape stage recreates JMP's **Tables menu** (the JMP→R op mapping lives in the reshape/combine helper roxygen and `BUILD_LOG.md`). **Status: the original roadmap is complete** — the modular kit matches the old monolith feature-for-feature. See "Current state" below.
 
 **Scope note.** The educational/learning tools (p-value visualizer, regression learning tool) are a **separate project** and are not part of this repo. If you later want them to share this project's look, `R/components.R` can be promoted to a small package both repos depend on — but that's out of scope here.
 
@@ -18,10 +18,11 @@ Why modular: the existing `DataExplorerApp.R` is ~2,776 lines in a single namesp
 
 It is now an installable R **package** (`foxplots`); the original roadmap is done. `R CMD check` is clean (`Status: OK`). What exists (all under `R/`):
 
-- **Four apps as launchers**: `run_data_explorer()` (full pipeline: About → Import → Reshape → Summarize → Visualize → Compare Groups → Regression → Export → Report), `run_reshape_tool()` (import → reshape → export), `run_combine_tool()` (import two tables → combine → export), `run_lmer_tool()` (import → mixed model → export). Each has a `*_app()` builder returning the `shinyApp` object.
-- **Ten modules**: `mod_import` (upload/clean/recast + Data Health incl. **outlier flagging** + **row filter** + profile + **session save/restore**), `mod_reshape` (stack/split/transpose/sort/subset/**summary**), `mod_summarize`, `mod_visualize` (1–4 plots, **11 chart types** incl. bubble, lazy render, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square, assumptions, effect sizes), `mod_regression`, `mod_export` (data + charts + summary + model; optional `preview` arg), `mod_combine` (concatenate/join/update/compare), `mod_report` (one-click HTML **or Word** report of the whole session), `mod_lmer` (**linear mixed models** via lmerTest/emmeans: ANOVA, fit/variance, residuals, **EMMeans + cld**, interaction test, model comparison).
+- **Five apps as launchers**: `run_data_explorer()` (full pipeline: About → Import → Reshape → Summarize → Visualize → Compare Groups → Regression → Export → Report), `run_reshape_tool()` (import → reshape → export), `run_combine_tool()` (import two tables → combine → export), `run_compare_groups()` (import → compare → export → report; the only mini-app with a Report tab), `run_lmer_tool()` (import → mixed model → export). Each has a `*_app()` builder returning the `shinyApp` object.
+- **Ten modules**: `mod_import` (upload/clean/recast + Data Health incl. **outlier flagging** + **row filter** + profile + **session save/restore**), `mod_reshape` (stack/split/transpose/sort/subset/**summary**), `mod_summarize`, `mod_visualize` (1–4 plots, **11 chart types** incl. bubble, lazy render, code export), `mod_compare` (t-test/ANOVA/Wilcoxon/Kruskal + chi-square; **grid testing of many outcomes x many groups** with a BH-corrected summary + per-combination accordion; assumptions, effect sizes, Tukey/**Dunn**/**Steel-Dwass** post-hoc + connecting letters, table percentages), `mod_regression`, `mod_export` (data + charts + summary + model; optional `preview` arg), `mod_combine` (concatenate/join/update/compare), `mod_report` (one-click HTML **or Word** report of the whole session), `mod_lmer` (**linear mixed models** via lmerTest/emmeans: ANOVA, fit/variance, residuals, **EMMeans + cld**, interaction test, model comparison).
 - **Fourteen helper files** (`R/helpers_*` + `components`), all unit-tested. `helpers_lmer.R` holds the mixed-model engine (formula/spec builders, `lmer_fit`/`lmer_emmeans`/`lmer_anova`/`lmer_compare`/`lmer_fit_stats`/`lmer_cook`, `make_example_data`), validated against the source repo's `validate_engine.R` reference values.
-- **~46 exported functions** (8 launchers + `uf_logo_uri` + `make_example_data` + ~36 helpers); internal functions are `@noRd`.
+- **~48 exported functions** (10 launchers + `uf_logo_uri` + `make_example_data` + ~36 helpers); internal functions are `@noRd`.
+- **Source files must be ASCII.** Non-ASCII in R strings normally uses `\uXXXX` escapes; where a glyph is needed at runtime, build it from code points instead (`CRAMERS_V`, `SYM_CHI2`, `SYM_ALPHA`, `SYM_TIMES` in `helpers_compare.R` use `intToUtf8()`). `CRAMERS_V` must stay identical to `effect_magnitude()`'s switch key.
 - **A testthat suite** (`tests/testthat/`, ~365 expectations) run via `R CMD check` / `testthat::test_local()` (Word-report tests `skip_if_not_installed("officer")`; the mixed-model engine tests `skip_if_not_installed("lmerTest"/"emmeans")`). Modules verified with `shiny::testServer` smoke checks (run ad hoc; note `testServer` can segfault here — fall back to building the `*UI()`/`*_app()` objects + booting the app over HTTP).
 - **Session save/restore** (`helpers_state.R`): the Import tab can download a versioned `.rds` of the data-prep stage (working data + raw + filters + reshape settings) and restore it. Wired via a shared `session_store` reactiveValues passed to `importServer`/`reshapeServer` — the one sanctioned app-wide-state use of a shared store (reshape *publishes* its settings; a restore *stages* them for the reshape sync-observer to consume).
 
@@ -49,9 +50,8 @@ It's a standard R package (`foxplots`):
 ├── DESCRIPTION                  # package manifest: deps (Imports/Suggests), version, R (>= 4.4)
 ├── NAMESPACE                    # roxygen-generated: exports + imports — do not edit by hand
 ├── LICENSE                      # MIT
-├── .Rbuildignore                # keeps dev docs (CLAUDE/BUILD_LOG/HOW_TO/docs) out of the build
-├── CLAUDE.md / BUILD_LOG.md / HOW_TO_USE.md / README.md
-├── docs/JMP_Tables_Menu_to_R.md # the spec — JMP op -> R mapping, reshape/combine split
+├── .Rbuildignore                # keeps dev docs (CLAUDE/BUILD_LOG/HOW_TO) out of the build
+├── CLAUDE.md / BUILD_LOG.md / HOW_TO_USE.md / README.md / NEWS.md
 ├── R/                           # ALL package code (helpers + modules + launchers)
 │   ├── foxplots-package.R       # "_PACKAGE" + @import shiny/bslib/ggplot2
 │   ├── components.R             # UF theme (uf_theme), uf_logo_uri/uf_title, info_tip, label_or, copy_js, UF_BLUE/ORANGE/COLORS
@@ -71,6 +71,7 @@ It's a standard R package (`foxplots`):
 │   ├── run_data_explorer.R      # data_explorer_app() builder + run_data_explorer() launcher
 │   ├── run_reshape_tool.R       # reshape_tool_app()  + run_reshape_tool()
 │   ├── run_combine_tool.R       # combine_tool_app()  + run_combine_tool()
+│   ├── run_compare_groups.R     # compare_groups_app() + run_compare_groups()
 │   └── run_lmer_tool.R          # lmer_tool_app()     + run_lmer_tool()
 ├── inst/
 │   ├── www/IFAS-White.png       # logo, found via system.file(); inlined as a data URI
@@ -88,7 +89,7 @@ It's a standard R package (`foxplots`):
 
 ## Tech stack
 
-R + `shiny`, `bslib` (layout: `page_navbar`, `layout_sidebar`, `card` — matches the existing app), `DT`, `tidyr`, `dplyr`, `tidyselect`, `ggplot2`, `hexbin` (the hexbin chart), `writexl` / `readxl` / `readr` (import/export), `officer` (the editable Word report — pandoc-free), `here`, and `testthat` for tests. The **Mixed Model Review** app adds the mixed-model stack: `lmerTest` (loads `lme4`), `emmeans`, `multcomp` + `multcompView` (the cld letter engine), and `lattice` (the random-effects caterpillar) in Imports; `pbkrtest` (Kenward-Roger df), `performance` / `MuMIn` (R²/ICC), and `influence.ME` are optional (Suggests, graceful `requireNamespace` fallback). Add packages as needed and note them in the build log.
+R + `shiny`, `bslib` (layout: `page_navbar`, `layout_sidebar`, `card`, `navset_card_tab` — matches the existing app), `DT`, `tidyr`, `dplyr`, `tidyselect`, `ggplot2`, `hexbin` (the hexbin chart), `writexl` / `readxl` (import/export), `officer` (the editable Word report — pandoc-free), `here`, and `testthat` for tests. The **Mixed Model Review** app adds the mixed-model stack: `lmerTest` (loads `lme4`), `emmeans`, `multcomp` + `multcompView` (the cld letter engine), and `lattice` (the random-effects caterpillar) in Imports; `pbkrtest` (Kenward-Roger df), `performance` / `MuMIn` (R²/ICC), and `influence.ME` are optional (Suggests, graceful `requireNamespace` fallback). Add packages as needed and note them in the build log.
 
 ---
 
@@ -125,7 +126,7 @@ Work from the package root (`DESCRIPTION` anchors `here::here()`). Develop with 
 
 ## Reference helper — match this pattern
 
-`do_stack` is the house style for every helper: pure, validated, documented, and tested. Build `do_split` (and the rest) to mirror it, using the R mappings in the spec (`do_split` wraps `tidyr::pivot_wider`).
+`do_stack` is the house style for every helper: pure, validated, documented, and tested. Build every new helper (e.g. `do_split`, which wraps `tidyr::pivot_wider`) to mirror it.
 
 ```r
 #' Stack columns into a label/value pair
@@ -176,13 +177,13 @@ test_that("do_stack errors on unknown columns", {
 
 ## Roadmap (all complete)
 
-1. ✅ **`reshape` module** — stack/split, then transpose/sort/subset; `dev/run_reshape.R`.
+1. ✅ **`reshape` module** — stack/split, then transpose/sort/subset.
 2. ✅ **`R/components.R`** — one UF theme + shared UI atoms, both apps pull from it.
-3. ✅ **`combine` module** — concatenate / join / update / compare, `combineServer(id, left, right)`; `dev/run_combine.R` + `combine_tool`.
+3. ✅ **`combine` module** — concatenate / join / update / compare, `combineServer(id, left, right)` + `combine_tool`.
 4. ✅ **Monolith → modules** — full `data_explorer` (Import w/ Data Health, Reshape, Summarize, Visualize, Regression, Export w/ chart + model downloads).
+5. ✅ **Packaged** — `R/` + `modules/` are now a proper installable R package (`foxplots`); apps are exported builder functions with `run_*()` launchers.
 
 ### Possible next steps (not yet done)
-- Convert `R/` + `modules/` into an actual R **package** now that the foundation is stable.
 - **Full app-state save/restore.** Session save/restore (`helpers_state.R`) currently captures only the **data-prep stage** (working data + raw + filters + reshape settings) — analysis-tab choices are not saved. A future upgrade would also restore the **Visualize chart configs, Summarize selections, Regression model spec, and Compare Groups settings** so reloading a session lands the user back on every tab exactly as they left it. The plumbing already exists: extend the shared `session_store` pattern (each analysis module *publishes* its inputs to the store and *consumes* a staged restore, the way `mod_reshape` already does) to `mod_visualize` / `mod_summarize` / `mod_regression` / `mod_compare`. Watch the same picker repopulate-vs-restore race handled in `mod_reshape` (set choices + selection together). Bump `SESSION_STATE_VERSION` when the saved structure grows. (Deliberately deferred — the data-prep scope was chosen first; results are already preservable via the Report.)
 - A reshape "Summary" op (grouped-summary-as-a-new-table) — currently that logic lives in `mod_summarize`; decide whether it also belongs in `reshape`.
-- Deploy (shinyapps.io / Connect): apps are written deployment-safe (here-anchored paths, inlined logo), but bundling each `apps/<name>/` needs the sibling `R/` + `modules/` shipped alongside.
+- Deploy (shinyapps.io / Connect): apps are written deployment-safe (system.file/here-anchored paths, inlined logo). The thin entries in `inst/apps/<name>/app.R` call `foxplots::<name>_app()`, so a server deploy needs the `foxplots` package installed there (it is not on CRAN — install from GitHub). Current distribution is **local install** (`install_github("UFSDACU/FoxPlots")` / `install_local`); no rsconnect tooling is committed yet.

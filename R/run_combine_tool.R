@@ -41,6 +41,14 @@ combine_tool_app <- function() {
     theme        = uf_theme(),
     fillable     = "combine",
 
+    about_nav_panel(
+      "Combine Tool",
+      paste("Bring two tables together: concatenate rows, join on a key,",
+            "update values, or compare the two -- then export the result."),
+      c("Import the first table on the Left table tab.",
+        "Import the second on the Right table tab.",
+        "Pick how to combine them on the Combine tab and preview the result.",
+        "Export the combined data as CSV, Excel, or RDS.")),
     nav_panel(tagList(icon("table-columns"), " Left table"),  value = "left",
               importUI("left", ex_choices)),
     nav_panel(tagList(icon("table-columns"), " Right table"), value = "right",

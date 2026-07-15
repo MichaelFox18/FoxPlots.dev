@@ -369,7 +369,7 @@ reshapeServer <- function(id, data_in, store = NULL) {
     })
 
     output$preview <- DT::renderDT({
-      DT::datatable(result(), rownames = FALSE,
+      DT::datatable(result(), rownames = FALSE, class = "compact stripe hover",
                     options = list(pageLength = 10, scrollX = TRUE))
     })
 
@@ -377,7 +377,7 @@ reshapeServer <- function(id, data_in, store = NULL) {
       df <- data_in()
       validate(need(is.data.frame(df),
                     "Import data on the Import tab to begin."))
-      DT::datatable(df, rownames = FALSE,
+      DT::datatable(df, rownames = FALSE, class = "compact stripe hover",
                     options = list(pageLength = 10, scrollX = TRUE))
     })
 

@@ -29,7 +29,7 @@ exportUI <- function(id, preview = TRUE) {
                                "Excel (.xlsx)" = "xlsx",
                                "R data (.rds)" = "rds"),
                    selected = "csv"),
-      downloadButton(ns("download"), "Download data", class = "btn-primary w-100"),
+      downloadButton(ns("download"), "Download data", class = "btn-success w-100"),
       helpText("Downloads the data exactly as it stands at this point in the ",
                "pipeline."),
       uiOutput(ns("summary_ui")),  # filled only when a summary reactive is given
@@ -71,6 +71,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
         d <- data_in()
         req(is.data.frame(d))
         DT::datatable(utils::head(d, 200), rownames = FALSE,
+                      class = "compact stripe hover",
                       options = list(pageLength = 10, scrollX = TRUE))
       })
     }
@@ -99,7 +100,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
       output$summary_ui <- renderUI({
         tagList(
           hr(), h6("Export summary"),
-          downloadButton(ns("dl_summary"), "Summary table (.csv)",
+          downloadButton(ns("dl_summary_tbl"), "Summary table (.csv)",
                          class = "btn-outline-secondary w-100")
         )
       })
@@ -111,10 +112,10 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
         d <- summ_or_null()
         validate(need(is.data.frame(d) && nrow(d) >= 1L,
                       "Build a summary on the Summarize tab to preview it here."))
-        DT::datatable(d, rownames = FALSE, class = "compact stripe",
+        DT::datatable(d, rownames = FALSE, class = "compact stripe hover",
                       options = list(scrollX = TRUE, pageLength = 10, dom = "tip"))
       })
-      output$dl_summary <- downloadHandler(
+      output$dl_summary_tbl <- downloadHandler(
         filename = function() paste0(safe_stem(), "_summary.csv"),
         content  = function(f) {
           d <- summ_or_null()
@@ -159,9 +160,15 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
           pl <- plots()
           validate(need(length(pl) >= 1L,
                         "Configure at least one chart on the Visualize tab first."))
-          render_plots_to_file(pl, file, input$plot_fmt %||% "png",
-                               input$plot_w %||% 6, input$plot_h %||% 4.5,
-                               input$plot_dpi %||% 150)
+          tryCatch(
+            render_plots_to_file(pl, file, input$plot_fmt %||% "png",
+                                 input$plot_w %||% 6, input$plot_h %||% 4.5,
+                                 input$plot_dpi %||% 150),
+            error = function(e) {
+              showNotification(paste("Chart export failed:", conditionMessage(e)),
+                               type = "error", duration = 8)
+              validate(need(FALSE, conditionMessage(e)))
+            })
         }
       )
     }
@@ -171,7 +178,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
       output$model_ui <- renderUI({
         tagList(
           hr(), h6("Export regression"),
-          downloadButton(ns("dl_summary"), "Model summary (.txt)",
+          downloadButton(ns("dl_model_summary"), "Model summary (.txt)",
                          class = "btn-outline-secondary w-100 mb-1"),
           downloadButton(ns("dl_coefs"), "Coefficients (.csv)",
                          class = "btn-outline-secondary w-100 mb-1"),
@@ -227,7 +234,7 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
 
       need_model <- function()
         validate(need(!is.null(model()), "Fit a model on the Regression tab first."))
-      output$dl_summary <- downloadHandler(
+      output$dl_model_summary <- downloadHandler(
         filename = function() paste0(safe_stem(), "_model_summary.txt"),
         content  = function(f) { need_model(); utils::capture.output(summary(model()), file = f) }
       )
@@ -261,8 +268,14 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
           paste0(safe_stem(), "_regression_diagnostics.", input$reg_plot_fmt %||% "png"),
         content  = function(file) {
           need_model()
-          render_plots_to_file(reg_diag_plots(model()), file,
-                               input$reg_plot_fmt %||% "png", 6, 4.5, 150)
+          tryCatch(
+            render_plots_to_file(reg_diag_plots(model()), file,
+                                 input$reg_plot_fmt %||% "png", 6, 4.5, 150),
+            error = function(e) {
+              showNotification(paste("Diagnostic export failed:", conditionMessage(e)),
+                               type = "error", duration = 8)
+              validate(need(FALSE, conditionMessage(e)))
+            })
         }
       )
     }

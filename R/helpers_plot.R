@@ -247,6 +247,38 @@ build_corr_heatmap <- function(df, p) {
   g
 }
 
+# Means-with-CI plot for the one-way (Compare Groups) tab. Points at each group
+# mean, error bars over the confidence interval, and -- when a connecting-letters
+# frame is supplied -- the Tukey letter groupings above each bar. A pure function
+# of the precomputed means/cld frames (needs ggplot2 attached, like the rest of
+# this file), so helpers_compare.R stays ggplot-free.
+build_means_letters_plot <- function(means, cld = NULL, ylab = NULL) {
+  if (is.null(means) || !nrow(means)) return(NULL)
+  m <- means
+  m$Group <- factor(as.character(m$Group),
+                    levels = as.character(m$Group)[order(m$Mean)])
+  has_ci <- all(c("CI_low", "CI_high") %in% names(m)) &&
+            any(is.finite(m$CI_low) & is.finite(m$CI_high))
+  m$.ytext <- if (has_ci) m$CI_high else m$Mean
+  show_letters <- !is.null(cld) && "Letters" %in% names(cld) && nrow(cld)
+  if (show_letters)
+    m$.lab <- cld$Letters[match(as.character(m$Group), as.character(cld$Group))]
+  p <- ggplot(m, aes(x = .data[["Group"]], y = .data[["Mean"]])) +
+    geom_point(size = 3, colour = UF_BLUE)
+  if (has_ci)
+    p <- p + geom_errorbar(aes(ymin = .data[["CI_low"]], ymax = .data[["CI_high"]]),
+                           width = 0.15, colour = UF_BLUE)
+  if (show_letters)
+    p <- p + geom_text(aes(y = .data[[".ytext"]], label = .data[[".lab"]]),
+                       vjust = -0.8, fontface = "bold", na.rm = TRUE)
+  p + labs(x = NULL, y = ylab %||% "Mean", title = "Group means with 95% CI") +
+    theme_minimal(base_size = 13) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+          panel.grid.minor = element_blank(),
+          axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "none")
+}
+
 # --- Plot builder -----------------------------------------------------------
 # p is a plain list of settings:
 #   type, x, y, color, title, xlab, ylab, theme, color_hex, size, bins,

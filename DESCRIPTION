@@ -1,14 +1,14 @@
 Package: foxplots
 Title: Point-and-Click Data Exploration and Reshaping Toolkit
-Version: 0.1.0
+Version: 0.3.0
 Authors@R:
     person("Michael", "Fox", , "michaelfox0418@gmail.com", role = c("aut", "cre"))
 Description: A point-and-click toolkit, built on 'shiny', for importing,
     cleaning, reshaping, summarizing, visualizing, comparing, modeling, and
     exporting tabular data without writing R code. It bundles reusable Shiny
-    modules on a shared, unit-tested helper foundation and ships three
-    ready-to-run apps: a full Data Explorer plus focused Reshape and Combine
-    tools.
+    modules on a shared, unit-tested helper foundation and ships five
+    ready-to-run apps: a full Data Explorer plus focused Reshape, Combine,
+    Compare Groups, and Mixed Model Review tools.
 License: MIT + file LICENSE
 Encoding: UTF-8
 RoxygenNote: 8.0.0

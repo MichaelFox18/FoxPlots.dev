@@ -16,7 +16,7 @@
 lmer_code_panel <- function(ns, out_id, label = "R code") {
   tags$details(class = "uf-codewrap",
     tags$summary(tags$b(sprintf("> %s (copy & run in R)", label))),
-    tags$button("Copy code", class = "btn btn-default uf-copy",
+    tags$button("Copy code", class = "btn btn-outline-secondary btn-sm uf-copy",
                 onclick = sprintf("DEcopy('%s', this)", ns(out_id))),
     verbatimTextOutput(ns(out_id))
   )
@@ -40,7 +40,11 @@ lmerUI <- function(id) {
       ),
       tags$hr(),
       uiOutput(ns("response_ui")),
-      selectInput(ns("transform"), "Response transformation",
+      selectInput(ns("transform"),
+                  tagList("Response transformation", info_tip(
+                    "Transform the response before fitting (e.g. log for ",
+                    "right-skewed or multiplicative data). EMMeans can be ",
+                    "back-transformed to the original scale below.")),
                   choices = c("None"                       = "none",
                               "log()"                       = "log",
                               "log1p()  [log(1+y)]"         = "log1p",
@@ -76,18 +80,25 @@ lmerUI <- function(id) {
       uiOutput(ns("emm_by_ui")),
       checkboxInput(ns("backtransform"),
                     "Back-transform EMMeans to response scale", TRUE),
-      selectInput(ns("adjust"), "Post-hoc p-value adjustment",
+      selectInput(ns("adjust"),
+                  tagList("Post-hoc p-value adjustment", info_tip(
+                    "How pairwise p-values are corrected for multiple ",
+                    "comparisons. Tukey is the usual choice for all-pairs ",
+                    "comparisons of means.")),
                   choices = c("Tukey" = "tukey", "Sidak" = "sidak",
                               "Bonferroni" = "bonferroni", "Holm" = "holm",
                               "None" = "none"),
                   selected = "tukey"),
-      sliderInput(ns("conf"), "Confidence level", min = 0.80, max = 0.99,
-                  value = 0.95, step = 0.01),
+      sliderInput(ns("conf"),
+                  tagList("Confidence level", info_tip(
+                    "Confidence level for the EMMeans intervals and the ",
+                    "pairwise comparisons.")),
+                  min = 0.80, max = 0.99, value = 0.95, step = 0.01),
       tags$hr(),
       actionButton(ns("run"), "Run analysis", class = "btn-primary"),
-      actionButton(ns("reset"), "Reset", class = "btn-default"),
+      actionButton(ns("reset"), "Reset", class = "btn-outline-secondary"),
       actionButton(ns("save_model"), "Save model for comparison",
-                   class = "btn-default", style = "margin-top:8px;")
+                   class = "btn-outline-primary", style = "margin-top:8px;")
     ),
 
     tags$head(
@@ -100,15 +111,15 @@ lmerUI <- function(id) {
     ),
     uiOutput(ns("message_box")),
 
-    tabsetPanel(
+    navset_card_tab(
       id = ns("tabs"),
 
-      tabPanel("Explore (raw data)",
+      nav_panel("Explore (raw data)",
                h4("Design balance (cell counts)"),
                helpText("Counts per combination of the selected categorical fixed ",
                         "effects. Empty cells (shaded) are what break EMMeans / cld ",
                         "-- check for them before fitting."),
-               DT::dataTableOutput(ns("balance_table")),
+               DT::DTOutput(ns("balance_table")),
                tags$hr(),
                h4("Response vs fixed effect(s)"),
                helpText("Raw, pre-model view. Look for outliers and for a spread ",
@@ -122,21 +133,21 @@ lmerUI <- function(id) {
                plotOutput(ns("interaction_plot"), height = "440px"),
                lmer_code_panel(ns, "code_interaction", "Interaction plot code")),
 
-      tabPanel("Model & code",
+      nav_panel("Model & code",
                h4("R code for this model"),
                verbatimTextOutput(ns("code_block")),
-               tags$button("Copy code", class = "btn btn-default uf-copy",
+               tags$button("Copy code", class = "btn btn-outline-secondary btn-sm uf-copy",
                            onclick = sprintf("DEcopy('%s', this)", ns("code_block"))),
-               downloadButton(ns("dl_code"), "Download .R", class = "btn-default uf-dl"),
+               downloadButton(ns("dl_code"), "Download .R", class = "btn-outline-secondary uf-dl"),
                h4("Model summary"),
                verbatimTextOutput(ns("model_summary"))),
 
-      tabPanel("Fit & variance",
+      nav_panel("Fit & variance",
                h4("Fit statistics"),
-               DT::dataTableOutput(ns("fit_table")),
+               DT::DTOutput(ns("fit_table")),
                htmlOutput(ns("fit_help")),
                h4("Variance components"),
-               DT::dataTableOutput(ns("vc_table")),
+               DT::DTOutput(ns("vc_table")),
                h4("Random-effects estimates (caterpillar plot)"),
                plotOutput(ns("ranef_plot"), height = "420px"),
                h4("Random-effects normality (Q-Q of BLUPs)"),
@@ -145,15 +156,15 @@ lmerUI <- function(id) {
                plotOutput(ns("ranef_qq"), height = "420px"),
                lmer_code_panel(ns, "code_fit", "Fit, variance & random-effects code")),
 
-      tabPanel("ANOVA",
+      nav_panel("ANOVA",
                h4(textOutput(ns("anova_title"), inline = TRUE)),
                verbatimTextOutput(ns("anova_table")),
                lmer_code_panel(ns, "code_anova", "ANOVA code")),
 
-      tabPanel("Residuals",
+      nav_panel("Residuals",
                h4("Diagnostic plots"),
                plotOutput(ns("resid_plot"), height = "560px"),
-               downloadButton(ns("dl_resid"), "Download PNG", class = "btn-default uf-dl"),
+               downloadButton(ns("dl_resid"), "Download PNG", class = "btn-outline-secondary uf-dl"),
                htmlOutput(ns("resid_help")),
                lmer_code_panel(ns, "code_resid", "Residual diagnostics code"),
                tags$hr(),
@@ -163,17 +174,17 @@ lmerUI <- function(id) {
                htmlOutput(ns("cook_help")),
                lmer_code_panel(ns, "code_cook", "Cook's distance code")),
 
-      tabPanel("EMMeans & post-hoc",
+      nav_panel("EMMeans & post-hoc",
                uiOutput(ns("emm_note")),
                h4("Estimated marginal means"),
-               DT::dataTableOutput(ns("emm_table")),
-               downloadButton(ns("dl_emm"), "Download CSV", class = "btn-default uf-dl"),
+               DT::DTOutput(ns("emm_table")),
+               downloadButton(ns("dl_emm"), "Download CSV", class = "btn-outline-secondary uf-dl"),
                h4("Pairwise comparisons"),
-               DT::dataTableOutput(ns("pairs_table")),
-               downloadButton(ns("dl_pairs"), "Download CSV", class = "btn-default uf-dl"),
+               DT::DTOutput(ns("pairs_table")),
+               downloadButton(ns("dl_pairs"), "Download CSV", class = "btn-outline-secondary uf-dl"),
                h4("Compact letter display (cld)"),
-               DT::dataTableOutput(ns("cld_table")),
-               downloadButton(ns("dl_cld"), "Download CSV", class = "btn-default uf-dl"),
+               DT::DTOutput(ns("cld_table")),
+               downloadButton(ns("dl_cld"), "Download CSV", class = "btn-outline-secondary uf-dl"),
                helpText("Means sharing a letter are not significantly different at ",
                         "the chosen adjustment level. With a 'compare within' factor ",
                         "set, letters are computed separately within each level of ",
@@ -184,7 +195,7 @@ lmerUI <- function(id) {
                         "differences are shown as ratios."),
                lmer_code_panel(ns, "code_emm", "EMMeans + post-hoc + cld code")),
 
-      tabPanel("Interaction test",
+      nav_panel("Interaction test",
                helpText("Letters tell you which cells differ; they do not tell you ",
                         "whether an interaction is real. The omnibus F-tests below ",
                         "test each model term (including any interaction) directly. ",
@@ -200,13 +211,13 @@ lmerUI <- function(id) {
                verbatimTextOutput(ns("inter_contrast_table")),
                lmer_code_panel(ns, "code_joint", "Interaction test code")),
 
-      tabPanel("EMMeans plot",
+      nav_panel("EMMeans plot",
                h4("Estimated means with letter groupings"),
                plotOutput(ns("emm_plot"), height = "520px"),
-               downloadButton(ns("dl_emmplot"), "Download PNG", class = "btn-default uf-dl"),
+               downloadButton(ns("dl_emmplot"), "Download PNG", class = "btn-outline-secondary uf-dl"),
                lmer_code_panel(ns, "code_emmplot", "EMMeans plot code")),
 
-      tabPanel("Compare models",
+      nav_panel("Compare models",
                helpText("Use 'Save model for comparison' on a fitted model, then ",
                         "change the spec, Run again, and compare here."),
                htmlOutput(ns("compare_status")),
@@ -290,7 +301,8 @@ lmerServer <- function(id, data_in) {
       nm <- vapply(rv$combos, function(c) c$name, character(1))
       tagList(
         tags$div(tags$b("Created: "), paste(nm, collapse = ", ")),
-        actionButton(ns("combo_clear"), "Clear created variables", class = "btn-default")
+        actionButton(ns("combo_clear"), "Clear created variables",
+                     class = "btn-outline-secondary btn-sm")
       )
     })
 
@@ -409,7 +421,7 @@ lmerServer <- function(id, data_in) {
     })
 
     # -- Explore (raw data, pre-model) ----------------------------------------
-    output$balance_table <- DT::renderDataTable({
+    output$balance_table <- DT::renderDT({
       df <- dataset(); req(df)
       fx <- input$fixed
       cat_fx <- if (length(fx)) fx[is_categorical(df, fx)] else character(0)
@@ -417,7 +429,7 @@ lmerServer <- function(id, data_in) {
                     "Select one or more categorical fixed effects to see the design balance."))
       tab <- as.data.frame(table(df[cat_fx]), responseName = "n")
       names(tab)[seq_along(cat_fx)] <- cat_fx
-      dt <- DT::datatable(tab, rownames = FALSE,
+      dt <- DT::datatable(tab, rownames = FALSE, class = "compact stripe hover",
                           options = list(dom = "tp", pageLength = 16))
       DT::formatStyle(dt, "n",
                       backgroundColor = DT::styleEqual(0, "#ffd6cc"),
@@ -687,10 +699,11 @@ lmerServer <- function(id, data_in) {
     )
 
     # -- Fit statistics & variance components ---------------------------------
-    output$fit_table <- DT::renderDataTable({
+    output$fit_table <- DT::renderDT({
       req(rv$fit)
       tab <- lmer_fit_stats(rv$fit$mod, nrow(rv$fit$data), rv$fit$reml)
-      DT::datatable(tab, options = list(dom = "t", pageLength = 25), rownames = FALSE)
+      DT::datatable(tab, options = list(dom = "t", pageLength = 25), rownames = FALSE,
+                    class = "compact stripe hover")
     })
 
     output$fit_help <- renderUI({
@@ -706,10 +719,11 @@ lmerServer <- function(id, data_in) {
         "Lower AIC/BIC indicate better relative fit.", extra, "</div>"))
     })
 
-    output$vc_table <- DT::renderDataTable({
+    output$vc_table <- DT::renderDT({
       req(rv$fit)
       vc <- as.data.frame(lme4::VarCorr(rv$fit$mod))
-      DT::datatable(round_df(vc), options = list(dom = "t"), rownames = FALSE)
+      DT::datatable(round_df(vc), options = list(dom = "t"), rownames = FALSE,
+                    class = "compact stripe hover")
     })
 
     output$ranef_plot <- renderPlot({
@@ -791,7 +805,7 @@ lmerServer <- function(id, data_in) {
         selectInput(ns("infl_group"), "Grouping factor to assess",
                     choices = rv$fit$random),
         actionButton(ns("run_infl"), "Compute influence (can be slow)",
-                     class = "btn-default"),
+                     class = "btn-outline-secondary"),
         helpText("Refits the model dropping each level of the chosen factor in ",
                  "turn (leave-one-group-out) and reports each group's Cook's ",
                  "distance on the fixed effects -- this can take a while on large ",
@@ -903,23 +917,23 @@ lmerServer <- function(id, data_in) {
       d
     }
 
-    output$emm_table <- DT::renderDataTable({
+    output$emm_table <- DT::renderDT({
       er  <- emm_result()
       em  <- add_counts(as.data.frame(er$emm), er$counts, er$vars)
       cap <- if (!is.null(er$held))
         tags$caption(style = "caption-side:top;",
                      sprintf("Continuous covariate(s) held at their mean: %s", er$held)) else NULL
-      DT::datatable(round_df(em), caption = cap,
+      DT::datatable(round_df(em), caption = cap, class = "compact stripe hover",
                     options = list(dom = "t", pageLength = 25), rownames = FALSE)
     })
-    output$pairs_table <- DT::renderDataTable({
-      DT::datatable(round_df(emm_result()$pairs),
+    output$pairs_table <- DT::renderDT({
+      DT::datatable(round_df(emm_result()$pairs), class = "compact stripe hover",
                     options = list(dom = "tp", pageLength = 15), rownames = FALSE)
     })
-    output$cld_table <- DT::renderDataTable({
+    output$cld_table <- DT::renderDT({
       er <- emm_result()
       cl <- add_counts(er$cld, er$counts, er$vars)
-      DT::datatable(round_df(cl),
+      DT::datatable(round_df(cl), class = "compact stripe hover",
                     options = list(dom = "t", pageLength = 25), rownames = FALSE)
     })
     output$dl_emm <- downloadHandler(

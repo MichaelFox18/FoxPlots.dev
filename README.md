@@ -12,19 +12,23 @@ code required. It is an installable **R package** built from reusable Shiny
 
 ## Status
 
-`foxplots` is an **installable R package**. It bundles the whole toolkit — four
+`foxplots` is an **installable R package**. It bundles the whole toolkit — five
 Shiny apps, the modules behind them, and a tested helper foundation — and exports
 both **launcher functions** (`run_data_explorer()`, `run_reshape_tool()`,
-`run_combine_tool()`, `run_lmer_tool()`) and the underlying **helper API**
-(`do_stack()`, `grouped_summary()`, `fit_model()`, …). Install it once and run
-anywhere.
+`run_combine_tool()`, `run_compare_groups()`, `run_lmer_tool()`) and the
+underlying **helper API** (`do_stack()`, `grouped_summary()`, `fit_model()`, …).
+Install it once and run anywhere.
 
 Highlights:
 - **One-click report** — HTML or editable Word (`.docx`), pandoc-free, with a
   "show the R code" toggle.
 - **Save / restore your progress** — a `.rds` of your data + all data prep.
-- **11 chart types** (incl. a bubble option), group comparisons, regression, and
-  a reversible Data Health cleaner with outlier flagging.
+- **11 chart types** (incl. a bubble option), regression, and a reversible Data
+  Health cleaner with outlier flagging.
+- **JMP-style one-way analysis** — group means with SE/95% CI, a full ANOVA table
+  and R-squared, Welch's ANOVA, **connecting letters**, and non-parametric parity
+  (Dunn's / **Steel-Dwass** all-pairs, rank effect sizes). Test **many outcomes
+  against many groups at once** and see every combination in one table.
 
 The look stays UF/IFAS-themed (blue/orange + the IFAS logo) throughout.
 
@@ -54,7 +58,8 @@ Then launch any app:
 
 ```r
 library(foxplots)
-run_data_explorer()      # or run_reshape_tool() / run_combine_tool() / run_lmer_tool()
+run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
+                         #    run_compare_groups() / run_lmer_tool()
 ```
 
 | Launcher | App | For… |
@@ -62,6 +67,7 @@ run_data_explorer()      # or run_reshape_tool() / run_combine_tool() / run_lmer
 | `run_data_explorer()` | **Data Explorer** | the whole workflow in one place |
 | `run_reshape_tool()`  | **Reshape Tool**  | restructuring one table |
 | `run_combine_tool()`  | **Combine Tool**  | merging / joining / comparing two tables |
+| `run_compare_groups()` | **Compare Groups** | testing whether groups differ (t-test / ANOVA / rank tests / chi-square) |
 | `run_lmer_tool()`     | **Mixed Model Review** | fitting linear mixed models (lmer) |
 
 The package also exports the helper functions for use in your own scripts (e.g.
@@ -70,7 +76,7 @@ The package also exports the helper functions for use in your own scripts (e.g.
 
 ---
 
-## 3. The four apps — separately
+## 2. The five apps — separately
 
 ### Data Explorer — the full pipeline
 Tabs run **left → right**, each feeding the next:
@@ -92,8 +98,15 @@ Tabs run **left → right**, each feeding the next:
    density, box, violin, mean ± error, pie, hexbin, correlation heatmap), with
    styling and a **"copy the ggplot2 code"** panel for each. A scatter can be
    **sized by a variable** to make a bubble chart.
-5. **Compare Groups** — t-test / ANOVA (or non-parametric) across groups, or a
-   chi-square between two categories, with assumption checks and effect sizes.
+5. **Compare Groups** — a JMP-style one-way analysis: t-test / ANOVA (or
+   non-parametric Wilcoxon / Kruskal with **Dunn's or Steel-Dwass** all-pairs)
+   across groups, with a group-means table (SE + 95% CI), the full ANOVA table
+   and R-squared, Welch's ANOVA, a means plot with **connecting letters**, and
+   assumption checks + effect sizes. Pick **several outcomes and several grouping
+   variables** to test every combination at once — a summary table (with p-values
+   corrected across the whole set) plus a collapsible full write-up per
+   combination. Or a chi-square between two categories, with expected counts,
+   standardized residuals and optional row / column / total percentages.
 6. **Regression** — fit linear / multiple / polynomial models with a
    plain-English interpretation and diagnostic plots.
 7. **Export** — download the (reshaped) data (CSV/Excel/RDS), the **charts**
@@ -122,6 +135,21 @@ two separate tables, then:
 Built-in demo: load `band_members` on the Left and `band_instruments` on the
 Right, then **Join by `name`**.
 
+### Compare Groups — do these groups actually differ?
+
+**Import → Compare Groups → Export → Report.** The same Compare Groups stage the
+Data Explorer has, on its own, for when you only want the statistics and can skip
+the reshape / visualize / regression machinery. It's the only mini-app with a
+**Report** tab, so you can go from a spreadsheet to a written-up HTML/Word
+results document in three clicks.
+
+Two modes: a **number across groups** (t-test / ANOVA, or the rank-based
+Wilcoxon / Kruskal-Wallis with Dunn's or Steel-Dwass all-pairs comparisons), or
+**two categorical variables** (chi-square). Select several outcomes and several
+grouping variables to test every combination at once.
+
+Built-in demo: load **iris**, then compare `Sepal.Length` across `Species`.
+
 ### Mixed Model Review — linear mixed models (lmer)
 
 **Import → Mixed Model → Export.** A point-and-click front end for `lmerTest` /
@@ -146,7 +174,7 @@ test), and a copy-paste R script for everything.
 
 ---
 
-## 4. How the apps work together
+## 3. How the apps work together
 
 There is **one** implementation of each feature, shared by every app — all in the
 package's `R/`:
@@ -176,7 +204,7 @@ R/   the whole package
 
 ---
 
-## 5. For developers
+## 4. For developers
 
 It's a standard R package. From the source folder:
 

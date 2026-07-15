@@ -129,13 +129,13 @@ combineServer <- function(id, left, right) {
     })
 
     output$preview <- DT::renderDT({
-      DT::datatable(result(), rownames = FALSE,
+      DT::datatable(result(), rownames = FALSE, class = "compact stripe hover",
                     options = list(pageLength = 10, scrollX = TRUE))
     })
     tbl_out <- function(get) DT::renderDT({
       d <- get()
       validate(need(is.data.frame(d), "No table provided."))
-      DT::datatable(d, rownames = FALSE,
+      DT::datatable(d, rownames = FALSE, class = "compact stripe hover",
                     options = list(pageLength = 10, scrollX = TRUE))
     })
     output$preview_left  <- tbl_out(left)

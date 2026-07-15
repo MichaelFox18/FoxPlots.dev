@@ -32,6 +32,14 @@ lmer_tool_app <- function() {
     theme        = uf_theme(),
     fillable     = FALSE,   # the model tab is a long scrolling stack of results
 
+    about_nav_panel(
+      "Mixed Model Review",
+      paste("Fit and review linear mixed models (lmerTest / emmeans): ANOVA,",
+            "variance components, residual diagnostics, estimated marginal means",
+            "with letter groupings, interaction tests, and model comparison."),
+      c("Import your data (or load the built-in RCBD example) on the Import tab.",
+        "Specify the response, fixed effects, and random effects on the Mixed Model tab, then run the analysis.",
+        "Review the ANOVA, EMMeans, and diagnostics; export the augmented data on the Export tab.")),
     nav_panel(tagList(icon("file-arrow-up"),   " Import"),      value = "import",
               importUI("imp",
                        example_choices = c("RCBD example (3-factor)" = "rcbd"))),

@@ -433,7 +433,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
     output$profile <- DT::renderDT({
       d <- filtered(); req(is.data.frame(d), nrow(d) >= 1L)
       DT::datatable(column_profile(d), rownames = FALSE,
-                    class = "compact stripe",
+                    class = "compact stripe hover",
                     options = list(scrollX = TRUE, pageLength = 12, dom = "tip"))
     })
 
@@ -453,6 +453,7 @@ importServer <- function(id, examples = NULL, store = NULL) {
     output$preview <- DT::renderDT({
       d <- filtered(); req(is.data.frame(d))
       DT::datatable(utils::head(d, 200), rownames = FALSE,
+                    class = "compact stripe hover",
                     options = list(pageLength = 10, scrollX = TRUE))
     })
 

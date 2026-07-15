@@ -27,6 +27,13 @@ reshape_tool_app <- function() {
     theme        = uf_theme(),
     fillable     = "reshape",   # the reshape preview fills; import/export scroll
 
+    about_nav_panel(
+      "Reshape Tool",
+      paste("Restructure a table without writing code: stack or split columns,",
+            "transpose, sort, subset, or summarize -- then export the result."),
+      c("Import a CSV or Excel file on the Import tab.",
+        "Choose a reshape operation and preview the new table.",
+        "Export the reshaped data as CSV, Excel, or RDS.")),
     nav_panel(tagList(icon("file-arrow-up"), " Import"),  value = "import",
               importUI("imp")),
     nav_panel(tagList(icon("table-cells"),   " Reshape"), value = "reshape",

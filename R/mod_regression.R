@@ -31,21 +31,21 @@ regressionUI <- function(id) {
                    icon = icon("play")),
       br(), br(),
       downloadButton(ns("download"), "Export summary (.txt)",
-                     class = "btn-outline-secondary w-100")
+                     class = "btn-success w-100")
     ),
     layout_columns(
       col_widths = c(5, 7),
       tagList(
-        card(card_header(icon("file-alt"), " Model summary"),
+        card(card_header(icon("file-lines"), " Model summary"),
              verbatimTextOutput(ns("summary"))),
         card(card_header(icon("lightbulb"), " Statistical interpretation"),
              uiOutput(ns("interpretation")))
       ),
       layout_columns(
         col_widths = c(6, 6),
-        card(card_header("Fitted vs Actual"),
+        card(card_header(icon("chart-line"), " Fitted vs Actual"),
              plotly::plotlyOutput(ns("plot_fitted"), height = "300px")),
-        card(card_header("Residuals vs Fitted"),
+        card(card_header(icon("chart-simple"), " Residuals vs Fitted"),
              plotly::plotlyOutput(ns("plot_resid"), height = "300px"))
       )
     )
@@ -143,12 +143,14 @@ regressionServer <- function(id, data_in) {
     })
 
     output$plot_fitted <- plotly::renderPlotly({
-      req(model())
+      validate(need(!is.null(model()),
+                    "Fit a model to see the fitted-vs-actual diagnostic."))
       plotly::ggplotly(reg_fitted_gg(model())) |>
         plotly::layout(margin = list(t = 90, b = 40, l = 55, r = 20))
     })
     output$plot_resid <- plotly::renderPlotly({
-      req(model())
+      validate(need(!is.null(model()),
+                    "Fit a model to see the residuals diagnostic."))
       plotly::ggplotly(reg_resid_gg(model())) |>
         plotly::layout(margin = list(t = 90, b = 40, l = 55, r = 20))
     })

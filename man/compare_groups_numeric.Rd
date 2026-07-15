@@ -9,7 +9,8 @@ compare_groups_numeric(
   outcome,
   group,
   parametric = TRUE,
-  var_equal = FALSE
+  var_equal = FALSE,
+  posthoc = c("dunn", "steel")
 )
 }
 \arguments{
@@ -22,11 +23,17 @@ compare_groups_numeric(
 \item{parametric}{Use a parametric test (t-test / ANOVA) vs. a rank test.}
 
 \item{var_equal}{Assume equal variances (two-group t-test only).}
+
+\item{posthoc}{Non-parametric all-pairs method for 3+ groups: "dunn"
+(default) or "steel" (Steel-Dwass). Ignored on the parametric paths, which
+always use Tukey HSD.}
 }
 \value{
 A list (or NULL on unusable input) with: test, statistic, df/df2,
-  p_value, effect_name/effect_value, group_stats, posthoc (ANOVA only),
-  k, n, parametric.
+  p_value, effect_name/effect_value, group_stats (with SE + 95% CI), posthoc
+  and posthoc_name (Tukey HSD for ANOVA; Dunn's test / Steel-Dwass for
+  Kruskal), cld (connecting letters, whenever a post-hoc ran), and, for ANOVA
+  only, anova_table, fit_stats and welch; k, n, parametric.
 }
 \description{
 Picks the test from the number of groups and the `parametric` flag:
