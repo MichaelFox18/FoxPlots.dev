@@ -1,3 +1,39 @@
+# foxplots 0.5.0
+
+## Map Tool: layer groups, color scales, bulletproof export
+
+- **Group layers by any column.** Pick a column (county, treatment, species —
+  up to 12 levels) and each level becomes a toggleable layer with an
+  ArcGIS-style checkbox list, **clustering that never mixes groups**, and a
+  "Focus on group" zoom. With no color chosen, layers auto-color by the group
+  so the map and legend stay readable.
+- **Log and quantile color scales.** Skewed values (totals, populations) no
+  longer wash out: a log scale spreads them (legend still reads in original
+  units), and a quantile scale guarantees every color bin gets used. Both fall
+  back to linear — with an explanation — when the data can't support them.
+- **The HTML download is now ONE self-contained file, always.** No more zip
+  fallback: the app inlines every script, stylesheet, and icon itself, so the
+  download opens anywhere with no pandoc and no sidecar `_files` folder.
+- **PNG snapshots actually work now.** Root cause found: the example datasets'
+  fixed `set.seed()` made the whole session deterministic — including the
+  headless browser's "random" debugging-port draw, which then hit the same
+  blocked port on every attempt ("Cannot find an available port"). All fixed
+  seeds now restore the session RNG stream (`snapshot_rng()`), snapshots use
+  the modern headless mode (current Chrome/Edge dropped the old one), and a
+  failed launch retries once with a fresh browser before reporting
+  diagnostics.
+- The generated leaflet code mirrors all of the above (grouped maps emit a
+  readable per-group loop) and still runs standalone.
+
+## Fixes
+
+- **Import row-filter values are no longer capped.** The "is any of" value
+  picker used a client-side list that silently stopped rendering options on
+  high-cardinality columns; it now loads server-side, so every distinct value
+  is available and searchable.
+- Dropped the `zip` package from Suggests (the HTML fallback that needed it
+  is gone).
+
 # foxplots 0.4.0
 
 ## New app: Map Tool (`run_map_tool()`)

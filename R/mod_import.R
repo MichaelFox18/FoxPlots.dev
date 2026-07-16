@@ -347,10 +347,26 @@ importServer <- function(id, examples = NULL, store = NULL) {
         if (identical(op, "contains"))
           textInput(ns("filter_text"), "Contains", placeholder = "text to match")
         else
+          # Choices arrive via the server-side update below -- a client-side
+          # selectize caps how many options it renders, silently hiding values
+          # on high-cardinality columns.
           selectizeInput(ns("filter_vals"), "Values",
-            choices = sort(unique(as.character(x))), multiple = TRUE,
+            choices = NULL, multiple = TRUE,
             options = list(placeholder = "pick one or more"))
       }
+    })
+
+    # Server-side value list: streams/searches EVERY distinct value, however
+    # many there are (the update lands after the renderUI above re-creates
+    # the input -- Shiny defers update messages until outputs are drawn).
+    observeEvent(list(input$filter_col, input$filter_op, rv$data), {
+      req(rv$data, input$filter_col %in% names(rv$data))
+      x <- rv$data[[input$filter_col]]
+      if (is_num_col(x) || is_date_x(x)) return()
+      if (identical(input$filter_op, "contains")) return()
+      updateSelectizeInput(session, "filter_vals",
+                           choices = sort(unique(as.character(x))),
+                           server = TRUE)
     })
 
     # Assemble a condition from the builder inputs and append it.

@@ -228,3 +228,11 @@ test_that("validate messages carry real glyphs, not corrupted escape digits", {
   expect_match(probs[1], intToUtf8(0x2212L), fixed = TRUE)    # a real minus
   expect_false(grepl("2212", probs[1], fixed = TRUE))
 })
+
+test_that("make_example_data leaves the session RNG stream untouched", {
+  set.seed(999)
+  before <- .Random.seed
+  invisible(make_example_data())
+  expect_identical(.Random.seed, before)
+  expect_identical(make_example_data(), make_example_data())  # still deterministic
+})

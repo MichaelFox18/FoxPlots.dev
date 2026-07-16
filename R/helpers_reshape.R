@@ -143,7 +143,11 @@ do_subset <- function(data, cols = NULL, sample = c("all", "n", "prop"),
   if (length(missing)) {
     stop("Columns not found in data: ", paste(missing, collapse = ", "))
   }
-  if (!is.null(seed)) set.seed(as.integer(seed))
+  if (!is.null(seed)) {
+    restore_rng <- snapshot_rng()   # reproducible sample, untouched session RNG
+    on.exit(restore_rng(), add = TRUE)
+    set.seed(as.integer(seed))
+  }
 
   out <- data
   if (sample != "all") {

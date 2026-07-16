@@ -45,6 +45,7 @@ mapUI <- function(id) {
         sprintf("input['%s'] && input['%s'] != '__none__'",
                 ns("color"), ns("color")),
         selectInput(ns("palette"), "Color palette", choices = PALETTES),
+        uiOutput(ns("ui_scale")),
         checkboxInput(ns("legend"), "Show legend", TRUE)),
       uiOutput(ns("ui_size")),
       conditionalPanel(
@@ -58,9 +59,14 @@ mapUI <- function(id) {
                    tagList("Cluster nearby points", info_tip(
                      "Groups close-together markers into expandable bubbles. ",
                      "Auto turns clustering on above ", MAP_CLUSTER_AUTO,
-                     " points.")),
+                     " points. With layer groups, clustering happens within ",
+                     "each group.")),
                    choices = c("Auto" = "auto", "On" = "on", "Off" = "off"),
                    selected = "auto", inline = TRUE),
+      hr(),
+      h6("Layer groups"),
+      uiOutput(ns("ui_group")),
+      uiOutput(ns("ui_focus")),
       hr(),
       h6("Popups & labels"),
       uiOutput(ns("ui_popup")),
@@ -71,7 +77,6 @@ mapUI <- function(id) {
       textInput(ns("fname"), "File name (no extension)", value = "map-export"),
       downloadButton(ns("dl_html"), "Interactive map (.html)",
                      class = "btn-success w-100 mb-1"),
-      uiOutput(ns("html_note")),
       uiOutput(ns("png_ui"))
     ),
     card(
@@ -166,6 +171,51 @@ mapServer <- function(id, data_in) {
                     "a click; a label just a hover).")),
                   choices = c("None" = "__none__", names(df)))
     })
+    # Color scale only makes sense for a CONTINUOUS color column (numeric,
+    # > 10 distinct); categorical colors ignore it, so hide the control.
+    output$ui_scale <- renderUI({
+      df <- data_in(); req(is.data.frame(df))
+      cv <- map_col(input$color)
+      if (is.null(cv) || !cv %in% names(df)) return(NULL)
+      v <- df[[cv]]
+      if (!is.numeric(v) || dplyr::n_distinct(v) <= 10) return(NULL)
+      selectInput(ns("color_scale"),
+                  tagList("Color scale", info_tip(
+                    "Log spreads out skewed values so regional differences ",
+                    "show; quantile bins guarantee every color gets used.")),
+                  choices = MAP_SCALES,
+                  # isolate: seeding from our own input must not make this
+                  # renderUI re-fire (and flicker) on every selection
+                  selected = isolate(input$color_scale) %||% "linear")
+    })
+    output$ui_group <- renderUI({
+      df <- data_in(); req(is.data.frame(df))
+      ok <- names(df)[vapply(df, function(x) {
+        # "(missing)" counts as a group -- same rule as the builder's gate,
+        # or a 12-level column with NAs would be offered then rendered flat.
+        n <- dplyr::n_distinct(x, na.rm = TRUE) + anyNA(x)
+        n >= 2 && n <= MAP_GROUP_MAX
+      }, logical(1))]
+      selectInput(ns("group_by"),
+                  tagList("Group layers by (optional)", info_tip(
+                    "Each level (e.g. each county) becomes a layer you can ",
+                    "toggle on the map, with its own clustering. Columns ",
+                    "with up to ", MAP_GROUP_MAX, " groups are offered.")),
+                  choices = c("None" = "__none__", ok))
+    })
+    output$ui_focus <- renderUI({
+      df <- data_in(); req(is.data.frame(df))
+      gv <- map_col(input$group_by)
+      if (is.null(gv) || !gv %in% names(df)) return(NULL)
+      lv <- unique(as.character(df[[gv]]))
+      has_na <- anyNA(lv)
+      lv <- sort(lv[!is.na(lv)])
+      if (has_na) lv <- c(lv, "(missing)")
+      selectInput(ns("focus"),
+                  tagList("Focus on group", info_tip(
+                    "Zooms the map to just that group's points.")),
+                  choices = c("(all data)" = "__all__", lv))
+    })
 
     observeEvent(input$swap, {
       lo <- input$lon; la <- input$lat
@@ -189,6 +239,8 @@ mapServer <- function(id, data_in) {
         label_col  = input$label_col %||% "__none__",
         cluster    = input$cluster %||% "auto",
         legend     = isTRUE(input$legend %||% TRUE),
+        color_scale = input$color_scale %||% "linear",
+        group_by   = input$group_by %||% "__none__",
         title      = input$title
       )
     }
@@ -223,8 +275,8 @@ mapServer <- function(id, data_in) {
       w
     })
 
-    # The one proxy use: fly back to the data without rebuilding layers.
-    observeEvent(input$zoom_data, {
+    # View-only proxy moves: never rebuild layers, just fly the camera.
+    fly_to <- function(rows_of = NULL) {
       df <- data_in()
       req(is.data.frame(df))
       lon <- map_col(input$lon); lat <- map_col(input$lat)
@@ -232,12 +284,26 @@ mapServer <- function(id, data_in) {
           all(c(lon, lat) %in% names(df)),
           is.numeric(df[[lon]]), is.numeric(df[[lat]]))
       cc <- clean_coords(df, lon, lat)
-      req(nrow(cc$data) > 0)
-      bb <- map_bbox(cc$data, lon, lat)
+      d  <- cc$data
+      if (!is.null(rows_of)) d <- d[rows_of(d), , drop = FALSE]
+      req(nrow(d) > 0)
+      bb <- map_bbox(d, lon, lat)
       view_state(NULL)
       leaflet::leafletProxy("map", session) |>
         leaflet::flyToBounds(bb$lng1, bb$lat1, bb$lng2, bb$lat2)
-    })
+    }
+    observeEvent(input$zoom_data, fly_to())
+    # Focus-on-group: zoom to one layer group's points. "(all data)" is a
+    # deliberate no-op -- it's also the value the picker RESETS to whenever it
+    # re-renders (data/group change), and flying on it would yank the user's
+    # preserved view; the "Zoom to data" button covers zooming out.
+    observeEvent(input$focus, {
+      f <- input$focus
+      if (is.null(f) || identical(f, "__all__")) return(invisible(NULL))
+      gv <- map_col(input$group_by)
+      req(!is.null(gv))
+      fly_to(function(d) map_group_vals(d[[gv]]) == f)
+    }, ignoreInit = TRUE)
 
     output$ui_hint <- renderUI({
       df <- data_in(); req(is.data.frame(df))
@@ -285,15 +351,8 @@ mapServer <- function(id, data_in) {
       w
     }
 
-    output$html_note <- renderUI({
-      if (pandoc_ok()) return(NULL)
-      helpText("Without pandoc (bundled with RStudio) the download is a .zip ",
-               "of the page plus its files; unzip and open map.html.")
-    })
     output$dl_html <- downloadHandler(
-      # Extension decided at click time so it always matches the content.
-      filename = function()
-        paste0(safe_stem(), if (pandoc_ok()) ".html" else ".zip"),
+      filename = function() paste0(safe_stem(), ".html"),
       content = function(file) {
         w <- export_widget()
         tryCatch(save_map_html(w, file), error = function(e) {

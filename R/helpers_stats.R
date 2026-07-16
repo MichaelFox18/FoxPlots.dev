@@ -5,6 +5,26 @@
 # column classifiers the UI uses to populate variable pickers. No Shiny,
 # no reactivity -- mod_summarize.R is a thin wrapper over these.
 
+# Snapshot the session RNG stream; call the returned function to restore it.
+# Lets a helper use a fixed set.seed() for reproducibility WITHOUT leaving the
+# whole session deterministic afterwards. A bare set.seed() in an example-data
+# builder once parked the session RNG at a state where chromote's "random"
+# debugging-port draw hit the same blocked port on every PNG export -- the
+# map's snapshot button failed deterministically. Never bare-set.seed() in
+# package code; pair it with this.
+snapshot_rng <- function() {
+  had <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+  old <- if (had) get(".Random.seed", envir = globalenv())
+  function() {
+    if (had) {
+      assign(".Random.seed", old, envir = globalenv())
+    } else if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+      rm(".Random.seed", envir = globalenv())
+    }
+    invisible(NULL)
+  }
+}
+
 # NA-safe scalar reducers: return NA on an empty / too-small group instead of
 # warning or returning Inf/NaN (e.g. min() of an all-NA group).
 .s_mean <- function(x) { x <- x[!is.na(x)]; if (!length(x))   NA_real_ else mean(x) }

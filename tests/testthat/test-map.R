@@ -1,8 +1,9 @@
 # Tests for the pure map logic in helpers_map.R: coordinate detection and
 # cleaning, radius / palette scaling, popups, hints, the leaflet widget
 # builder (structure assertions on the htmlwidget), and the code generator.
-# leaflet is in Imports, so widget-building tests run un-gated; the impure
-# exporters get light checks only (pandoc / Chrome are machine-dependent).
+# leaflet is in Imports, so widget-building tests run un-gated. The HTML
+# exporter is pure text-processing and fully tested; only the PNG path (needs
+# a headless browser) gets a light probe check.
 
 # Small helpers to inspect a leaflet htmlwidget's structure.
 map_call_methods <- function(w) vapply(w$x$calls, function(cl) cl$method, character(1))
@@ -237,7 +238,7 @@ test_that("generate_map_code emits parseable leaflet code across specs", {
   }
   expect_true(grepl("colorFactor",  generate_map_code(df, specs$colored)))
   expect_true(grepl("colorNumeric", generate_map_code(df, specs$numeric)))
-  expect_true(grepl("radius = radius", generate_map_code(df, specs$bubbles),
+  expect_true(grepl("radius = ~.map_radius", generate_map_code(df, specs$bubbles),
                     fixed = TRUE))
   loaded <- generate_map_code(df, specs$loaded)
   expect_true(grepl("`site name`", loaded, fixed = TRUE))  # non-syntactic backticked
@@ -269,23 +270,149 @@ test_that("make_map_example_data is deterministic, clean, and map-ready", {
   expect_equal(got$lat, "lat")
 })
 
-# ---- exporters (light: external tools are machine-dependent) --------------------
+# ---- color scales ----------------------------------------------------------------
 
-test_that("export capability probes return logical scalars", {
-  expect_type(pandoc_ok(), "logical")
-  expect_length(pandoc_ok(), 1L)
+test_that("map_color_scale falls back to linear when the data can't support it", {
+  expect_equal(map_color_scale(1:100, "log"), "log")
+  expect_equal(map_color_scale(c(0, 1:99), "log"), "linear")    # zero present
+  expect_equal(map_color_scale(c(-5, 1:99), "log"), "linear")   # negative
+  expect_equal(map_color_scale(1:100, "quantile"), "quantile")
+  expect_equal(map_color_scale(rep(c(1, 2), 50), "quantile"), "linear") # 2 distinct
+  expect_equal(map_color_scale(1:100, "nonsense"), "linear")
+  expect_equal(map_color_scale(1:100, NULL), "linear")
+})
+
+test_that("map_palette honours the color scale for continuous columns", {
+  df <- data.frame(v = c(1, 10, 100, 1000, seq(2, 900, length.out = 20)))
+  lg <- map_palette(df, "v", "auto", "log")
+  expect_equal(lg$scale, "log")
+  expect_equal(lg$values, log10(df$v))          # pal expects log10 space
+  expect_match(lg$pal(log10(50)), "^#[0-9A-Fa-f]{6}")
+  qt <- map_palette(df, "v", "auto", "quantile")
+  expect_equal(qt$scale, "quantile")
+  expect_match(qt$pal(50), "^#[0-9A-Fa-f]{6}")
+  ln <- map_palette(df, "v", "auto", "linear")
+  expect_equal(ln$scale, "linear")
+  # categorical color ignores the scale entirely
+  dfg <- data.frame(g = rep(letters[1:3], 10))
+  expect_equal(map_palette(dfg, "g", "auto", "log")$scale, "linear")
+})
+
+test_that("map_hint flags an unsupported color scale and oversized grouping", {
+  df <- data.frame(lon = runif(30, -82, -80), lat = runif(30, 27, 29),
+                   v = c(0, seq_len(29)) * 10,   # includes 0 -> log invalid
+                   id = as.character(1:30))
+  df$v[1] <- 0
+  expect_match(map_hint(df, list(lon = "lon", lat = "lat", color = "v",
+                                 color_scale = "log")),
+               "log color scale")
+  expect_match(map_hint(df, list(lon = "lon", lat = "lat", group_by = "id")),
+               "too many for a layer list")
+})
+
+# ---- layer groups ----------------------------------------------------------------
+
+test_that("group_by builds one toggleable layer per level", {
+  df <- data.frame(lon = runif(30, -82, -80), lat = runif(30, 27, 29),
+                   county = rep(c("Alachua", "Marion", "Polk"), 10),
+                   yield = rnorm(30, 30, 4))
+  w <- build_leaflet_map(df, list(lon = "lon", lat = "lat",
+                                  group_by = "county", cluster = "on"))
+  m <- map_call_methods(w)
+  expect_equal(sum(m == "addCircleMarkers"), 3L)       # one layer per county
+  expect_true("addLayersControl" %in% m)
+  expect_true(map_has_dep(w, "markercluster"))         # per-group clustering
+  # auto-color rule: no color picked -> colored (and legend'd) by the group
+  expect_true("addLegend" %in% m)
+  # group levels ride along as the marker layers' group names
+  expect_true(arg_is(map_get_call(w, "addLayersControl"),
+                     c("Alachua", "Marion", "Polk")))
+})
+
+test_that("NA group values become a '(missing)' layer in widget AND code", {
+  df <- data.frame(lon = runif(12, -82, -80), lat = runif(12, 27, 29),
+                   county = c(rep(c("A", "B"), 5), NA, NA))
+  w <- build_leaflet_map(df, list(lon = "lon", lat = "lat", group_by = "county"))
+  expect_true(arg_is(map_get_call(w, "addLayersControl"),
+                     c("(missing)", "A", "B")))
+  code <- generate_map_code(df, list(lon = "lon", lat = "lat",
+                                     group_by = "county"))
+  expect_true(grepl('"(missing)"', code, fixed = TRUE))
+  expect_true(grepl("df$.map_group", code, fixed = TRUE))
+  expect_error(parse(text = code), NA)
+})
+
+test_that("a 12-level column with NAs is gated consistently everywhere", {
+  df <- data.frame(lon = runif(26, -82, -80), lat = runif(26, 27, 29),
+                   g = c(rep(letters[1:12], 2), NA, NA))
+  # 12 levels + "(missing)" = 13 > MAP_GROUP_MAX -> grouping ignored, hint says so
+  w <- build_leaflet_map(df, list(lon = "lon", lat = "lat", group_by = "g"))
+  expect_false("addLayersControl" %in% map_call_methods(w))
+  expect_match(map_hint(df, list(lon = "lon", lat = "lat", group_by = "g")),
+               "13 groups")
+})
+
+test_that(".splice replaces literally, including a target at the text's end", {
+  expect_equal(.splice("abcXYZ", "XYZ", "-"), "abc-")     # end-of-string
+  expect_equal(.splice("XYZabc", "XYZ", "-"), "-abc")     # start
+  expect_equal(.splice("aXbXc", "X", "\\1"), "a\\1b\\1c") # verbatim backslashes
+  expect_equal(.splice("abc", "X", "-"), "abc")           # absent -> unchanged
+})
+
+test_that("group_by is ignored beyond MAP_GROUP_MAX levels and for bad columns", {
+  df <- data.frame(lon = rep(-82, 40), lat = rep(29, 40),
+                   id = as.character(seq_len(40)))
+  w <- build_leaflet_map(df, list(lon = "lon", lat = "lat", group_by = "id"))
+  m <- map_call_methods(w)
+  expect_equal(sum(m == "addCircleMarkers"), 1L)       # single flat layer
+  expect_false("addLayersControl" %in% m)
+  w2 <- build_leaflet_map(df, list(lon = "lon", lat = "lat", group_by = "nope"))
+  expect_false("addLayersControl" %in% map_call_methods(w2))
+})
+
+test_that("generate_map_code mirrors scales and grouping and stays parseable", {
+  df <- data.frame(lon = runif(30, -82, -80), lat = runif(30, 27, 29),
+                   county = rep(c("A", "B", "C"), 10),
+                   v = seq(1, 3000, length.out = 30))
+  lg <- generate_map_code(df, list(lon = "lon", lat = "lat", color = "v",
+                                   color_scale = "log"))
+  expect_true(grepl("colorNumeric", lg))
+  expect_true(grepl("log10", lg, fixed = TRUE))
+  expect_true(grepl("labelFormat(transform", lg, fixed = TRUE))
+  expect_error(parse(text = lg), NA)
+  qt <- generate_map_code(df, list(lon = "lon", lat = "lat", color = "v",
+                                   color_scale = "quantile"))
+  expect_true(grepl("colorQuantile", qt))
+  expect_error(parse(text = qt), NA)
+  gp <- generate_map_code(df, list(lon = "lon", lat = "lat",
+                                   group_by = "county",
+                                   popup_cols = "v", size_by = "v"))
+  expect_true(grepl("addLayersControl", gp, fixed = TRUE))
+  expect_true(grepl("for (g in groups)", gp, fixed = TRUE))
+  expect_true(grepl("group = g", gp, fixed = TRUE))
+  expect_error(parse(text = gp), NA)
+  expect_true(all(charToRaw(gp) <= as.raw(127L)))      # ASCII only
+})
+
+# ---- exporters -------------------------------------------------------------------
+
+test_that("export capability probe returns a logical scalar", {
   expect_type(map_snapshot_ok(), "logical")
   expect_length(map_snapshot_ok(), 1L)
 })
 
-test_that("save_map_html writes a non-empty file (html or zip fallback)", {
-  skip_if_not(pandoc_ok() || requireNamespace("zip", quietly = TRUE))
+test_that("save_map_html writes ONE self-contained file (no pandoc, no sidecar)", {
   w <- build_leaflet_map(data.frame(lon = c(-82, -81), lat = c(29, 28)),
                          list(lon = "lon", lat = "lat"))
-  out <- withr::local_tempfile(fileext = if (pandoc_ok()) ".html" else ".zip")
+  out <- withr::local_tempfile(fileext = ".html")
   save_map_html(w, out)
   expect_true(file.exists(out))
-  expect_gt(file.size(out), 0)
+  expect_gt(file.size(out), 100000)   # the leaflet js/css must be inside
+  html <- paste(readLines(out, warn = FALSE), collapse = "\n")
+  expect_false(grepl('src="map_files/', html, fixed = TRUE))
+  expect_false(grepl('href="map_files/', html, fixed = TRUE))
+  expect_true(grepl("data:application/javascript;base64,", html, fixed = TRUE))
+  expect_true(grepl("<style>", html, fixed = TRUE))
 })
 
 # ---- app objects (smoke; no testServer -- it segfaults on this machine) ---------
@@ -295,4 +422,13 @@ test_that("the Map Tool and Data Explorer app objects build", {
   expect_s3_class(data_explorer_app(), "shiny.appobj")
   ui <- mapUI("m")
   expect_true(inherits(ui, "shiny.tag") || inherits(ui, "shiny.tag.list"))
+})
+
+test_that("make_map_example_data leaves the session RNG stream untouched", {
+  # Regression: a bare set.seed() here parked the session RNG at a state where
+  # chromote drew the same blocked "random" port on every PNG export.
+  set.seed(999)
+  before <- .Random.seed
+  invisible(make_map_example_data())
+  expect_identical(.Random.seed, before)
 })

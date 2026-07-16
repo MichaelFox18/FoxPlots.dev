@@ -214,6 +214,8 @@ make_combined_factor <- function(df, cols, sep = ".") {
 #' nrow(d)
 #' @export
 make_example_data <- function() {
+  restore_rng <- snapshot_rng()   # fixed seed must NOT hijack the session RNG
+  on.exit(restore_rng(), add = TRUE)
   set.seed(2024)
   blocks <- 1:6
   d <- expand.grid(Block      = blocks,

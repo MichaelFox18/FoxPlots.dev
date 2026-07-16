@@ -131,3 +131,13 @@ test_that("do_transpose errors on unknown header column", {
   expect_error(do_transpose(data.frame(a = 1), names_from = "nope"),
                "not found")
 })
+
+test_that("do_subset's seed is reproducible without touching the session RNG", {
+  df <- data.frame(id = 1:100, g = rep(letters[1:4], 25))
+  set.seed(999)
+  before <- .Random.seed
+  s1 <- do_subset(df, sample = "n", size = 10, seed = 7)
+  expect_identical(.Random.seed, before)              # stream untouched
+  s2 <- do_subset(df, sample = "n", size = 10, seed = 7)
+  expect_identical(s1, s2)                            # still reproducible
+})

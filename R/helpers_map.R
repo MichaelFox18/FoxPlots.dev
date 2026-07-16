@@ -31,6 +31,13 @@ MAP_BASEMAPS <- c(
 MAP_CLUSTER_AUTO <- 500    # "auto" clustering kicks in above this many points
 MAP_BIG_ROWS     <- 5000   # unclustered circles get sluggish past this -> hint
 MAP_LEGEND_MAX   <- 30     # a discrete legend beyond this is unreadable (facet-cap analog)
+MAP_GROUP_MAX    <- 12     # layer-control checkboxes beyond this are unusable
+MAP_QUANT_BINS   <- 5      # quantile color scale bin count
+
+# Color scales for a CONTINUOUS color column. Log spreads out skewed values
+# (regional totals, populations); quantile guarantees every bin gets ink.
+MAP_SCALES <- c("Linear" = "linear", "Log" = "log",
+                "Quantile (5 bins)" = "quantile")
 MAP_RADIUS_RANGE <- c(4, 18)  # graduated-symbol radius bounds in px (sqrt scale)
 MAP_POPUP_MAX    <- 5      # the module preselects at most this many popup columns
 MAP_PNG_W        <- 1200   # fixed PNG snapshot size -- no extra inputs in v1
@@ -46,6 +53,15 @@ COORD_LAT_NAMES <- c("lat", "latitude", "lat_dd", "decimallatitude", "y")
 map_col <- function(x) {
   if (!is.null(x) && length(x) == 1L && nzchar(x) && !identical(x, "__none__")) x
   else NULL
+}
+
+# Layer-group labels: character values with NA as its own "(missing)" group.
+# The SINGLE definition of what counts as a group -- builder, code-gen, hint,
+# module picker and focus-zoom must all agree or grouping silently vanishes.
+map_group_vals <- function(x) {
+  g <- as.character(x)
+  g[is.na(g)] <- "(missing)"
+  g
 }
 
 # Vectorized validity predicates: finite and inside the plausible range.
@@ -159,24 +175,55 @@ map_palette_colors <- function(palette, is_cont, n) {
     "Set1")
 }
 
+# Effective color scale for a continuous color column: the requested one
+# unless the data can't support it (log needs all-positive values; quantile
+# needs enough distinct values for unique bin breaks). The single source of
+# truth for the fallback -- builder, code-gen and map_hint all consult it.
+map_color_scale <- function(v, requested) {
+  requested <- requested %||% "linear"
+  if (!requested %in% c("log", "quantile")) return("linear")
+  if (requested == "log" && any(v <= 0, na.rm = TRUE)) return("linear")
+  if (requested == "quantile") {
+    qs <- stats::quantile(v, probs = seq(0, 1, 1 / MAP_QUANT_BINS),
+                          na.rm = TRUE)
+    if (length(unique(qs)) < MAP_QUANT_BINS + 1) return("linear")
+  }
+  requested
+}
+
 # Wrap map_palette_colors() in a leaflet pal function. A numeric column with
 # <= 10 distinct values is treated as categorical (build_full_plot's coercion
-# rule), keeping numeric level order.
-map_palette <- function(df, cv, palette = "auto") {
+# rule), keeping numeric level order. For a continuous column, `color_scale`
+# picks linear / log / quantile coloring; $values are what the pal function
+# expects (log10-transformed under "log" -- the builder's legend converts the
+# labels back).
+map_palette <- function(df, cv, palette = "auto", color_scale = "linear") {
   v       <- df[[cv]]
   n       <- dplyr::n_distinct(v)   # one pass; callers reuse it via $n
   is_cont <- is.numeric(v) && n > 10
   cols    <- map_palette_colors(palette, is_cont, n)
   if (is_cont) {
-    pal <- leaflet::colorNumeric(cols, domain = range(v, na.rm = TRUE),
-                                 na.color = "#bbbbbb")
-    list(pal = pal, kind = "numeric", values = v, n = n)
+    scale <- map_color_scale(v, color_scale)
+    if (scale == "log") {
+      lv  <- log10(v)
+      pal <- leaflet::colorNumeric(cols, domain = range(lv, na.rm = TRUE),
+                                   na.color = "#bbbbbb")
+      list(pal = pal, kind = "numeric", values = lv, n = n, scale = "log")
+    } else if (scale == "quantile") {
+      pal <- leaflet::colorQuantile(cols, domain = v, n = MAP_QUANT_BINS,
+                                    na.color = "#bbbbbb")
+      list(pal = pal, kind = "numeric", values = v, n = n, scale = "quantile")
+    } else {
+      pal <- leaflet::colorNumeric(cols, domain = range(v, na.rm = TRUE),
+                                   na.color = "#bbbbbb")
+      list(pal = pal, kind = "numeric", values = v, n = n, scale = "linear")
+    }
   } else {
     vf <- if (is.numeric(v)) factor(v, levels = sort(unique(v[!is.na(v)])))
           else as.factor(v)
     pal <- leaflet::colorFactor(cols, domain = levels(vf),
                                 na.color = "#bbbbbb")
-    list(pal = pal, kind = "factor", values = vf, n = n)
+    list(pal = pal, kind = "factor", values = vf, n = n, scale = "linear")
   }
 }
 
@@ -231,11 +278,22 @@ map_hint <- function(df, p) {
       format(cc$n_dropped, big.mark = ","), format(cc$n_total, big.mark = ",")))
   cv <- map_col(p$color)
   if (!is.null(cv) && cv %in% names(df)) {
-    n_lv <- dplyr::n_distinct(df[[cv]])
-    if (!(is.numeric(df[[cv]]) && n_lv > 10) && n_lv > MAP_LEGEND_MAX)
+    n_lv    <- dplyr::n_distinct(df[[cv]])   # computed once for both checks
+    is_cont <- is.numeric(df[[cv]]) && n_lv > 10
+    if (!is_cont && n_lv > MAP_LEGEND_MAX)
       hints <- c(hints, sprintf(
         "'%s' has %d categories %s too many for a readable legend, so the legend is hidden.",
         cv, n_lv, SYM_MDASH))
+    # Requested color scale the data can't support -> silent linear fallback,
+    # loud hint (same map_color_scale rule the builder uses).
+    req_scale <- p$color_scale %||% "linear"
+    if (is_cont && req_scale %in% c("log", "quantile") &&
+        map_color_scale(df[[cv]], req_scale) == "linear")
+      hints <- c(hints, if (req_scale == "log") sprintf(
+        "A log color scale needs values above 0; '%s' has zeros or negatives %s using a linear scale.",
+        cv, SYM_MDASH) else sprintf(
+        "'%s' doesn't have enough distinct values for %d quantile bins %s using a linear scale.",
+        cv, MAP_QUANT_BINS, SYM_MDASH))
   }
   sv <- map_col(p$size_by)
   if (!is.null(sv) && sv %in% names(df) && !is.numeric(df[[sv]]))
@@ -245,6 +303,15 @@ map_hint <- function(df, p) {
     hints <- c(hints, sprintf(
       "%s points without clustering can be slow %s consider setting Cluster to Auto.",
       format(nrow(cc$data), big.mark = ","), SYM_MDASH))
+  gv <- map_col(p$group_by)
+  if (!is.null(gv) && gv %in% names(df)) {
+    # Same rows AND same "(missing)"-inclusive count the builder gates on.
+    n_grp <- dplyr::n_distinct(map_group_vals(cc$data[[gv]]))
+    if (n_grp > MAP_GROUP_MAX)
+      hints <- c(hints, sprintf(
+        "'%s' has %d groups %s too many for a layer list (max %d), so grouping is ignored.",
+        gv, n_grp, SYM_MDASH, MAP_GROUP_MAX))
+  }
   if (length(hints)) paste(hints, collapse = " ") else NULL
 }
 
@@ -262,6 +329,11 @@ map_hint <- function(df, p) {
 #   label_col  : hover-label column                    (default none)
 #   cluster    : "auto" / "on" / "off"                 (default "auto")
 #   legend     : draw the legend when `color` is set   (default TRUE)
+#   color_scale: "linear" / "log" / "quantile" for a CONTINUOUS color
+#                (default "linear"; silent fallback per map_color_scale)
+#   group_by   : column -> one toggleable layer per level (max MAP_GROUP_MAX
+#                levels), clustered per group; auto-colors by it when `color`
+#                is unset ("__none__"/NULL -> no grouping)
 #   title      : optional map title                    (default none)
 #   view       : module-only: list(lng, lat, zoom) restoring the user's view;
 #                NULL -> fitBounds to the data. Never emitted in code.
@@ -276,8 +348,15 @@ build_leaflet_map <- function(df, p) {
   d  <- cc$data
   if (!nrow(d)) return(NULL)
 
+  gv <- map_col(p$group_by)
+  if (!is.null(gv) && (!gv %in% names(d) || all(is.na(d[[gv]])) ||
+                       dplyr::n_distinct(map_group_vals(d[[gv]])) > MAP_GROUP_MAX))
+    gv <- NULL
   cv <- map_col(p$color)
   if (!is.null(cv) && (!cv %in% names(d) || all(is.na(d[[cv]])))) cv <- NULL
+  # Grouped layers with no color pick would all look alike -- color by the
+  # group so the layers (and legend) are visually distinct, ArcGIS-style.
+  if (!is.null(gv) && is.null(cv)) cv <- gv
   sizev <- map_col(p$size_by)
   if (!is.null(sizev) && (!sizev %in% names(d) || !is.numeric(d[[sizev]])))
     sizev <- NULL
@@ -290,26 +369,67 @@ build_leaflet_map <- function(df, p) {
   cluster_on <- switch(p$cluster %||% "auto",
                        on = TRUE, off = FALSE, nrow(d) > MAP_CLUSTER_AUTO)
 
-  pal_info <- if (!is.null(cv)) map_palette(d, cv, p$palette %||% "auto")
+  pal_info <- if (!is.null(cv))
+    map_palette(d, cv, p$palette %||% "auto", p$color_scale %||% "linear")
+
+  # Per-row aesthetics computed ONCE on the full cleaned data, then subset per
+  # group -- radii and colors must be comparable across layers. Scalars stay
+  # scalar (fixed size / single color) and are passed through unsubset.
+  fill   <- if (!is.null(pal_info)) pal_info$pal(pal_info$values)
+            else (p$color_hex %||% UF_BLUE)
+  radius <- if (!is.null(sizev)) scale_radius(d[[sizev]]) else size
+  popup  <- popup_html(d, popc)
+  labs   <- if (!is.null(labv)) as.character(d[[labv]])
+  sub_i  <- function(x, i) if (length(x) > 1) x[i] else x
 
   m <- leaflet::leaflet(d)
   m <- leaflet::addProviderTiles(m, basemap)
-  m <- leaflet::addCircleMarkers(
-    m, lng = d[[lon]], lat = d[[lat]],
-    radius      = if (!is.null(sizev)) scale_radius(d[[sizev]]) else size,
-    stroke      = TRUE, weight = 1, color = "#FFFFFF", opacity = 0.9,
-    fillColor   = if (!is.null(pal_info)) pal_info$pal(pal_info$values)
-                  else (p$color_hex %||% UF_BLUE),
-    fillOpacity = alpha,
-    popup       = popup_html(d, popc),
-    label       = if (!is.null(labv)) as.character(d[[labv]]),
-    clusterOptions = if (cluster_on) leaflet::markerClusterOptions())
+  if (is.null(gv)) {
+    m <- leaflet::addCircleMarkers(
+      m, lng = d[[lon]], lat = d[[lat]],
+      radius      = radius,
+      stroke      = TRUE, weight = 1, color = "#FFFFFF", opacity = 0.9,
+      fillColor   = fill,
+      fillOpacity = alpha,
+      popup       = popup,
+      label       = labs,
+      clusterOptions = if (cluster_on) leaflet::markerClusterOptions())
+  } else {
+    # One overlay layer per group level, clustered WITHIN the group (so a
+    # cluster never mixes groups), plus a checkbox layer list to toggle them.
+    gvals  <- map_group_vals(d[[gv]])
+    groups <- sort(unique(gvals))
+    for (g in groups) {
+      i <- which(gvals == g)
+      m <- leaflet::addCircleMarkers(
+        m, lng = d[[lon]][i], lat = d[[lat]][i],
+        radius      = sub_i(radius, i),
+        stroke      = TRUE, weight = 1, color = "#FFFFFF", opacity = 0.9,
+        fillColor   = sub_i(fill, i),
+        fillOpacity = alpha,
+        popup       = if (!is.null(popup)) popup[i],
+        label       = if (!is.null(labs)) labs[i],
+        group       = g,
+        clusterOptions = if (cluster_on) leaflet::markerClusterOptions())
+    }
+    m <- leaflet::addLayersControl(
+      m, overlayGroups = groups,
+      options  = leaflet::layersControlOptions(collapsed = FALSE),
+      position = "topleft")
+  }
 
   show_legend <- !is.null(pal_info) && isTRUE(p$legend %||% TRUE) &&
     (pal_info$kind == "numeric" || pal_info$n <= MAP_LEGEND_MAX)
-  if (show_legend)
+  if (show_legend) {
+    # Log scale colors run over log10(values); relabel the legend back to the
+    # original units so it reads like the data.
+    lab_fmt <- if (identical(pal_info$scale, "log"))
+      leaflet::labelFormat(transform = function(x) signif(10^x, 3))
+    else leaflet::labelFormat()
     m <- leaflet::addLegend(m, position = "bottomright", pal = pal_info$pal,
-                            values = pal_info$values, title = cv, opacity = 0.9)
+                            values = pal_info$values, title = cv,
+                            opacity = 0.9, labFormat = lab_fmt)
+  }
 
   ttl <- if (!is.null(p$title) && nzchar(trimws(p$title))) trimws(p$title)
   if (!is.null(ttl))
@@ -363,8 +483,13 @@ generate_map_code <- function(df, p) {
 
   cc <- clean_coords(df, lon, lat)
   d0 <- cc$data   # guards evaluate on the CLEANED rows, matching the builder
+  gv <- map_col(p$group_by)
+  if (!is.null(gv) && (!gv %in% names(d0) || all(is.na(d0[[gv]])) ||
+                       dplyr::n_distinct(map_group_vals(d0[[gv]])) > MAP_GROUP_MAX))
+    gv <- NULL
   cv <- map_col(p$color)
   if (!is.null(cv) && (!cv %in% names(d0) || all(is.na(d0[[cv]])))) cv <- NULL
+  if (!is.null(gv) && is.null(cv)) cv <- gv   # the builder's auto-color rule
   sizev <- map_col(p$size_by)
   if (!is.null(sizev) && (!sizev %in% names(d0) || !is.numeric(d0[[sizev]])))
     sizev <- NULL
@@ -386,63 +511,112 @@ generate_map_code <- function(df, p) {
     "df <- df[ok, ]")
 
   show_legend <- FALSE
+  fill_expr <- sprintf("fillColor = %s", qq(p$color_hex %||% UF_BLUE))
+  legend_args <- NULL
   if (!is.null(cv)) {
     n_lv    <- dplyr::n_distinct(d0[[cv]])
     is_cont <- is.numeric(d0[[cv]]) && n_lv > 10
     cols    <- map_palette_colors(p$palette %||% "auto", is_cont, n_lv)
-    pre <- c(pre, "", sprintf(
-      "pal <- %s(%s, domain = %s)",
-      if (is_cont) "colorNumeric" else "colorFactor",
-      map_palette_code(cols), dollar(cv)))
+    scale   <- if (is_cont) map_color_scale(d0[[cv]], p$color_scale %||% "linear")
+               else "linear"
+    pal_line <- if (!is_cont) sprintf(
+        'pal <- colorFactor(%s, domain = %s, na.color = "#bbbbbb")',
+        map_palette_code(cols), dollar(cv))
+      else switch(scale,
+        log      = sprintf(
+          'pal <- colorNumeric(%s, domain = log10(%s), na.color = "#bbbbbb")  # log color scale',
+          map_palette_code(cols), dollar(cv)),
+        quantile = sprintf(
+          'pal <- colorQuantile(%s, domain = %s, n = %d, na.color = "#bbbbbb")',
+          map_palette_code(cols), dollar(cv), MAP_QUANT_BINS),
+        sprintf('pal <- colorNumeric(%s, domain = %s, na.color = "#bbbbbb")',
+                map_palette_code(cols), dollar(cv)))
+    pre <- c(pre, "", pal_line)
+    fill_expr <- if (identical(scale, "log"))
+      sprintf("fillColor = ~pal(log10(%s))", bq(cv))
+    else sprintf("fillColor = ~pal(%s)", bq(cv))
     show_legend <- isTRUE(p$legend %||% TRUE) &&
       (is_cont || n_lv <= MAP_LEGEND_MAX)
+    if (show_legend) {
+      leg_vals <- if (identical(scale, "log")) sprintf("~log10(%s)", bq(cv))
+                  else sprintf("~%s", bq(cv))
+      leg_fmt  <- if (identical(scale, "log"))
+        ",\n            labFormat = labelFormat(transform = function(x) signif(10^x, 3))"
+      else ""
+      legend_args <- sprintf(
+        'position = "bottomright", pal = pal, values = %s, title = %s%s',
+        leg_vals, qq(cv), leg_fmt)
+    }
   }
+  # Emitted helper columns are dot-prefixed so they can't silently clobber the
+  # user's own columns when the script is pasted over their data.
   if (length(popc)) {
-    esc_name <- function(cn) htmltools::htmlEscape(cn)
     parts <- vapply(popc, function(cn)
-      sprintf('"<b>%s:</b> ", %s', esc_name(cn), dollar(cn)), character(1))
+      sprintf('"<b>%s:</b> ", %s', htmltools::htmlEscape(cn), dollar(cn)),
+      character(1))
     pre <- c(pre, "", paste0(
-      "popup <- paste0(",
-      paste(parts, collapse = ', "<br/>",\n                '), ")"))
+      "df$.map_popup <- paste0(",
+      paste(parts, collapse = ', "<br/>",\n                     '), ")"))
   }
   if (!is.null(sizev)) {
     pre <- c(pre, "",
       "# Bubble radii: sqrt scaling so marker AREA tracks the value",
       sprintf("v <- %s - min(%s, na.rm = TRUE)", dollar(sizev), dollar(sizev)),
-      sprintf("radius <- %s + %s * sqrt(v / max(v, na.rm = TRUE))",
+      sprintf("df$.map_radius <- %s + %s * sqrt(v / max(v, na.rm = TRUE))",
               MAP_RADIUS_RANGE[1], MAP_RADIUS_RANGE[2] - MAP_RADIUS_RANGE[1]),
-      sprintf("radius[!is.finite(radius)] <- %s", MAP_RADIUS_RANGE[1]))
+      sprintf("df$.map_radius[!is.finite(df$.map_radius)] <- %s",
+              MAP_RADIUS_RANGE[1]))
   }
 
   marker_args <- c(
     sprintf("lng = ~%s, lat = ~%s", bq(lon), bq(lat)),
-    if (!is.null(sizev)) "radius = radius" else sprintf("radius = %s", size),
+    if (!is.null(sizev)) "radius = ~.map_radius" else sprintf("radius = %s", size),
     'stroke = TRUE, weight = 1, color = "#FFFFFF"',
-    if (!is.null(cv)) sprintf("fillColor = ~pal(%s)", bq(cv))
-    else               sprintf("fillColor = %s", qq(p$color_hex %||% UF_BLUE)),
+    fill_expr,
     sprintf("fillOpacity = %s", alpha),
-    if (length(popc)) "popup = popup",
+    if (length(popc)) "popup = ~.map_popup",
     if (!is.null(labv)) sprintf("label = ~as.character(%s)", bq(labv)),
     if (cluster_on) "clusterOptions = markerClusterOptions()")
-
-  lines <- c(
-    "leaflet(df)",
-    sprintf('addProviderTiles("%s")', basemap),
-    sprintf("addCircleMarkers(%s)",
-            paste(marker_args, collapse = ",\n                   ")))
-  if (show_legend)
-    lines <- c(lines, sprintf(
-      'addLegend(position = "bottomright", pal = pal, values = ~%s, title = %s)',
-      bq(cv), qq(cv)))
   ttl <- if (!is.null(p$title) && nzchar(trimws(p$title))) trimws(p$title)
-  if (!is.null(ttl))
-    lines <- c(lines, sprintf(
-      'addControl(%s, position = "topright")',
-      qq(sprintf("<b>%s</b>", htmltools::htmlEscape(ttl)))))
+  title_args <- if (!is.null(ttl)) sprintf(
+    '%s, position = "topright"',
+    qq(sprintf("<b>%s</b>", htmltools::htmlEscape(ttl))))
 
-  code <- paste0(lines[1], " |>\n  ",
-                 paste(lines[-1], collapse = " |>\n  "))
-  assemble_map_code(pre, code)
+  if (is.null(gv)) {
+    lines <- c(
+      "leaflet(df)",
+      sprintf('addProviderTiles("%s")', basemap),
+      sprintf("addCircleMarkers(%s)",
+              paste(marker_args, collapse = ",\n                   ")))
+    if (!is.null(legend_args)) lines <- c(lines, sprintf("addLegend(%s)", legend_args))
+    if (!is.null(title_args))  lines <- c(lines, sprintf("addControl(%s)", title_args))
+    code <- paste0(lines[1], " |>\n  ",
+                   paste(lines[-1], collapse = " |>\n  "))
+    return(assemble_map_code(pre, code))
+  }
+
+  # Grouped form: one toggleable layer per level, clustered within the group.
+  # NA group values become their own "(missing)" layer, exactly as rendered.
+  code <- c(
+    sprintf("df$.map_group <- as.character(%s)", dollar(gv)),
+    'df$.map_group[is.na(df$.map_group)] <- "(missing)"',
+    "groups <- sort(unique(df$.map_group))",
+    sprintf('m <- leaflet(df) |>\n  addProviderTiles("%s")', basemap),
+    "for (g in groups) {",
+    "  m <- addCircleMarkers(m, data = df[df$.map_group == g, ],",
+    paste0("                   ",
+           paste(c(marker_args, "group = g"),
+                 collapse = ",\n                   "), ")"),
+    "}",
+    "m <- addLayersControl(m, overlayGroups = groups,",
+    '                      options = layersControlOptions(collapsed = FALSE),',
+    '                      position = "topleft")')
+  if (!is.null(legend_args))
+    code <- c(code, sprintf("m <- addLegend(m, %s)", legend_args))
+  if (!is.null(title_args))
+    code <- c(code, sprintf("m <- addControl(m, %s)", title_args))
+  code <- c(code, "m")
+  assemble_map_code(pre, paste(code, collapse = "\n"))
 }
 
 # --- Example data ---------------------------------------------------------
@@ -469,6 +643,8 @@ make_map_example_data <- function() {
             30.19, 30.80, 29.91, 27.34),
     lon = c(-82.36, -82.06, -81.69, -82.35, -82.37, -81.17, -80.44, -80.50,
             -82.99, -85.21, -81.41, -81.34))
+  restore_rng <- snapshot_rng()   # fixed seed must NOT hijack the session RNG
+  on.exit(restore_rng(), add = TRUE)
   set.seed(42)
   idx   <- rep(seq_len(nrow(centroids)), each = 10L)
   crops <- c("Citrus", "Tomato", "Strawberry", "Peanut", "Sweet corn")
@@ -486,37 +662,108 @@ make_map_example_data <- function() {
     row.names = NULL)
 }
 
-# --- Map export (impure: filesystem / external tools) -----------------------
-# Smoke-tested, not unit-tested: they need pandoc or a headless Chrome. The
-# module turns their stop() messages into notifications.
+# --- Map export (filesystem / external tools) --------------------------------
+# inline_html_deps is pure text-processing over files and IS unit-tested; the
+# PNG path needs a headless browser and is smoke-tested. The module turns
+# stop() messages into notifications.
 
-# saveWidget(selfcontained = TRUE) shells out to pandoc; mirror htmlwidgets'
-# lookup (PATH, then RStudio's bundled copy via RSTUDIO_PANDOC).
-pandoc_ok <- function() {
-  if (nzchar(Sys.which("pandoc"))) return(TRUE)
-  rs <- Sys.getenv("RSTUDIO_PANDOC")
-  nzchar(rs) && (file.exists(file.path(rs, "pandoc.exe")) ||
-                 file.exists(file.path(rs, "pandoc")))
+# MIME types for the assets a widget's stylesheets can reference.
+.map_mime <- function(path) {
+  switch(tolower(tools::file_ext(path)),
+         png  = "image/png",   gif  = "image/gif",
+         jpg  = "image/jpeg",  jpeg = "image/jpeg",
+         svg  = "image/svg+xml",
+         woff = "font/woff",   woff2 = "font/woff2", ttf = "font/ttf",
+         "application/octet-stream")
 }
 
-# Save an interactive map: one self-contained .html when pandoc is available,
-# otherwise a .zip of the page plus its dependency folder (CRAN 'zip' package,
-# no external zip binary needed).
+# Replace one literal chunk of `text` with `replacement`, inserting the
+# replacement VERBATIM (gsub would interpret backslashes in JS/CSS payloads).
+# A sentinel byte keeps strsplit from dropping the trailing field when the
+# target sits at the very end of the text (it would be deleted, not replaced).
+.splice <- function(text, target, replacement) {
+  parts <- strsplit(paste0(text, "\x01"), target, fixed = TRUE)[[1]]
+  out <- paste(parts, collapse = replacement)
+  substr(out, 1L, nchar(out) - 1L)
+}
+
+# Make saveWidget(selfcontained = FALSE) output truly self-contained WITHOUT
+# pandoc: scripts become data-URI src, stylesheets are inlined as <style>
+# blocks with their url(...) assets (icons, images) converted to data URIs.
+# This is what pandoc's --self-contained does, minus the pandoc dependency
+# (the user's machine usually has none outside RStudio).
+inline_html_deps <- function(html_file) {
+  base <- dirname(html_file)
+  html <- paste(readLines(html_file, warn = FALSE, encoding = "UTF-8"),
+                collapse = "\n")
+  local_path <- function(ref, dir) {
+    if (grepl("^(https?:|data:|//)", ref)) return(NULL)
+    fp <- file.path(dir, utils::URLdecode(ref))
+    if (file.exists(fp)) fp else NULL
+  }
+
+  inline_css_assets <- function(css, css_dir) {
+    urls <- unique(unlist(regmatches(
+      css, gregexpr("url\\((['\"]?)[^)'\"]+\\1\\)", css))))
+    for (u in urls) {
+      ref <- sub("['\"]?\\)$", "", sub("^url\\(['\"]?", "", u))
+      fp  <- local_path(ref, css_dir)
+      if (is.null(fp)) next
+      css <- .splice(css, u, sprintf(
+        "url(%s)", base64enc::dataURI(file = fp, mime = .map_mime(fp))))
+    }
+    css
+  }
+
+  # <link rel="stylesheet" href="local.css"> -> <style>...inlined css...</style>
+  links <- unique(unlist(regmatches(
+    html, gregexpr('<link[^>]*href="[^"]+"[^>]*/?>', html))))
+  for (tag in links) {
+    if (!grepl("stylesheet", tag, fixed = TRUE)) next
+    ref <- sub('.*href="([^"]+)".*', "\\1", tag)
+    fp  <- local_path(ref, base)
+    if (is.null(fp)) next
+    css <- paste(readLines(fp, warn = FALSE, encoding = "UTF-8"),
+                 collapse = "\n")
+    css <- inline_css_assets(css, dirname(fp))
+    html <- .splice(html, tag, paste0("<style>\n", css, "\n</style>"))
+  }
+
+  # <script src="local.js"></script> -> data-URI src (sidesteps any need to
+  # escape "</script" sequences inside the payload).
+  scripts <- unique(unlist(regmatches(
+    html, gregexpr('<script[^>]*src="[^"]+"[^>]*></script>', html))))
+  for (tag in scripts) {
+    ref <- sub('.*src="([^"]+)".*', "\\1", tag)
+    fp  <- local_path(ref, base)
+    if (is.null(fp)) next
+    html <- .splice(html, tag, sprintf(
+      '<script src="%s"></script>',
+      base64enc::dataURI(file = fp, mime = "application/javascript")))
+  }
+  html
+}
+
+# Save an interactive map as ONE self-contained .html that opens anywhere --
+# no pandoc, no zip, no sidecar folder.
 save_map_html <- function(widget, file) {
-  if (pandoc_ok()) {
-    htmlwidgets::saveWidget(widget, file, selfcontained = TRUE, title = "Map")
-    return(invisible(file))
-  }
-  if (!requireNamespace("zip", quietly = TRUE)) {
-    stop("Saving a single-file map needs pandoc (bundled with RStudio) or ",
-         "the 'zip' package. install.packages(\"zip\")")
-  }
   tmp <- file.path(tempfile("map"), "map.html")
   dir.create(dirname(tmp), recursive = TRUE)
   on.exit(unlink(dirname(tmp), recursive = TRUE), add = TRUE)
   htmlwidgets::saveWidget(widget, tmp, selfcontained = FALSE, title = "Map")
-  zip::zipr(file, files = list.files(dirname(tmp), full.names = TRUE))
+  con <- file(file, open = "wb")
+  on.exit(close(con), add = TRUE)
+  writeLines(enc2utf8(inline_html_deps(tmp)), con, useBytes = TRUE)
   invisible(file)
+}
+
+# Prefer the modern headless mode: current Chrome/Edge builds have dropped
+# the old one, so chromote's default dies with "debugging port not open".
+# An explicit user setting is respected.
+.chromote_env <- function() {
+  if (!nzchar(Sys.getenv("CHROMOTE_HEADLESS")))
+    Sys.setenv(CHROMOTE_HEADLESS = "new")
+  invisible(NULL)
 }
 
 # Can we take PNG snapshots? Needs webshot2 + chromote AND a real Chromium
@@ -526,6 +773,7 @@ save_map_html <- function(widget, file) {
 map_snapshot_ok <- function() {
   if (!requireNamespace("webshot2", quietly = TRUE) ||
       !requireNamespace("chromote", quietly = TRUE)) return(FALSE)
+  .chromote_env()
   found <- !is.null(tryCatch(suppressMessages(chromote::find_chrome()),
                              error = function(e) NULL,
                              warning = function(w) NULL))
@@ -543,8 +791,22 @@ map_snapshot_ok <- function() {
   found
 }
 
-# Rasterize the map via headless Chrome; `delay` gives basemap tiles a moment
-# to load before the shot.
+# Close chromote's cached browser so the next webshot starts a fresh one --
+# a crashed/stale session (or one holding a dead DevTools port) otherwise
+# poisons every later attempt in the same R session.
+.reset_chromote <- function() {
+  tryCatch({
+    if (chromote::has_default_chromote_object())
+      chromote::default_chromote_object()$get_browser()$close()
+  }, error = function(e) NULL)
+  invisible(NULL)
+}
+
+# Rasterize the map via headless Chrome/Edge; `delay` gives basemap tiles a
+# moment to load. Browser startup on managed Windows machines is flaky
+# ("Cannot find an available port", "Failed to start chrome"), so a failed
+# first attempt retries ONCE with a fresh browser in the modern headless mode
+# (newer Chrome/Edge builds dropped the old one).
 save_map_png <- function(widget, file, width = MAP_PNG_W, height = MAP_PNG_H,
                          delay = 1) {
   if (!map_snapshot_ok()) {
@@ -555,7 +817,18 @@ save_map_png <- function(widget, file, width = MAP_PNG_W, height = MAP_PNG_H,
   dir.create(dirname(tmp), recursive = TRUE)
   on.exit(unlink(dirname(tmp), recursive = TRUE), add = TRUE)
   htmlwidgets::saveWidget(widget, tmp, selfcontained = FALSE, title = "Map")
-  webshot2::webshot(tmp, file = file, vwidth = width, vheight = height,
-                    delay = delay)
+  .chromote_env()
+  shot <- function() webshot2::webshot(tmp, file = file, vwidth = width,
+                                       vheight = height, delay = delay)
+  out <- tryCatch(shot(), error = function(e) e)
+  if (inherits(out, "error")) {
+    .reset_chromote()   # a stale/crashed browser poisons every later attempt
+    out <- tryCatch(shot(), error = function(e) e)
+  }
+  if (inherits(out, "error")) {
+    stop("The headless browser failed to start twice (",
+         conditionMessage(out), "). Run chromote::chromote_info() in the R ",
+         "console to diagnose, or use the interactive HTML download instead.")
+  }
   invisible(file)
 }
