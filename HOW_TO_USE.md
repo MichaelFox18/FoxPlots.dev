@@ -12,6 +12,7 @@ There are five apps:
 | `run_combine_tool()`  | **Combine Tool**  | Merge / join / compare **two** tables |
 | `run_compare_groups()` | **Compare Groups** | Just the statistics: do these groups really differ? (t-test / ANOVA / rank tests / chi-square), then download a report |
 | `run_lmer_tool()`     | **Mixed Model Review** | Fit linear mixed models (lmer): ANOVA, EMMeans post-hoc, diagnostics |
+| `run_map_tool()`      | **Map Tool**      | Put rows with latitude / longitude on an interactive basemap: color / size by variables, popups, clustering, HTML / PNG download (basemap tiles need internet) |
 
 ---
 
@@ -61,7 +62,8 @@ can take a few minutes the first time; you only do it once.
 ```r
 library(foxplots)
 run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
-                         #    run_compare_groups() / run_lmer_tool()
+                         #    run_compare_groups() / run_lmer_tool() /
+                         #    run_map_tool()
 ```
 
 The app opens in your web browser. To stop it, press **Esc** in the R console

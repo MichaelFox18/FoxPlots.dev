@@ -26,7 +26,10 @@ plot_slot_panel <- function(ns, i) {
                             "Bar Chart" = "bar", "Histogram" = "histogram",
                             "Density Plot" = "density", "Box Plot" = "boxplot",
                             "Violin Plot" = "violin", "Mean \u00b1 Error" = "meanerror",
-                            "Pie Chart" = "pie", "Hexbin (2D density)" = "hexbin",
+                            "Pie Chart" = "pie",
+                            # hexbin is Suggests-only: offer it only when installed
+                            if (requireNamespace("hexbin", quietly = TRUE))
+                              c("Hexbin (2D density)" = "hexbin"),
                             "Correlation Heatmap" = "heatmap")),
     uiOutput(oid("_x")),
     uiOutput(oid("_y")),
@@ -487,6 +490,10 @@ visualizeServer <- function(id, data_in) {
           if (!identical(pr$type, "heatmap"))
             validate(need(nzchar(pr$x %||% ""),
                           "Choose your variables to draw this chart."))
+          if (identical(pr$type, "hexbin"))
+            validate(need(requireNamespace("hexbin", quietly = TRUE),
+                          paste0("This chart needs the optional 'hexbin' ",
+                                 "package: install.packages(\"hexbin\")")))
           p <- build_full_plot(data_in(), pr)
           validate(need(!is.null(p),
                         "Finish choosing variables to draw this chart."))
@@ -505,6 +512,10 @@ visualizeServer <- function(id, data_in) {
           if (!identical(pr$type, "heatmap"))
             validate(need(nzchar(pr$x %||% ""),
                           "Choose your variables to draw this chart."))
+          if (identical(pr$type, "hexbin"))
+            validate(need(requireNamespace("hexbin", quietly = TRUE),
+                          paste0("This chart needs the optional 'hexbin' ",
+                                 "package: install.packages(\"hexbin\")")))
           p <- build_full_plot(data_in(), pr)
           validate(need(!is.null(p),
                         "Finish choosing variables to draw this chart."))

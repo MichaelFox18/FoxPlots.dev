@@ -12,10 +12,11 @@ code required. It is an installable **R package** built from reusable Shiny
 
 ## Status
 
-`foxplots` is an **installable R package**. It bundles the whole toolkit — five
+`foxplots` is an **installable R package**. It bundles the whole toolkit — six
 Shiny apps, the modules behind them, and a tested helper foundation — and exports
 both **launcher functions** (`run_data_explorer()`, `run_reshape_tool()`,
-`run_combine_tool()`, `run_compare_groups()`, `run_lmer_tool()`) and the
+`run_combine_tool()`, `run_compare_groups()`, `run_lmer_tool()`,
+`run_map_tool()`) and the
 underlying **helper API** (`do_stack()`, `grouped_summary()`, `fit_model()`, …).
 Install it once and run anywhere.
 
@@ -59,7 +60,8 @@ Then launch any app:
 ```r
 library(foxplots)
 run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
-                         #    run_compare_groups() / run_lmer_tool()
+                         #    run_compare_groups() / run_lmer_tool() /
+                         #    run_map_tool()
 ```
 
 | Launcher | App | For… |
@@ -69,6 +71,7 @@ run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
 | `run_combine_tool()`  | **Combine Tool**  | merging / joining / comparing two tables |
 | `run_compare_groups()` | **Compare Groups** | testing whether groups differ (t-test / ANOVA / rank tests / chi-square) |
 | `run_lmer_tool()`     | **Mixed Model Review** | fitting linear mixed models (lmer) |
+| `run_map_tool()`      | **Map Tool**      | putting lat/lon data on an interactive map (leaflet) |
 
 The package also exports the helper functions for use in your own scripts (e.g.
 `do_stack()`, `grouped_summary()`, `build_full_plot()`); see

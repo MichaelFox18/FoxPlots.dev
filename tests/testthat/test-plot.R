@@ -207,3 +207,51 @@ test_that("clean_plotly_trace_names strips the leaked panel index", {
 test_that("clean_plotly_trace_names tolerates a plot with no traces", {
   expect_equal(clean_plotly_trace_names(list(x = list())), list(x = list()))
 })
+
+# ---- faceting an aggregating chart (line / bar-with-Y) -----------------------
+# Regression: the line and bar-with-Y branches aggregate df before plotting, so
+# the facet column must survive that aggregation or facet_wrap() errors at
+# render time (the plot built fine but crashed at print/ggplotly).
+
+test_that("build_full_plot keeps the facet column through line/bar aggregation", {
+  df <- data.frame(g = rep(letters[1:3], each = 8),
+                   f = rep(c("u", "v"), 12),
+                   x = rep(1:4, 6),
+                   y = (1:24) * 1.5)
+  specs <- list(
+    line       = list(type = "line", x = "x", y = "y", facet = "f"),
+    line_col   = list(type = "line", x = "x", y = "y", color = "g", facet = "f"),
+    bar_y      = list(type = "bar",  x = "g", y = "y", bar_agg = "mean", facet = "f"))
+  for (nm in names(specs)) {
+    p_obj <- build_full_plot(df, specs[[nm]])
+    expect_true(inherits(p_obj, "ggplot"), info = nm)
+    expect_error(ggplot2::ggplot_build(p_obj), NA)   # errored before the fix
+  }
+})
+
+test_that("generate_code groups the aggregated data by the facet column too", {
+  df <- data.frame(f = rep(c("u", "v"), 6), x = rep(1:3, 4), y = 1:12)
+  for (ty in c("line", "bar")) {
+    code <- generate_code(df, list(type = ty, x = "x", y = "y", facet = "f"))
+    expect_true(grepl("group_by(df, x, f)", code, fixed = TRUE), info = ty)
+    expect_true(grepl("facet_wrap(vars(f))", code, fixed = TRUE), info = ty)
+    expect_error(parse(text = code), NA)
+  }
+})
+
+test_that("build_full_plot still drops a facet with more than 30 levels", {
+  df <- data.frame(x = rep(1:2, 31), y = 1:62, f = factor(rep(1:31, each = 2)))
+  p_obj <- build_full_plot(df, list(type = "line", x = "x", y = "y", facet = "f"))
+  expect_true(inherits(p_obj, "ggplot"))
+  expect_error(ggplot2::ggplot_build(p_obj), NA)
+  # aggregation must NOT have grouped by the dropped facet: one point per x
+  expect_equal(nrow(p_obj$data), 2L)
+})
+
+test_that("generate_code applies the same >30-level facet cap as the builder", {
+  df <- data.frame(x = rep(1:2, 31), y = 1:62, f = factor(rep(1:31, each = 2)))
+  code <- generate_code(df, list(type = "line", x = "x", y = "y", facet = "f"))
+  expect_false(grepl("facet_wrap", code, fixed = TRUE))   # facet dropped on screen
+  expect_true(grepl("group_by(df, x)", code, fixed = TRUE))
+  expect_error(parse(text = code), NA)
+})

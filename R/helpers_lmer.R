@@ -295,10 +295,10 @@ lmer_validate <- function(df, spec) {
                   sprintf("More than %d fixed effects selected. This tool limits comparisons to %d.", MAX_FIXED, MAX_FIXED))
   if (is.null(random) || length(random) == 0)
     problems <- c(problems,
-                  "No random effects selected. lmer() requires at least one random (grouping) effect 2014 without one use a fixed-effects model such as lm() / aov().")
+                  "No random effects selected. lmer() requires at least one random (grouping) effect \u2014 without one use a fixed-effects model such as lm() / aov().")
   if (!is.null(response) && response %in% fixed)
     problems <- c(problems, sprintf(
-      "The response '%s' is also selected as a fixed effect 2014 a variable can't predict itself. Remove it from the fixed effects.", response))
+      "The response '%s' is also selected as a fixed effect \u2014 a variable can't predict itself. Remove it from the fixed effects.", response))
   if (!is.null(response) && response %in% random)
     problems <- c(problems, sprintf(
       "The response '%s' is also selected as a random effect. Remove it from the random effects.", response))
@@ -314,7 +314,7 @@ lmer_validate <- function(df, spec) {
     y <- df[[response]]
     bad <- switch(transform,
                   "log"     = if (any(y <= 0, na.rm = TRUE)) "log() requires all response values > 0.",
-                  "log1p"   = if (any(y <= -1, na.rm = TRUE)) "log1p() requires all response values > -1 (2212 1 gives log(0) = 2212Inf).",
+                  "log1p"   = if (any(y <= -1, na.rm = TRUE)) "log1p() requires all response values > -1 (\u2212 1 gives log(0) = \u2212Inf).",
                   "sqrt"    = if (any(y < 0,  na.rm = TRUE)) "sqrt() requires all response values >= 0.",
                   "inverse" = if (any(y == 0, na.rm = TRUE)) "inverse (1/y) requires all response values != 0.",
                   "asin"    = if (any(y < 0 | y > 1, na.rm = TRUE)) "arcsine-sqrt requires the response to be a proportion in [0, 1].",
@@ -334,15 +334,15 @@ lmer_validate <- function(df, spec) {
   deg <- character(0)
   cat_fixed <- fixed[is_categorical(df, fixed)]
   if (sum(cc_rows) < 2)
-    deg <- c(deg, "Fewer than two complete rows remain after removing missing values 2014 nothing to fit.")
+    deg <- c(deg, "Fewer than two complete rows remain after removing missing values \u2014 nothing to fit.")
   for (v in cat_fixed)
     if (n_levels_used(used_df[[v]]) < 2)
       deg <- c(deg, sprintf(
-        "Fixed effect '%s' has only one level among the rows used (after dropping missing values) 2014 it can't be estimated. Drop it or pick another variable.", v))
+        "Fixed effect '%s' has only one level among the rows used (after dropping missing values) \u2014 it can't be estimated. Drop it or pick another variable.", v))
   for (g in random)
     if (n_levels_used(used_df[[g]]) < 2)
       deg <- c(deg, sprintf(
-        "Random effect '%s' has only one level among the rows used 2014 lmer() needs each grouping factor to have >1 level. A single-group factor carries no between-group variance.", g))
+        "Random effect '%s' has only one level among the rows used \u2014 lmer() needs each grouping factor to have >1 level. A single-group factor carries no between-group variance.", g))
   deg
 }
 
@@ -420,7 +420,7 @@ lmer_fit <- function(df, spec) {
     few <- ng[ng < 5]
     for (g in names(few))
       notes <- c(notes, sprintf(
-        "Random effect '%s' has only %d level(s). Variance components estimated from fewer than ~5 levels are unreliable 2014 consider modelling it as a fixed effect instead.",
+        "Random effect '%s' has only %d level(s). Variance components estimated from fewer than ~5 levels are unreliable \u2014 consider modelling it as a fixed effect instead.",
         g, few[[g]]))
   }
 
@@ -440,7 +440,7 @@ lmer_fit <- function(df, spec) {
       "What this means: the model is likely over-parameterized for the data, ",
       "so some parameters aren't uniquely identified. Things to try: ",
       "(1) drop the random slope and use an intercept-only random structure; ",
-      "(2) remove a sparse or empty-cell factor 2014 check the design-balance ",
+      "(2) remove a sparse or empty-cell factor \u2014 check the design-balance ",
       "table on the Explore tab; (3) center and scale continuous predictors ",
       "so they're on comparable scales; (4) simplify the fixed-effects part. ",
       "The estimates can still be reported, but treat the affected variance ",
@@ -583,7 +583,7 @@ lmer_anova <- function(model, type = "3", ddf = "Kenward-Roger") {
   if (bad_p || bad_ddf || any(grepl("NaN", warns, ignore.case = TRUE)))
     note <- paste0(note,
       "Note: one or more p-values could not be computed (NaN). The denominator ",
-      "degrees of freedom for those terms can't be estimated 2014 this happens ",
+      "degrees of freedom for those terms can't be estimated \u2014 this happens ",
       "when the fit is singular / over-parameterized (see the fit warnings on the ",
       "model run). Try an intercept-only random structure (drop the random slope), ",
       "remove a sparse factor (Explore > design balance), or center & scale ",
@@ -833,7 +833,7 @@ lmer_emm_plot <- function(er, response, transform) {
             er$by_var[1]) else NULL
 
   p + labs(y = ylab, x = x_var, subtitle = subt,
-           title = "Estimated marginal means 00b1 CI with letter groupings") +
+           title = "Estimated marginal means \u00b1 CI with letter groupings") +
     theme_minimal(base_size = 14) +
     theme(plot.title = element_text(face = "bold", colour = UF_BLUE),
           axis.title = element_text(colour = UF_CHARCOAL),

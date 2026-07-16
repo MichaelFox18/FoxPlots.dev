@@ -1,3 +1,49 @@
+# foxplots 0.4.0
+
+## New app: Map Tool (`run_map_tool()`)
+
+A sixth app — **Import → Map → Export** — that puts any table with latitude /
+longitude columns on an interactive leaflet basemap, point-and-click:
+
+- **Coordinate auto-detection.** Common column names (`lat`, `long`,
+  `longitude`, …) are found and range-checked automatically, with a one-click
+  swap link and a warning when the two look reversed. The 0–360 longitude
+  convention (e.g. `quakes`) is accepted.
+- **ArcGIS-style styling.** Four key-free basemaps (light / streets / satellite /
+  terrain), color-by-column with a legend that always matches the palette
+  (the same palette set as Visualize), **area-proportional bubble sizing**,
+  opacity, click popups, and hover labels.
+- **Clustering for dense data.** Nearby markers group into expandable bubbles —
+  automatic above 500 points, or forced on / off.
+- **The view survives styling.** Pan / zoom is preserved across setting changes;
+  a "Zoom to data" button flies back to the points.
+- **Download or reproduce.** One-click **interactive HTML** (self-contained via
+  pandoc, or a zip fallback) and **PNG snapshot** (via headless Chrome/Edge when
+  available), plus copy-ready `leaflet` R code that reproduces the map.
+- Ships two examples: synthetic **Florida research sites**
+  (`make_map_example_data()`, exported) and the **Fiji earthquakes** data.
+
+The full Data Explorer gains the same stage as a **Map tab** between Visualize
+and Compare Groups.
+
+New dependencies: `leaflet`, `htmlwidgets`, `htmltools` move into Imports;
+`webshot2`, `chromote`, `zip` join Suggests (PNG snapshots and the no-pandoc
+HTML fallback degrade gracefully when absent).
+
+## Fixes / internals
+
+- **Faceting a line chart or a bar-chart-with-Y no longer errors.** The
+  aggregation behind those two chart types dropped the facet column before
+  `facet_wrap()` looked for it; the facet variable now joins the grouping (in
+  the rendered chart and in the exported code), and the >30-level facet cap is
+  applied once up front.
+- **Mixed Model Review messages read correctly again.** Ten user-facing strings
+  had lost the backslash from their unicode escapes and printed literal digits
+  ("effect 2014 without…"); the em dash / minus / plus-minus glyphs are back.
+- **Hexbin chart degrades gracefully.** The chart type is only offered when the
+  optional `hexbin` package is installed, and the render paths show a friendly
+  install hint instead of a raw error.
+
 # foxplots 0.3.0
 
 ## New app: Compare Groups (`run_compare_groups()`)

@@ -6,7 +6,7 @@
 \alias{foxplots-package}
 \title{foxplots: Point-and-Click Data Exploration and Reshaping Toolkit}
 \description{
-A point-and-click toolkit, built on 'shiny', for importing, cleaning, reshaping, summarizing, visualizing, comparing, modeling, and exporting tabular data without writing R code. It bundles reusable Shiny modules on a shared, unit-tested helper foundation and ships five ready-to-run apps: a full Data Explorer plus focused Reshape, Combine, Compare Groups, and Mixed Model Review tools.
+A point-and-click toolkit, built on 'shiny', for importing, cleaning, reshaping, summarizing, visualizing, comparing, modeling, and exporting tabular data without writing R code. It bundles reusable Shiny modules on a shared, unit-tested helper foundation and ships six ready-to-run apps: a full Data Explorer plus focused Reshape, Combine, Compare Groups, Mixed Model Review, and interactive Map tools.
 }
 \author{
 \strong{Maintainer}: Michael Fox \email{michaelfox0418@gmail.com}

@@ -301,6 +301,9 @@ build_full_plot <- function(df, p) {
   if (!is.null(yv) && !yv %in% names(df)) return(NULL)
   if (pt %in% c("histogram", "density") && !is.numeric(df[[xv]])) return(NULL)
   if (pt == "hexbin" && (!is.numeric(df[[xv]]) || !is.numeric(df[[yv]]))) return(NULL)
+  # hexbin is Suggests-only and geom_hex() errors only at print time, so bail
+  # HERE and every caller (render, export, report) degrades gracefully.
+  if (pt == "hexbin" && !requireNamespace("hexbin", quietly = TRUE)) return(NULL)
 
   if (!is.null(cv) && cv %in% names(df)) {
     if (is.numeric(df[[cv]]) && dplyr::n_distinct(df[[cv]]) <= 10)
@@ -330,6 +333,10 @@ build_full_plot <- function(df, p) {
   legend_pos <- p$legend_pos %||% "right"
   facet_v <- if (!is.null(p$facet) && nzchar(p$facet) &&
                  p$facet != "__none__" && p$facet %in% names(df)) p$facet else NULL
+  # >30 panels are unreadable, so the facet is dropped -- decided HERE, before
+  # the chart branches, because the aggregating types (line, bar-with-Y) must
+  # group by the facet column only when it will actually be drawn.
+  if (!is.null(facet_v) && dplyr::n_distinct(df[[facet_v]]) > 30) facet_v <- NULL
 
   title <- if (!is.null(p$title) && nzchar(trimws(p$title))) p$title else NULL
   xlab  <- label_or(p$xlab %||% "", xv)
@@ -384,7 +391,7 @@ build_full_plot <- function(df, p) {
     # the chosen function, then connect. For a continuous X with one row each
     # this is the identity (a plain line); for repeated/categorical X it
     # connects the per-category mean/median/sum instead of scribbling raw rows.
-    grp  <- c(xv, cv)
+    grp  <- unique(c(xv, cv, facet_v))   # facet_v too, or facet_wrap() can't find it
     aggf <- agg_fun(p$line_agg %||% "mean")
     pdat <- df |>
       dplyr::group_by(dplyr::across(dplyr::all_of(grp))) |>
@@ -415,7 +422,7 @@ build_full_plot <- function(df, p) {
       subtitle <- sprintf("Showing the %d largest categories; the rest are grouped as \u201cOther\u201d.", barmax)
     }
     if (has_y) {
-      grp <- c(xv, cv)
+      grp <- unique(c(xv, cv, facet_v))  # facet_v too, or facet_wrap() can't find it
       pdat <- df |>
         dplyr::group_by(dplyr::across(dplyr::all_of(grp))) |>
         dplyr::summarise(.value = agg_fun(p$bar_agg)(.data[[yv]]), .groups = "drop")
@@ -619,7 +626,7 @@ build_full_plot <- function(df, p) {
       p_obj <- p_obj + (if (is_sqrt) scale_y_sqrt() else scale_y_log10())
   }
 
-  faceted <- !is.null(facet_v) && dplyr::n_distinct(df[[facet_v]]) <= 30
+  faceted <- !is.null(facet_v)   # the >30-panel cap already applied up top
   if (faceted)
     p_obj <- p_obj + facet_wrap(vars(.data[[facet_v]]))
 
@@ -705,6 +712,9 @@ generate_code <- function(df, p) {
   cv <- if (!is.null(p$color) && nzchar(p$color) && p$color != "__none__") p$color else NULL
   facet_v <- if (!is.null(p$facet) && nzchar(p$facet) &&
                  p$facet != "__none__" && p$facet %in% names(df)) p$facet else NULL
+  # Same >30-panel cap as build_full_plot, so the emitted code reproduces the
+  # chart the user actually saw (no facet on screen -> no facet in the code).
+  if (!is.null(facet_v) && dplyr::n_distinct(df[[facet_v]]) > 30) facet_v <- NULL
   sizev <- if (identical(pt, "scatter") && !is.null(p$size_by) &&
                nzchar(p$size_by) && p$size_by != "__none__" &&
                p$size_by %in% names(df) && is.numeric(df[[p$size_by]]))
@@ -821,7 +831,9 @@ generate_code <- function(df, p) {
   if (pt %in% c("line", "meanerror") && !is.null(cv)) aes_inner <- paste0(aes_inner, sprintf(", group = %s", bq(cv)))
 
   if (pt %in% c("bar", "line") && !is.null(yv)) {
-    grp_cols <- paste(c(bq(xv), if (!is.null(cv)) bq(cv)), collapse = ", ")
+    # facet_v joins the grouping so the emitted facet_wrap() finds its column.
+    grp_cols <- paste(unique(c(bq(xv), if (!is.null(cv)) bq(cv),
+                               if (!is.null(facet_v)) bq(facet_v))), collapse = ", ")
     aggfn <- switch(agg, mean = "mean", median = "median", "sum")
     pre <- c(pre, sprintf(
       'plot_df <- dplyr::summarise(dplyr::group_by(df, %s), .value = %s(%s, na.rm = TRUE), .groups = "drop")',

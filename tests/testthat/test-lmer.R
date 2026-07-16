@@ -212,3 +212,19 @@ test_that("lmer_fit_stats R2 identities hold (oracle sec 7)", {
   skip_if(length(rm) == 0 || length(rc) == 0)
   expect_lte(rm, rc + 1e-8)
 })
+
+test_that("validate messages carry real glyphs, not corrupted escape digits", {
+  # Regression: ten unicode escapes in helpers_lmer.R once lost their backslash
+  # and rendered literal '2014' / '2212' / '00b1' digits to users.
+  d <- make_example_data()
+  p_rand <- lmer_validate(d, list(response = "yield_kg", fixed = "Variety",
+                                  random = character(0), transform = "none"))
+  expect_match(p_rand[1], intToUtf8(0x2014L), fixed = TRUE)   # a real em dash
+  expect_false(grepl("2014", p_rand[1], fixed = TRUE))        # not bare digits
+  d2 <- data.frame(y = c(-2, 2, 3), A = factor(c("a", "b", "a")),
+                   G = factor(c("g1", "g2", "g1")))
+  probs <- lmer_validate(d2, list(response = "y", transform = "log1p",
+                                  fixed = "A", random = "G"))
+  expect_match(probs[1], intToUtf8(0x2212L), fixed = TRUE)    # a real minus
+  expect_false(grepl("2212", probs[1], fixed = TRUE))
+})
