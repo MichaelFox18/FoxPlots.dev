@@ -4,6 +4,7 @@
 ^BUILD_LOG\.md$
 ^CLAUDE\.md$
 ^HOW_TO_USE\.md$
+^STUDY_GUIDE\.md$
 ^\.here$
 ^\.git$
 ^\.gitignore$
