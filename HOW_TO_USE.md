@@ -102,6 +102,7 @@ See `help(package = "foxplots")` for the full list.
 | What you see | Fix |
 |---|---|
 | Install runs forever, nothing happens | It's waiting at a question in the R console (scroll down and press **Enter**). Avoid it by installing with `upgrade = "never"` as in Step 2. |
+| `WARNING: Rtools is required to build R packages` | Safe to ignore — foxplots is pure R and installs fine without Rtools. |
 | `there is no package called 'foxplots'` | The install didn't finish — re-run Step 2. |
 | `could not find function "run_data_explorer"` | Run `library(foxplots)` first. |
 | Install fails on a dependency | Run `install.packages("<name>")` for the one it names, then retry Step 2. |
