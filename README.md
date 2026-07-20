@@ -30,6 +30,10 @@ Highlights:
   and R-squared, Welch's ANOVA, **connecting letters**, and non-parametric parity
   (Dunn's / **Steel-Dwass** all-pairs, rank effect sizes). Test **many outcomes
   against many groups at once** and see every combination in one table.
+- **Interactive maps** — lat/lon auto-detection, ArcGIS-style **layer groups**
+  (toggle + zoom any group, clustering that never mixes groups), log/quantile
+  color scales, one-file interactive HTML + PNG export, and copy-ready leaflet
+  code.
 
 The look stays UF/IFAS-themed (blue/orange + the IFAS logo) throughout.
 
@@ -43,11 +47,15 @@ in every dependency automatically:
 ```r
 install.packages("remotes")
 
-# Install straight from GitHub (the usual way):
-remotes::install_github("UFSDACU/FoxPlots")
+# Install straight from GitHub (the usual way). upgrade = "never" skips a
+# hidden "update other packages?" prompt that can make the install look stuck:
+remotes::install_github("UFSDACU/FoxPlots", upgrade = "never")
 
 # ...or from a local copy (on the GitHub page: Code -> Download ZIP, unzip, then):
 # remotes::install_local("C:/path/to/FoxPlots")
+
+# Optional extras -- Word (.docx) reports and the Map tab's PNG snapshots:
+# install.packages(c("officer", "webshot2", "chromote"))
 ```
 
 > If this repository is **private**, `install_github()` needs a GitHub token in R

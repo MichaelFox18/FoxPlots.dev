@@ -12,7 +12,7 @@ There are five apps:
 | `run_combine_tool()`  | **Combine Tool**  | Merge / join / compare **two** tables |
 | `run_compare_groups()` | **Compare Groups** | Just the statistics: do these groups really differ? (t-test / ANOVA / rank tests / chi-square), then download a report |
 | `run_lmer_tool()`     | **Mixed Model Review** | Fit linear mixed models (lmer): ANOVA, EMMeans post-hoc, diagnostics |
-| `run_map_tool()`      | **Map Tool**      | Put rows with latitude / longitude on an interactive basemap: color / size by variables, popups, clustering, HTML / PNG download (basemap tiles need internet) |
+| `run_map_tool()`      | **Map Tool**      | Put rows with latitude / longitude on an interactive basemap: color / size by variables, group layers by any column (toggle + zoom per group), log / quantile color scales, popups, clustering, one-file HTML + PNG download (basemap tiles need internet) |
 
 ---
 
@@ -35,11 +35,21 @@ Then install foxplots **straight from GitHub** — this is the normal way, and i
 pulls the whole package and every dependency for you:
 
 ```r
-remotes::install_github("UFSDACU/FoxPlots")
+remotes::install_github("UFSDACU/FoxPlots", upgrade = "never")
 ```
+
+(`upgrade = "never"` skips a hidden "update other packages?" question that
+otherwise makes the install look frozen while it waits for an answer.)
 
 That single line is also how you **update** later: re-run it any time to pull the
 newest version.
+
+Two optional extras unlock two features — install them if you want them:
+
+```r
+# Word (.docx) reports, and the Map tab's PNG snapshot button:
+install.packages(c("officer", "webshot2", "chromote"))
+```
 
 <details>
 <summary>Alternative: install from a folder you already downloaded</summary>
@@ -91,10 +101,13 @@ See `help(package = "foxplots")` for the full list.
 
 | What you see | Fix |
 |---|---|
+| Install runs forever, nothing happens | It's waiting at a question in the R console (scroll down and press **Enter**). Avoid it by installing with `upgrade = "never"` as in Step 2. |
 | `there is no package called 'foxplots'` | The install didn't finish — re-run Step 2. |
 | `could not find function "run_data_explorer"` | Run `library(foxplots)` first. |
 | Install fails on a dependency | Run `install.packages("<name>")` for the one it names, then retry Step 2. |
 | The app opens but the UF logo is missing | Reinstall the package (Step 2) so its bundled files come along. |
+| Map tab: no PNG button, or a note about webshot2 | Install the optional extras from Step 2 (`webshot2`, `chromote`) — PNG snapshots also need Chrome or Edge on the computer. |
+| Map is grey / no background | Basemap tiles load from the internet — check the connection. Your points still export fine. |
 
 ---
 
