@@ -1,5 +1,15 @@
 # foxplots 0.6.0
 
+## Compare Groups: split the analysis by a third variable
+
+- **"Split by (optional)"** runs the whole comparison separately within each
+  level of a third variable -- e.g. *mpg by cyl, split by am* gives one analysis
+  for am=0 and another for am=1 (JMP's "By" grouping). The summary table gains a
+  **Stratum** column, each stratum gets its own accordion panel, and p-values are
+  BH-corrected across the full stratified grid. A high-cardinality split variable
+  is capped (with a note) so the grid can't explode. (The regression tab already
+  had the modelling equivalent via the EMMeans "Within" control.)
+
 ## A seventh app: the Regression Tool
 
 - **`run_regression_tool()`** bundles the (now much deeper) Regression tab into

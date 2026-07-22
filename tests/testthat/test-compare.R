@@ -362,3 +362,47 @@ test_that("compare_categorical returns row / column / total percentages", {
   expect_lt(abs(sum(res$total_pct) - 100), 0.2)
   expect_equal(dim(res$row_pct), dim(res$table))
 })
+
+# ---- split-by (stratify the grid by a 3rd variable) -------------------------
+# The boss's ask: "MPG vs cyl by am" -> run MPG-by-cyl separately for each am.
+
+test_that("compare_grid without split_by is unchanged", {
+  g <- compare_grid(mtcars, "mpg", "cyl")
+  expect_false("Stratum" %in% names(g$summary))
+  expect_null(g$split_by)
+  expect_equal(g$keys, "mpg by cyl")
+})
+
+test_that("compare_grid stratifies by a 3rd variable", {
+  d <- mtcars; d$am <- factor(d$am, labels = c("auto", "manual"))
+  g <- compare_grid(d, "mpg", "cyl", split_by = "am")
+  expect_true("Stratum" %in% names(g$summary))
+  expect_setequal(unique(g$summary$Stratum), c("auto", "manual"))
+  expect_equal(nrow(g$summary), 2L)                       # one row per stratum
+  expect_match(g$keys[1], "mpg by cyl | am = ", fixed = TRUE)
+  # each stratum is an independent subset; the ns partition the data
+  expect_equal(sum(g$summary$N), nrow(d))
+})
+
+test_that("a split variable is never also an outcome or a group", {
+  d <- mtcars; d$am <- factor(d$am)
+  g <- compare_grid(d, "mpg", c("cyl", "am"), split_by = "am")
+  expect_false(any(g$summary$Group == "am"))
+})
+
+test_that("compare_grid caps the number of strata and flags it", {
+  withr::local_seed(1)
+  d <- data.frame(y = stats::rnorm(300),
+                  grp = factor(sample(c("a", "b"), 300, TRUE)),
+                  s   = factor(sample(paste0("L", 1:10), 300, TRUE)))
+  g <- compare_grid(d, "y", "grp", split_by = "s")
+  expect_lte(length(unique(g$summary$Stratum)), COMPARE_SPLIT_MAX)
+  expect_true(g$split_capped)
+})
+
+test_that("p-values are BH-adjusted across the whole stratified grid", {
+  d <- mtcars; d$am <- factor(d$am)
+  g <- compare_grid(d, c("mpg", "hp"), "cyl", split_by = "am")
+  expect_equal(g$summary$p_adj,
+               stats::p.adjust(g$summary$p_value, method = "BH"))
+})

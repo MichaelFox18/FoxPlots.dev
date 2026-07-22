@@ -466,56 +466,91 @@ compare_groups_numeric <- function(df, outcome, group,
 #' @param parametric,var_equal,posthoc Passed to compare_groups_numeric().
 #' @param p_adjust A stats::p.adjust method applied ACROSS the grid ("BH" default;
 #'   "none" leaves p_adj equal to p_value).
+#' @param split_by Optional 3rd (stratifying) variable: the whole outcome x group
+#'   grid is run separately within each of its levels (capped at
+#'   COMPARE_SPLIT_MAX). NULL gives the unstratified grid unchanged.
 #' @return NULL if nothing is testable, else a list with:
-#'   summary (data.frame: Outcome, Group, N, k, Test, Statistic, df, p_value,
-#'   p_adj, Effect, Effect_size, Magnitude -- one row per combination),
+#'   summary (data.frame: Outcome, Group, [Stratum,] N, k, Test, Statistic, df,
+#'   p_value, p_adj, Effect, Effect_size, Magnitude -- one row per combination),
 #'   results (named list of the full compare_groups_numeric() results),
-#'   keys (names of `results`, aligned to `summary` rows), p_adjust,
-#'   outcomes, groups.
+#'   keys (names of `results`, aligned to `summary` rows; carry "| split = level"
+#'   when stratified), p_adjust, outcomes, groups, split_by, split_capped.
 #' @noRd
+# A "split by" (stratifying) variable can have at most this many levels: the
+# grid is outcomes x groups x strata, so a high-cardinality By variable would
+# explode it. Matches the spirit of the module's combination cap.
+COMPARE_SPLIT_MAX <- 6L
+
 compare_grid <- function(df, outcomes, groups, parametric = TRUE,
                          var_equal = FALSE, posthoc = c("dunn", "steel"),
-                         p_adjust = "BH") {
+                         p_adjust = "BH", split_by = NULL) {
   posthoc <- match.arg(posthoc)
   if (!is.data.frame(df) || !length(outcomes) || !length(groups)) return(NULL)
   outcomes <- intersect(outcomes, names(df))
   groups   <- intersect(groups,   names(df))
   if (!length(outcomes) || !length(groups)) return(NULL)
 
+  # Optional stratification: run the whole outcome x group grid separately
+  # within each level of split_by. NULL -> one stratum over all rows, giving
+  # byte-identical output to the unstratified grid.
+  split_by <- if (!is.null(split_by) && length(split_by) && nzchar(split_by) &&
+                  split_by %in% names(df)) split_by else NULL
+  split_capped <- FALSE
+  strata <- if (is.null(split_by)) {
+    list(list(label = NA_character_, rows = rep(TRUE, nrow(df))))
+  } else {
+    sv <- as.character(df[[split_by]])
+    lv <- sort(unique(sv[!is.na(sv)]))
+    if (length(lv) > COMPARE_SPLIT_MAX) { split_capped <- TRUE; lv <- lv[seq_len(COMPARE_SPLIT_MAX)] }
+    lapply(lv, function(l) list(label = l, rows = !is.na(sv) & sv == l))
+  }
+
   keys <- character(0); results <- list(); rows <- list()
-  for (o in outcomes) for (g in groups) {
-    if (identical(o, g)) next
-    r <- suppressWarnings(
-      compare_groups_numeric(df, o, g, parametric = parametric,
-                             var_equal = var_equal, posthoc = posthoc))
-    if (is.null(r)) next
-    key <- paste0(o, " by ", g)
-    keys <- c(keys, key)
-    results[[key]] <- r
-    rows[[key]] <- data.frame(
-      Outcome     = o,
-      Group       = g,
-      N           = r$n,
-      k           = r$k,
-      Test        = r$test,
-      Statistic   = round(r$statistic, 4),
-      df          = if (is.na(r$df)) NA_real_ else round(r$df, 4),
-      p_value     = r$p_value,
-      Effect      = r$effect_name,
-      Effect_size = if (is.na(r$effect_value)) NA_real_ else round(r$effect_value, 4),
-      Magnitude   = effect_magnitude(r$effect_name, r$effect_value),
-      row.names = NULL, stringsAsFactors = FALSE)
+  for (st in strata) {
+    sdf <- df[st$rows, , drop = FALSE]
+    for (o in outcomes) for (g in groups) {
+      if (identical(o, g) || identical(o, split_by) || identical(g, split_by))
+        next
+      r <- suppressWarnings(
+        compare_groups_numeric(sdf, o, g, parametric = parametric,
+                               var_equal = var_equal, posthoc = posthoc))
+      if (is.null(r)) next
+      key <- if (is.na(st$label)) paste0(o, " by ", g)
+             else sprintf("%s by %s | %s = %s", o, g, split_by, st$label)
+      keys <- c(keys, key)
+      results[[key]] <- r
+      row <- data.frame(
+        Outcome     = o,
+        Group       = g,
+        N           = r$n,
+        k           = r$k,
+        Test        = r$test,
+        Statistic   = round(r$statistic, 4),
+        df          = if (is.na(r$df)) NA_real_ else round(r$df, 4),
+        p_value     = r$p_value,
+        Effect      = r$effect_name,
+        Effect_size = if (is.na(r$effect_value)) NA_real_ else round(r$effect_value, 4),
+        Magnitude   = effect_magnitude(r$effect_name, r$effect_value),
+        row.names = NULL, stringsAsFactors = FALSE)
+      if (!is.null(split_by)) row$Stratum <- st$label
+      rows[[key]] <- row
+    }
   }
   if (!length(keys)) return(NULL)
 
   smry <- do.call(rbind, rows); rownames(smry) <- NULL
+  # p-values are adjusted across the WHOLE grid (all strata included) -- the
+  # grid is the family of tests.
   smry$p_adj <- if (identical(p_adjust, "none")) smry$p_value
                 else stats::p.adjust(smry$p_value, method = p_adjust)
-  # Keep p_adj next to p_value rather than stranded at the end.
-  smry <- smry[, c("Outcome", "Group", "N", "k", "Test", "Statistic", "df",
-                   "p_value", "p_adj", "Effect", "Effect_size", "Magnitude")]
-  list(summary = smry, results = results, keys = keys,
-       p_adjust = p_adjust, outcomes = outcomes, groups = groups)
+  # Keep p_adj next to p_value; the Stratum column (if any) sits after Group.
+  cols <- c("Outcome", "Group", if (!is.null(split_by)) "Stratum", "N", "k",
+            "Test", "Statistic", "df", "p_value", "p_adj", "Effect",
+            "Effect_size", "Magnitude")
+  smry <- smry[, cols]
+  list(summary = smry, results = results, keys = keys, p_adjust = p_adjust,
+       outcomes = outcomes, groups = groups, split_by = split_by,
+       split_capped = split_capped)
 }
 
 # --- two categorical variables ----------------------------------------------

@@ -98,6 +98,13 @@ compareUI <- function(id) {
           choices = NULL, multiple = TRUE,
           options = list(maxItems = COMPARE_MAX_GROUPS,
                          placeholder = "Choose one or more...")),
+        selectInput(ns("split_by"),
+          tagList("Split by (optional)", info_tip(
+            "Run the whole analysis separately within each level of a third ",
+            "variable - e.g. mpg by cyl, split by am, gives one analysis for ",
+            sprintf("am=0 and another for am=1. Up to %d levels.",
+                    COMPARE_SPLIT_MAX))),
+          choices = NULL),
         radioButtons(ns("method"), "Test family",
           choices = c("Parametric (t-test / ANOVA)"          = "param",
                       "Non-parametric (Wilcoxon / Kruskal)"  = "nonparam"),
@@ -119,11 +126,14 @@ compareUI <- function(id) {
               "family-wise error rate directly - the rank analogue of Tukey.")),
             choices = c("Dunn's test" = "dunn", "Steel-Dwass" = "steel"),
             selected = "dunn")),
-        # Only meaningful once more than one combination is being tested.
+        # Meaningful once more than one test is run -- several combinations, OR
+        # a single one split across a 3rd variable's levels.
         conditionalPanel(
-          sprintf(paste("input['%s'] && input['%s'] &&",
-                        "input['%s'].length * input['%s'].length > 1"),
-                  ns("outcome"), ns("group"), ns("outcome"), ns("group")),
+          sprintf(paste("(input['%s'] && input['%s'] &&",
+                        "input['%s'].length * input['%s'].length > 1) ||",
+                        "(input['%s'] && input['%s'])"),
+                  ns("outcome"), ns("group"), ns("outcome"), ns("group"),
+                  ns("split_by"), ns("split_by")),
           selectInput(ns("p_adjust"),
             tagList("Correct p across combinations", info_tip(
               "You are running one test per outcome x group combination, so ",
@@ -172,6 +182,9 @@ compareServer <- function(id, data_in) {
                            selected = character(0))
       updateSelectizeInput(session, "group", choices = groupable_cols(df),
                            selected = character(0))
+      updateSelectInput(session, "split_by",
+                        choices = c("(none)" = "", groupable_cols(df)),
+                        selected = "")
       updateSelectInput(session, "cat1", choices = c("Choose a variable..." = "",
                                                      groupable_cols(df)),
                         selected = "")
@@ -208,9 +221,13 @@ compareServer <- function(id, data_in) {
           paste("That is %d combinations (%d outcomes x %d groups). Pick fewer --",
                 "the limit is %d."),
           n_combo, length(outs), length(grps), COMPARE_MAX_COMBOS)))
-        para <- identical(input$method, "param")
-        ph   <- input$posthoc %||% "dunn"
-        if (n_combo == 1L) {
+        para  <- identical(input$method, "param")
+        ph    <- input$posthoc %||% "dunn"
+        split <- input$split_by %||% ""
+        split <- if (nzchar(split) && !split %in% c(outs, grps)) split else NULL
+        # A split makes even one outcome x group a family (one test per stratum),
+        # so route through the grid whenever a split is set OR n_combo > 1.
+        if (n_combo == 1L && is.null(split)) {
           out <- suppressWarnings(compare_groups_numeric(
             df, outs[1], grps[1], parametric = para,
             var_equal = isTRUE(input$var_equal), posthoc = ph))
@@ -221,7 +238,7 @@ compareServer <- function(id, data_in) {
           gr <- suppressWarnings(compare_grid(
             df, outs, grps, parametric = para,
             var_equal = isTRUE(input$var_equal), posthoc = ph,
-            p_adjust = input$p_adjust %||% "BH"))
+            p_adjust = input$p_adjust %||% "BH", split_by = split))
           validate(need(!is.null(gr),
             "None of those combinations are testable. Each needs a numeric outcome and a group with 2+ levels and 2+ rows each."))
           list(mode = "num_multi", grid = gr, outcomes = outs, groups = grps,
@@ -247,7 +264,7 @@ compareServer <- function(id, data_in) {
       DT::datatable(round_df(r$grid$summary), rownames = FALSE,
                     class = "compact stripe hover",
                     options = list(scrollX = TRUE, dom = "t",
-                                   pageLength = COMPARE_MAX_COMBOS))
+                                   pageLength = nrow(r$grid$summary) + 1L))
     })
 
     # ---- numeric renderers, one set per possible combination -----------------
@@ -516,11 +533,18 @@ compareServer <- function(id, data_in) {
       # --- a grid: summary on top, one collapsible section per combination ---
       adj_lab <- names(P_ADJUST_CHOICES)[
         match(r$p_adjust, P_ADJUST_CHOICES)]
+      split_lab <- if (!is.null(r$grid$split_by))
+        sprintf(" x level of %s", r$grid$split_by) else ""
+      cap_note <- if (isTRUE(r$grid$split_capped))
+        helpText(class = "text-warning", sprintf(
+          "Only the first %d levels of %s are shown (a split variable is capped).",
+          COMPARE_SPLIT_MAX, r$grid$split_by)) else NULL
       smry <- card(
         card_header(icon("table-list"), " All combinations"),
-        helpText(sprintf(paste("One test per outcome x group. p_adj corrects",
+        helpText(sprintf(paste("One test per outcome x group%s. p_adj corrects",
                                "across all %d combinations (%s)."),
-                         nrow(r$grid$summary), adj_lab %||% r$p_adjust)),
+                         split_lab, nrow(r$grid$summary), adj_lab %||% r$p_adjust)),
+        cap_note,
         DT::DTOutput(ns("grid_tbl")))
       panels <- lapply(seq_along(r$grid$keys), function(i) {
         ri <- r$grid$results[[i]]
