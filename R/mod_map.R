@@ -23,10 +23,32 @@ mapUI <- function(id) {
     sidebar = sidebar(
       width = 320,
       h5("Map settings"),
-      uiOutput(ns("ui_lon")),
-      uiOutput(ns("ui_lat")),
-      actionLink(ns("swap"), tagList(icon("right-left"), " Swap lat / lon"),
-                 class = "small mb-2"),
+      radioButtons(ns("map_type"),
+        tagList("Map type", info_tip(
+          "Points puts each row on the map by its coordinates. Shaded regions ",
+          "(choropleth) colours uploaded boundaries (a GeoJSON file) by a ",
+          "summary of your data - e.g. counties shaded by average yield.")),
+        choices = c("Points" = "points", "Shaded regions" = "choro"),
+        selected = "points", inline = TRUE),
+
+      # ---- choropleth controls ----
+      conditionalPanel(
+        sprintf("input['%s'] == 'choro'", ns("map_type")),
+        fileInput(ns("geojson_file"),
+          tagList("Boundaries (.geojson / .json)", info_tip(
+            "A GeoJSON FeatureCollection of the regions to shade - e.g. ",
+            "county boundaries. Each feature needs a property (like NAME) ",
+            "that matches a column in your data.")),
+          accept = c(".geojson", ".json")),
+        uiOutput(ns("ui_choro"))),
+
+      # ---- point controls ----
+      conditionalPanel(
+        sprintf("input['%s'] == 'points'", ns("map_type")),
+        uiOutput(ns("ui_lon")),
+        uiOutput(ns("ui_lat")),
+        actionLink(ns("swap"), tagList(icon("right-left"), " Swap lat / lon"),
+                   class = "small mb-2")),
       uiOutput(ns("ui_hint")),
       hr(),
       h6("Style"),
@@ -35,54 +57,68 @@ mapUI <- function(id) {
                     "The background map. Tiles load from the internet, so an ",
                     "offline machine shows a grey background.")),
                   choices = MAP_BASEMAPS),
-      uiOutput(ns("ui_color")),
       conditionalPanel(
-        sprintf("!input['%s'] || input['%s'] == '__none__'",
-                ns("color"), ns("color")),
-        colourpicker::colourInput(ns("color_hex"), "Marker color",
-                                  value = UF_BLUE)),
-      conditionalPanel(
-        sprintf("input['%s'] && input['%s'] != '__none__'",
-                ns("color"), ns("color")),
-        selectInput(ns("palette"), "Color palette", choices = PALETTES),
-        uiOutput(ns("ui_scale")),
-        checkboxInput(ns("legend"), "Show legend", TRUE)),
-      uiOutput(ns("ui_size")),
-      conditionalPanel(
-        sprintf("input['%s'] && input['%s'] != '__none__'",
-                ns("size_by"), ns("size_by")),
-        selectInput(ns("size_scale"),
-          tagList("Size scale", info_tip(
-            "How values map to bubble area. Linear keeps twice the value at ",
-            "twice the ink. Log spreads out skewed data so the small end ",
-            "stops looking identical. Quantile gives every size an equal ",
-            "share of points. Log and quantile fall back to linear when the ",
-            "data can't support them.")),
-          choices = MAP_SIZE_SCALES),
-        checkboxInput(ns("size_legend"), "Show size legend", TRUE)),
-      conditionalPanel(
-        sprintf("!input['%s'] || input['%s'] == '__none__'",
-                ns("size_by"), ns("size_by")),
-        sliderInput(ns("size"), "Point size", min = 2, max = 12, value = 6,
-                    step = 1)),
+        sprintf("input['%s'] == 'points'", ns("map_type")),
+        uiOutput(ns("ui_color")),
+        conditionalPanel(
+          sprintf("!input['%s'] || input['%s'] == '__none__'",
+                  ns("color"), ns("color")),
+          colourpicker::colourInput(ns("color_hex"), "Marker color",
+                                    value = UF_BLUE)),
+        conditionalPanel(
+          sprintf("input['%s'] && input['%s'] != '__none__'",
+                  ns("color"), ns("color")),
+          selectInput(ns("palette"), "Color palette", choices = PALETTES),
+          uiOutput(ns("ui_scale")),
+          checkboxInput(ns("legend"), "Show legend", TRUE)),
+        uiOutput(ns("ui_size")),
+        conditionalPanel(
+          sprintf("input['%s'] && input['%s'] != '__none__'",
+                  ns("size_by"), ns("size_by")),
+          selectInput(ns("size_scale"),
+            tagList("Size scale", info_tip(
+              "How values map to bubble area. Linear keeps twice the value at ",
+              "twice the ink. Log spreads out skewed data so the small end ",
+              "stops looking identical. Quantile gives every size an equal ",
+              "share of points. Log and quantile fall back to linear when the ",
+              "data can't support them.")),
+            choices = MAP_SIZE_SCALES),
+          checkboxInput(ns("size_legend"), "Show size legend", TRUE)),
+        conditionalPanel(
+          sprintf("!input['%s'] || input['%s'] == '__none__'",
+                  ns("size_by"), ns("size_by")),
+          sliderInput(ns("size"), "Point size", min = 2, max = 12, value = 6,
+                      step = 1))),
       sliderInput(ns("alpha"), "Opacity", min = 0.1, max = 1, value = 0.8,
                   step = 0.05),
-      radioButtons(ns("cluster"),
-                   tagList("Cluster nearby points", info_tip(
-                     "Groups close-together markers into expandable bubbles. ",
-                     "Auto turns clustering on above ", MAP_CLUSTER_AUTO,
-                     " points. With layer groups, clustering happens within ",
-                     "each group.")),
-                   choices = c("Auto" = "auto", "On" = "on", "Off" = "off"),
-                   selected = "auto", inline = TRUE),
-      hr(),
-      h6("Layer groups"),
-      uiOutput(ns("ui_group")),
-      uiOutput(ns("ui_focus")),
-      hr(),
-      h6("Popups & labels"),
-      uiOutput(ns("ui_popup")),
-      uiOutput(ns("ui_label")),
+      conditionalPanel(
+        sprintf("input['%s'] == 'points'", ns("map_type")),
+        radioButtons(ns("cluster"),
+                     tagList("Cluster nearby points", info_tip(
+                       "Groups close-together markers into expandable bubbles. ",
+                       "Auto turns clustering on above ", MAP_CLUSTER_AUTO,
+                       " points. With layer groups, clustering happens within ",
+                       "each group.")),
+                     choices = c("Auto" = "auto", "On" = "on", "Off" = "off"),
+                     selected = "auto", inline = TRUE),
+        checkboxInput(ns("heatmap"),
+          tagList("Density heatmap layer", info_tip(
+            "Overlay a continuous density surface - useful when many points ",
+            "overlap into an unreadable blob. Optionally weighted by a ",
+            "numeric column. Needs the optional leaflet.extras package.")),
+          value = FALSE),
+        conditionalPanel(
+          sprintf("input['%s']", ns("heatmap")),
+          uiOutput(ns("ui_heat"))),
+        hr(),
+        h6("Layer groups"),
+        uiOutput(ns("ui_group")),
+        uiOutput(ns("ui_focus")),
+        hr(),
+        h6("Popups & labels"),
+        uiOutput(ns("ui_popup")),
+        uiOutput(ns("ui_label"))),
+      checkboxInput(ns("scalebar"), "Show distance scale bar", TRUE),
       textInput(ns("title"), "Map title", placeholder = "(optional)"),
       hr(),
       h6("Download map"),
@@ -162,6 +198,93 @@ mapServer <- function(id, data_in) {
                     "the ink.")),
                   choices = c("None" = "__none__", num))
     })
+    # ---- heatmap controls ----------------------------------------------------
+    output$ui_heat <- renderUI({
+      df <- data_in(); req(is.data.frame(df))
+      if (!requireNamespace("leaflet.extras", quietly = TRUE))
+        return(helpText(paste(
+          "The density layer needs the optional leaflet.extras package:",
+          'install.packages("leaflet.extras")')))
+      tagList(
+        selectInput(ns("heat_by"),
+          tagList("Weight by (optional)", info_tip(
+            "A numeric column weighting the density - hot spots become where ",
+            "the VALUES concentrate, not just the points. None = plain point ",
+            "density.")),
+          choices = c("None" = "__none__", numeric_cols(df))),
+        sliderInput(ns("heat_radius"), "Heat radius (px)", min = 5, max = 50,
+                    value = MAP_HEAT_RADIUS, step = 5))
+    })
+
+    # ---- choropleth state + controls ----------------------------------------
+    # The uploaded GeoJSON, parsed once per upload.
+    geojson_state <- reactiveVal(NULL)
+    observeEvent(input$geojson_file, {
+      req(input$geojson_file$datapath)
+      txt <- paste(readLines(input$geojson_file$datapath, warn = FALSE),
+                   collapse = "\n")
+      gj <- parse_geojson(txt)
+      if (is.null(gj)) {
+        geojson_state(NULL)
+        showNotification(paste(
+          "That file isn't a usable GeoJSON FeatureCollection. Export your",
+          "boundaries as GeoJSON and try again."), type = "error", duration = 8)
+      } else {
+        geojson_state(gj)
+        showNotification(sprintf("Loaded %d regions.", length(gj$features)),
+                         type = "message")
+      }
+    })
+
+    output$ui_choro <- renderUI({
+      df <- data_in(); req(is.data.frame(df))
+      gj <- geojson_state()
+      if (is.null(gj))
+        return(helpText("Upload a GeoJSON boundary file to begin."))
+      props <- geojson_props(gj)
+      tagList(
+        selectInput(ns("region_prop"),
+          tagList("Region name property", info_tip(
+            "The GeoJSON property naming each region (e.g. NAME). It must ",
+            "match the values in your data's key column.")),
+          choices = props),
+        selectInput(ns("region_key"),
+          tagList("Match to data column", info_tip(
+            "The column in your data holding the region names, matched ",
+            "against the property above (exact text match).")),
+          choices = c("Choose..." = "__none__", names(df))),
+        selectInput(ns("region_value"),
+          tagList("Shade by (numeric)", info_tip(
+            "The numeric column summarised within each region to set its ",
+            "colour.")),
+          choices = c("Choose..." = "__none__", numeric_cols(df))),
+        selectInput(ns("region_agg"), "Summary",
+          choices = c("Mean" = "mean", "Sum" = "sum", "Median" = "median")),
+        uiOutput(ns("choro_diag"))
+      )
+    })
+
+    # Join diagnostics: a silent mismatch renders a blank grey map, so say
+    # loudly how many regions matched and name the strays.
+    output$choro_diag <- renderUI({
+      w <- current_widget()
+      diag <- attr(w, "choro_diag")
+      if (is.null(diag)) return(NULL)
+      msgs <- list(tags$p(class = "small mb-1", sprintf(
+        "%d of %d regions matched your data.", diag$n_matched, diag$n_features)))
+      if (length(diag$unmatched_geo))
+        msgs <- c(msgs, list(tags$p(class = "small text-warning mb-1", paste0(
+          "No data for: ", paste(utils::head(diag$unmatched_geo, 8),
+                                 collapse = ", "),
+          if (length(diag$unmatched_geo) > 8) ", ..." else ""))))
+      if (length(diag$unmatched_data))
+        msgs <- c(msgs, list(tags$p(class = "small text-warning mb-0", paste0(
+          "No region for: ", paste(utils::head(diag$unmatched_data, 8),
+                                   collapse = ", "),
+          if (length(diag$unmatched_data) > 8) ", ..." else ""))))
+      tagList(msgs)
+    })
+
     output$ui_popup <- renderUI({
       df <- data_in(); req(is.data.frame(df))
       # Don't preselect coordinate-ish columns (detected OR merely coord-named,
@@ -237,7 +360,8 @@ mapServer <- function(id, data_in) {
 
     # --- settings list (slot_params analog) ----------------------------------
     map_params <- function() {
-      list(
+      choro <- identical(input$map_type %||% "points", "choro")
+      c(list(
         lon        = input$lon %||% "",
         lat        = input$lat %||% "",
         basemap    = input$basemap %||% "CartoDB.Positron",
@@ -255,8 +379,19 @@ mapServer <- function(id, data_in) {
         legend     = isTRUE(input$legend %||% TRUE),
         color_scale = input$color_scale %||% "linear",
         group_by   = input$group_by %||% "__none__",
+        heatmap    = isTRUE(input$heatmap) && !choro,
+        heat_by    = input$heat_by %||% "__none__",
+        heat_radius = input$heat_radius %||% MAP_HEAT_RADIUS,
+        scalebar   = isTRUE(input$scalebar %||% TRUE),
         title      = input$title
-      )
+      ),
+      # Choropleth mode: the GeoJSON's presence is what routes the builder.
+      if (choro) list(
+        geojson      = geojson_state(),
+        region_key   = input$region_key %||% "__none__",
+        region_prop  = input$region_prop %||% "",
+        region_value = input$region_value %||% "__none__",
+        region_agg   = input$region_agg %||% "mean"))
     }
     # Debounced so slider drags rebuild the widget once, not per tick.
     params_d <- debounce(reactive(map_params()), 350)
@@ -319,14 +454,20 @@ mapServer <- function(id, data_in) {
     observeEvent({ input$lon; input$lat }, view_state(NULL),
                  ignoreInit = TRUE, priority = 10)
 
-    output$map <- leaflet::renderLeaflet({
+    # The built widget, shared between the pane and the choropleth diagnostics.
+    current_widget <- reactive({
       df <- data_in()
       req(is.data.frame(df))
       p <- params_d()
       p$view <- isolate(view_state())   # isolate: panning must not re-render
-      w <- build_leaflet_map(df, p)
-      validate(need(!is.null(w),
-                    "Choose the longitude and latitude columns to draw the map."))
+      build_leaflet_map(df, p)
+    })
+
+    output$map <- leaflet::renderLeaflet({
+      w <- current_widget()
+      validate(need(!is.null(w), if (identical(input$map_type, "choro"))
+        "Upload boundaries, then pick the region property, key column, and value."
+        else "Choose the longitude and latitude columns to draw the map."))
       w
     })
 

@@ -588,3 +588,117 @@ test_that("view_bounds is never emitted into the generated code", {
                                                        east = -80, west = -82)))
   expect_false(grepl("view_bounds|fitBounds", code))
 })
+
+# ---- Phase 7: scale bar + density heatmap ------------------------------------
+
+test_that("the scale bar is on by default and can be switched off", {
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  methods_of <- function(m) vapply(m$x$calls, function(c) c$method, character(1))
+  expect_true("addScaleBar" %in% methods_of(
+    build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat))))
+  expect_false("addScaleBar" %in% methods_of(
+    build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat, scalebar = FALSE))))
+})
+
+test_that("the heatmap layer is added when asked and leaflet.extras exists", {
+  skip_if_not_installed("leaflet.extras")
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  m  <- build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat,
+                                  heatmap = TRUE, heat_by = "acres"))
+  expect_true("addHeatmap" %in%
+                vapply(m$x$calls, function(c) c$method, character(1)))
+  # and not when unasked
+  m0 <- build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat))
+  expect_false("addHeatmap" %in%
+                 vapply(m0$x$calls, function(c) c$method, character(1)))
+})
+
+test_that("generated code emits the heatmap and scale bar to match the builder", {
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  code <- generate_map_code(d, list(lon = cc$lon, lat = cc$lat,
+                                    heatmap = TRUE, heat_by = "acres"))
+  expect_match(code, "addHeatmap", fixed = TRUE)
+  expect_match(code, "intensity = ~acres", fixed = TRUE)
+  expect_match(code, "addScaleBar", fixed = TRUE)
+  expect_error(parse(text = code), NA)
+  # scalebar off -> not emitted
+  expect_false(grepl("addScaleBar", generate_map_code(
+    d, list(lon = cc$lon, lat = cc$lat, scalebar = FALSE))))
+})
+
+# ---- Phase 8: choropleth -----------------------------------------------------
+
+choro_gj <- function() {
+  paste0('{"type":"FeatureCollection","features":[',
+    '{"type":"Feature","properties":{"NAME":"Alpha"},"geometry":{"type":"Polygon",',
+    '"coordinates":[[[-82,29],[-81,29],[-81,30],[-82,30],[-82,29]]]}},',
+    '{"type":"Feature","properties":{"NAME":"Beta"},"geometry":{"type":"Polygon",',
+    '"coordinates":[[[-81,29],[-80,29],[-80,30],[-81,30],[-81,29]]]}},',
+    '{"type":"Feature","properties":{"NAME":"Gamma"},"geometry":{"type":"Polygon",',
+    '"coordinates":[[[-82,30],[-81,30],[-81,31],[-82,31],[-82,30]]]}}]}')
+}
+
+test_that("parse_geojson accepts a FeatureCollection and rejects junk", {
+  gj <- parse_geojson(choro_gj())
+  expect_false(is.null(gj))
+  expect_equal(geojson_props(gj), "NAME")
+  expect_null(parse_geojson("not json"))
+  expect_null(parse_geojson('{"type":"Feature"}'))
+  expect_null(parse_geojson(NULL))
+})
+
+test_that("geojson_bounds covers all features", {
+  b <- geojson_bounds(parse_geojson(choro_gj()))
+  expect_equal(c(b$lng1, b$lat1, b$lng2, b$lat2), c(-82, 29, -80, 31))
+})
+
+test_that("build_leaflet_map routes to a choropleth and reports the join", {
+  dat <- data.frame(county = c("Alpha", "Alpha", "Beta", "Delta"),
+                    yield  = c(10, 20, 50, 99))
+  m <- build_leaflet_map(dat, list(geojson = choro_gj(), region_key = "county",
+                                   region_prop = "NAME", region_value = "yield"))
+  expect_s3_class(m, "leaflet")
+  methods <- vapply(m$x$calls, function(c) c$method, character(1))
+  expect_true(all(c("addGeoJSON", "addLegend", "addScaleBar") %in% methods))
+  diag <- attr(m, "choro_diag")
+  expect_equal(diag$n_matched, 2L)                    # Alpha + Beta
+  expect_equal(diag$unmatched_geo, "Gamma")           # region with no data
+  expect_equal(diag$unmatched_data, "Delta")          # data with no region
+})
+
+test_that("the choropleth aggregates with the chosen summary", {
+  dat <- data.frame(county = c("Alpha", "Alpha"), yield = c(10, 20))
+  for (agg in c("mean", "sum", "median")) {
+    m <- build_leaflet_map(dat, list(geojson = choro_gj(),
+                                     region_key = "county", region_prop = "NAME",
+                                     region_value = "yield", region_agg = agg))
+    expect_s3_class(m, "leaflet")
+  }
+})
+
+test_that("choropleth guards bad inputs", {
+  dat <- data.frame(county = "Alpha", yield = 1)
+  # non-numeric value column
+  expect_null(build_leaflet_map(
+    data.frame(county = "Alpha", yield = "x"),
+    list(geojson = choro_gj(), region_key = "county", region_prop = "NAME",
+         region_value = "yield")))
+  # missing key column
+  expect_null(build_leaflet_map(
+    dat, list(geojson = choro_gj(), region_key = "nope", region_prop = "NAME",
+              region_value = "yield")))
+  # junk geojson
+  expect_null(build_leaflet_map(
+    dat, list(geojson = "junk", region_key = "county", region_prop = "NAME",
+              region_value = "yield")))
+})
+
+test_that("choropleth code-gen parses and reads like the builder", {
+  code <- generate_map_code(
+    data.frame(county = "Alpha", yield = 1),
+    list(geojson = choro_gj(), region_key = "county", region_prop = "NAME",
+         region_value = "yield", region_agg = "sum"))
+  expect_match(code, "addGeoJSON", fixed = TRUE)
+  expect_match(code, "tapply(df$yield, as.character(df$county), sum", fixed = TRUE)
+  expect_error(parse(text = code), NA)
+})
