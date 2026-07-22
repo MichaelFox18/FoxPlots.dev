@@ -28,5 +28,7 @@ only the first.}
 An lm object.
 }
 \description{
-Fit a linear / multiple / polynomial regression.
+Back-compatible wrapper over the reg_spec()/reg_fit() engine; kept because it
+is exported and used by the report. `type` is retained for compatibility --
+"linear" vs "multiple" differ only in the number of predictors.
 }

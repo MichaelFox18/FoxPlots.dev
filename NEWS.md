@@ -1,5 +1,30 @@
 # foxplots 0.6.0
 
+## Regression: categorical predictors, interactions, marginal means, and a real coefficient table
+
+- **Predictors can now be categorical.** The Regression tab used to accept only
+  numeric predictors; a character/factor column now enters the model as a factor
+  (ANCOVA-style), with a **reference-level** picker for each one so you choose the
+  baseline the other levels are compared against.
+- **Interaction terms.** A checkbox adds all pairwise interactions (`a * b`), so
+  a predictor's effect can depend on the others.
+- **A proper coefficient table** replaces reading numbers off the raw summary:
+  estimate, standard error, statistic, p-value, and a **95% confidence interval**
+  per term. A fit-statistics card reports n, R2, adjusted R2, RMSE, AIC, BIC and
+  the overall F-test.
+- **Estimated marginal means with connecting letters.** A new tab gives the
+  adjusted means for a categorical predictor (numeric predictors held at their
+  means), Tukey/Sidak/Bonferroni pairwise comparisons, a compact-letter-display
+  grouping, and a means-with-CI plot -- the same emmeans / multcomp engine the
+  Mixed Model tool uses.
+- **Copy-ready R code.** Regression was the last major tab without a code export;
+  it now emits scripts that reproduce the fit exactly (including factor reference
+  levels and interaction/polynomial terms) and the EMMeans/post-hoc block.
+- The engine is spec-driven (`reg_spec` -> `reg_validate` -> `reg_fit`) mirroring
+  the Mixed Model tool; `fit_model()` stays as a thin, back-compatible wrapper.
+  No new package dependencies -- confidence intervals are from `confint()`, and
+  emmeans / multcomp were already required.
+
 ## The map now appears in the report
 
 - **Reports include your map.** The Report tab gains a **Maps** section, in both

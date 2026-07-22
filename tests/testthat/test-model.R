@@ -50,3 +50,135 @@ test_that("fit_model backticks the polynomial predictor too", {
   expect_s3_class(m, "lm")
   expect_length(stats::coef(m), 3L)   # intercept + 2 poly terms
 })
+
+# ---- spec-driven engine: categorical predictors, interactions (v0.6.0+) ------
+
+test_that("reg_validate accepts a good spec and rejects bad ones", {
+  d <- mtcars; d$am <- factor(d$am)
+  expect_length(reg_validate(d, reg_spec("mpg", c("wt", "am"))), 0L)
+  expect_gt(length(reg_validate(d, reg_spec("am", "wt"))), 0L)        # non-numeric Y
+  expect_gt(length(reg_validate(d, reg_spec("mpg", c("mpg", "wt")))), 0L) # Y in X
+  expect_gt(length(reg_validate(d, reg_spec("mpg", "nope"))), 0L)     # missing col
+  expect_gt(length(reg_validate(d, reg_spec("mpg", "am", poly_degree = 2))), 0L) # poly on factor
+})
+
+test_that("reg_validate flags a single-level factor among usable rows", {
+  d <- data.frame(y = 1:6, g = factor(rep(c("a", "b"), 3)))
+  d$g[d$g == "b"] <- "a"; d$g <- droplevels(d$g)
+  expect_gt(length(reg_validate(d, reg_spec("y", "g"))), 0L)
+})
+
+test_that("reg_fit builds interaction and factor terms", {
+  d <- mtcars; d$am <- factor(d$am, labels = c("auto", "manual"))
+  m <- reg_fit(d, reg_spec("mpg", c("wt", "am"), interactions = TRUE))
+  expect_s3_class(m, "lm")
+  expect_true(any(grepl(":", names(stats::coef(m)))))       # interaction present
+  expect_true("ammanual" %in% names(stats::coef(m)))         # factor dummy present
+})
+
+test_that("reg_fit honours a chosen reference level", {
+  d <- mtcars; d$cyl <- factor(d$cyl)
+  m <- reg_fit(d, reg_spec("mpg", "cyl", ref_levels = list(cyl = "8")))
+  expect_equal(m$xlevels$cyl[1], "8")                        # 8 is the baseline
+  expect_true("cyl4" %in% names(stats::coef(m)))
+})
+
+test_that("fit_model stays a thin wrapper (identical to the old direct lm)", {
+  expect_equal(unname(stats::coef(fit_model(mtcars, "mpg", c("wt", "hp"), "multiple"))),
+               unname(stats::coef(stats::lm(mpg ~ wt + hp, mtcars))))
+  expect_length(stats::coef(fit_model(mtcars, "mpg", "wt", "polynomial", 2)), 3L)
+})
+
+# ---- coefficient table + fit stats ------------------------------------------
+
+test_that("reg_coef_table matches summary() and carries a CI", {
+  m  <- reg_fit(mtcars, reg_spec("mpg", c("wt", "hp")))
+  ct <- reg_coef_table(m)
+  expect_named(ct, c("Term", "Estimate", "Std. Error", "t value", "p",
+                     "CI 2.5%", "CI 97.5%"))
+  expect_equal(ct$Estimate, round(unname(stats::coef(m)), 4))
+  ci <- stats::confint(m)
+  expect_equal(ct[["CI 2.5%"]], round(unname(ci[, 1]), 4))
+  # the CI must bracket the estimate
+  expect_true(all(ct[["CI 2.5%"]] <= ct$Estimate & ct$Estimate <= ct[["CI 97.5%"]]))
+  expect_null(reg_coef_table(NULL))
+})
+
+test_that("reg_fit_stats reports the headline numbers", {
+  m  <- reg_fit(mtcars, reg_spec("mpg", c("wt", "hp")))
+  fs <- reg_fit_stats(m)
+  expect_named(fs, c("Statistic", "Value"))
+  expect_equal(fs$Value[fs$Statistic == "N"], nrow(mtcars))
+  expect_equal(fs$Value[fs$Statistic == "R-squared"], round(summary(m)$r.squared, 4))
+  expect_equal(fs$Value[fs$Statistic == "AIC"], round(stats::AIC(m), 4))
+  expect_null(reg_fit_stats(lm))   # not a model
+})
+
+# ---- reproducible code ------------------------------------------------------
+
+test_that("reg_code parses, evaluates, and reproduces the fit", {
+  d <- mtcars; d$am <- factor(d$am, labels = c("auto", "manual"))
+  for (spec in list(
+        reg_spec("mpg", c("wt", "hp")),
+        reg_spec("mpg", c("wt", "am"), interactions = TRUE),
+        reg_spec("mpg", "am", ref_levels = list(am = "manual")),
+        reg_spec("mpg", "wt", poly_degree = 3))) {
+    m    <- reg_fit(d, spec)
+    code <- reg_code(m)
+    expect_error(parse(text = code), NA)
+    env <- new.env(parent = globalenv()); assign("df", d, envir = env)
+    eval(parse(text = code), envir = env)
+    expect_equal(stats::coef(get("model", envir = env)), stats::coef(m))
+  }
+  expect_null(reg_code(NULL))
+})
+
+test_that("reg_code emits the reference level the model actually used", {
+  d <- mtcars; d$cyl <- factor(d$cyl)
+  code <- reg_code(reg_fit(d, reg_spec("mpg", "cyl", ref_levels = list(cyl = "6"))))
+  expect_match(code, 'ref = "6"', fixed = TRUE)
+})
+
+# ---- estimated marginal means (Phase 3b) ------------------------------------
+
+test_that("reg_emmeans gives adjusted means + letters for a factor predictor", {
+  d  <- mtcars; d$cyl <- factor(d$cyl)
+  er <- reg_emmeans(reg_fit(d, reg_spec("mpg", c("wt", "cyl"))), "cyl")
+  expect_true(er$ok)
+  expect_true(all(c("cyl", "emmean", ".group") %in% names(er$cld)))
+  expect_equal(nrow(er$cld), 3L)              # three cylinder levels
+  expect_true(nzchar(er$held))                 # wt held at its mean
+  expect_equal(nrow(er$pairs), 3L)             # 3 pairwise contrasts
+})
+
+test_that("reg_emmeans connecting letters separate the groups sensibly", {
+  d  <- mtcars; d$cyl <- factor(d$cyl)
+  er <- reg_emmeans(reg_fit(d, reg_spec("mpg", "cyl")), "cyl")
+  grp <- setNames(trimws(er$cld$.group), as.character(er$cld$cyl))
+  # 4-cyl mpg differs from 8-cyl -> they must not share a letter.
+  expect_false(any(nchar(intersect(strsplit(grp[["4"]], "")[[1]],
+                                    strsplit(grp[["8"]], "")[[1]])) > 0))
+})
+
+test_that("reg_emmeans guards non-factor and mismatched selections", {
+  d <- mtcars; d$cyl <- factor(d$cyl)
+  expect_false(reg_emmeans(reg_fit(mtcars, reg_spec("mpg", "wt")), "wt")$ok) # no factor
+  expect_false(reg_emmeans(reg_fit(d, reg_spec("mpg", c("wt", "cyl"))), "wt")$ok) # wt not a factor
+  expect_false(reg_emmeans(NULL, "cyl")$ok)
+})
+
+test_that("reg_emmeans result plots via lmer_emm_plot", {
+  d  <- mtcars; d$cyl <- factor(d$cyl)
+  er <- reg_emmeans(reg_fit(d, reg_spec("mpg", "cyl")), "cyl")
+  p  <- lmer_emm_plot(er, "mpg", "none")
+  expect_s3_class(p, "ggplot")
+  expect_silent(ggplot2::ggplot_build(p))
+})
+
+test_that("reg_emm_code parses and calls the emmeans engine", {
+  code <- reg_emm_code("cyl", adjust = "tukey")
+  expect_error(parse(text = code), NA)
+  expect_match(code, "emmeans(model, ~ cyl)", fixed = TRUE)
+  expect_match(code, "cld(", fixed = TRUE)
+  expect_null(reg_emm_code(NULL))
+})
