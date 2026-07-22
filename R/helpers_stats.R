@@ -64,26 +64,34 @@ grouped_summary <- function(df, vars, groups, digits = 3) {
   vars   <- intersect(vars, names(df))
   groups <- intersect(groups, names(df))
   if (!length(vars) || !length(groups)) return(NULL)
+  # Stats are computed under reserved .fx_ names so that a GROUPING column
+  # called "N"/"Mean"/"Variable"/... can't be clobbered by summarise() (which
+  # would silently replace the group labels with the statistic). They are
+  # renamed at the very end; make.unique() lets the user's own column keep its
+  # name and suffixes our stat instead, never the other way round.
   per_var <- lapply(vars, function(v) {
     df |>
       dplyr::group_by(dplyr::across(dplyr::all_of(groups))) |>
       dplyr::summarise(
-        Variable = v,
-        N        = sum(!is.na(.data[[v]])),
-        Mean     = round(.s_mean(.data[[v]]), digits),
-        Median   = round(.s_med(.data[[v]]),  digits),
-        Mode     = round(.s_mode(.data[[v]]), digits),
-        Min      = round(.s_min(.data[[v]]),  digits),
-        Max      = round(.s_max(.data[[v]]),  digits),
-        SD       = round(.s_sd(.data[[v]]),   digits),
-        SE       = round(.s_se(.data[[v]]),   digits),
-        IQR      = round(.s_iqr(.data[[v]]),  digits),
-        .groups  = "drop"
+        .fx_Variable = v,
+        .fx_N        = sum(!is.na(.data[[v]])),
+        .fx_Mean     = round(.s_mean(.data[[v]]), digits),
+        .fx_Median   = round(.s_med(.data[[v]]),  digits),
+        .fx_Mode     = round(.s_mode(.data[[v]]), digits),
+        .fx_Min      = round(.s_min(.data[[v]]),  digits),
+        .fx_Max      = round(.s_max(.data[[v]]),  digits),
+        .fx_SD       = round(.s_sd(.data[[v]]),   digits),
+        .fx_SE       = round(.s_se(.data[[v]]),   digits),
+        .fx_IQR      = round(.s_iqr(.data[[v]]),  digits),
+        .groups      = "drop"
       )
   })
-  res <- as.data.frame(dplyr::bind_rows(per_var), check.names = FALSE)
-  res[, c(groups, "Variable", "N", "Mean", "Median", "Mode", "Min", "Max",
-          "SD", "SE", "IQR"), drop = FALSE]
+  res   <- as.data.frame(dplyr::bind_rows(per_var), check.names = FALSE)
+  stats <- c(".fx_Variable", ".fx_N", ".fx_Mean", ".fx_Median", ".fx_Mode",
+             ".fx_Min", ".fx_Max", ".fx_SD", ".fx_SE", ".fx_IQR")
+  out   <- res[, c(groups, stats), drop = FALSE]
+  names(out) <- make.unique(c(groups, sub("^\\.fx_", "", stats)))
+  out
 }
 
 #' Proportions of a categorical outcome within each group, with exact CIs.
@@ -110,21 +118,29 @@ proportions_summary <- function(df, outcome, groups, conf_level = 0.95,
   df   <- df[keep, , drop = FALSE]
   if (!nrow(df)) return(NULL)
 
+  # Same reserved-name discipline as grouped_summary(): a group column named
+  # "N" used to corrupt the counts, and an outcome column named "Total" made
+  # binom.confint() error with "subscript out of bounds".
   counts <- dplyr::count(df, dplyr::across(dplyr::all_of(c(groups, outcome))),
-                         name = "N")
+                         name = ".fx_n")
   totals <- counts |>
     dplyr::group_by(dplyr::across(dplyr::all_of(groups))) |>
-    dplyr::summarise(Total = sum(.data[["N"]]), .groups = "drop")
+    dplyr::summarise(.fx_total = sum(.data[[".fx_n"]]), .groups = "drop")
   out <- dplyr::left_join(counts, totals, by = groups)
 
-  ci <- binom::binom.confint(out$N, out$Total, conf.level = conf_level,
+  n_vec <- out[[".fx_n"]]; t_vec <- out[[".fx_total"]]
+  ci <- binom::binom.confint(n_vec, t_vec, conf.level = conf_level,
                              methods = "exact")
-  out$Percent <- round(100 * out$N / out$Total, digits)
-  out$CI_low  <- round(100 * ci$lower, digits)
-  out$CI_high <- round(100 * ci$upper, digits)
-  names(out)[names(out) == outcome] <- "Level"
-  as.data.frame(out)[, c(groups, "Level", "N", "Total", "Percent",
-                         "CI_low", "CI_high"), drop = FALSE]
+  out$.fx_pct <- round(100 * n_vec / t_vec, digits)
+  out$.fx_lo  <- round(100 * ci$lower, digits)
+  out$.fx_hi  <- round(100 * ci$upper, digits)
+
+  stats <- c(outcome, ".fx_n", ".fx_total", ".fx_pct", ".fx_lo", ".fx_hi")
+  res   <- as.data.frame(out, check.names = FALSE)[, c(groups, stats),
+                                                   drop = FALSE]
+  names(res) <- make.unique(c(groups, "Level", "N", "Total", "Percent",
+                              "CI_low", "CI_high"))
+  res
 }
 
 #' A plain-English column type for display ("numeric", "factor", "date", ...).

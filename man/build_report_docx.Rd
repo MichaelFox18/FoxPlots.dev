@@ -4,7 +4,12 @@
 \alias{build_report_docx}
 \title{Build the report as an editable Word document (an officer `rdocx`).}
 \usage{
-build_report_docx(spec, plot_paths = character(0), reg_paths = character(0))
+build_report_docx(
+  spec,
+  plot_paths = character(0),
+  reg_paths = character(0),
+  map_paths = character(0)
+)
 }
 \arguments{
 \item{spec}{A list from report_spec().}
@@ -12,6 +17,9 @@ build_report_docx(spec, plot_paths = character(0), reg_paths = character(0))
 \item{plot_paths}{Character vector of PNG file paths aligned to spec$plots.}
 
 \item{reg_paths}{PNG file paths for the regression diagnostics (0-2).}
+
+\item{map_paths}{PNG file paths aligned to spec$maps. An NA entry writes an
+explanatory line instead of an image.}
 }
 \value{
 An `rdocx` object (print() it to a .docx file).

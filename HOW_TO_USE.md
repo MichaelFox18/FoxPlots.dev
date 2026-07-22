@@ -3,7 +3,7 @@
 `foxplots` is an **R package**. Once it's installed, you launch any app with a
 single line — no folders to point at, no files to source.
 
-There are five apps:
+There are six apps:
 
 | Launch with | App | What it's for |
 |---|---|---|
@@ -58,7 +58,8 @@ On the GitHub page choose **Code → Download ZIP**, unzip it, then point at the
 folder:
 
 ```r
-remotes::install_local("C:/path/to/FoxPlots")
+remotes::install_local("~/Downloads/FoxPlots")     # macOS / Linux
+remotes::install_local("C:/Users/you/Downloads/FoxPlots")   # Windows
 ```
 </details>
 

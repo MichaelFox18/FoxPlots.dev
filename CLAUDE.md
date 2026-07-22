@@ -91,7 +91,7 @@ It's a standard R package (`foxplots`):
 
 ## Tech stack
 
-R + `shiny`, `bslib` (layout: `page_navbar`, `layout_sidebar`, `card`, `navset_card_tab` — matches the existing app), `DT`, `tidyr`, `dplyr`, `tidyselect`, `ggplot2`, `hexbin` (the hexbin chart), `writexl` / `readxl` (import/export), `officer` (the editable Word report — pandoc-free), `here`, and `testthat` for tests. The **Mixed Model Review** app adds the mixed-model stack: `lmerTest` (loads `lme4`), `emmeans`, `multcomp` + `multcompView` (the cld letter engine), and `lattice` (the random-effects caterpillar) in Imports; `pbkrtest` (Kenward-Roger df), `performance` / `MuMIn` (R²/ICC), and `influence.ME` are optional (Suggests, graceful `requireNamespace` fallback). The **Map Tool** adds `leaflet` + `htmlwidgets` + `htmltools` (Imports; all leaflet calls `pkg::`-qualified, no `@import`) with `webshot2` / `chromote` (PNG snapshots; needs a system Chrome — falls back to Edge via `CHROMOTE_CHROME`, retries in `CHROMOTE_HEADLESS=new` mode) in Suggests; the HTML download needs nothing external (`inline_html_deps` self-contains it, no pandoc). Add packages as needed and note them in the build log.
+R + `shiny`, `bslib` (layout: `page_navbar`, `layout_sidebar`, `card`, `navset_card_tab` — matches the existing app), `DT`, `tidyr`, `dplyr`, `tidyselect`, `ggplot2`, `plotly` (interactive chart + regression-diagnostic previews via `ggplotly()`), `colourpicker`, `binom` (exact CIs), `base64enc` / `tibble`, `hexbin` (the hexbin chart, Suggests-gated), `writexl` / `readxl` (import/export), `officer` (the editable Word report — pandoc-free), `here`, and `testthat` for tests. The **Mixed Model Review** app adds the mixed-model stack: `lmerTest` (loads `lme4`), `emmeans`, `multcomp` + `multcompView` (the cld letter engine), and `lattice` (the random-effects caterpillar) in Imports; `pbkrtest` (Kenward-Roger df), `performance` / `MuMIn` (R²/ICC), and `influence.ME` are optional (Suggests, graceful `requireNamespace` fallback). The **Map Tool** adds `leaflet` + `htmlwidgets` + `htmltools` (Imports; all leaflet calls `pkg::`-qualified, no `@import`) with `webshot2` / `chromote` (PNG snapshots; needs a system Chrome — falls back to Edge via `CHROMOTE_CHROME`, retries in `CHROMOTE_HEADLESS=new` mode) in Suggests; the HTML download needs nothing external (`inline_html_deps` self-contains it, no pandoc). Add packages as needed and note them in the build log.
 
 ---
 
@@ -112,12 +112,20 @@ Work from the package root (`DESCRIPTION` anchors `here::here()`). Develop with 
 - **Develop:** `pkgload::load_all("."); run_data_explorer()` (or `run_reshape_tool()` / `run_combine_tool()`).
 - **One module alone:** `pkgload::load_all("."); shiny::testServer(visualizeServer, args = list(data_in = reactive(mtcars)), { ... })` — or build its `*UI()`/`*Server()` into a throwaway `shinyApp()`.
 - **Regenerate docs/NAMESPACE** after changing `@export`/`@param`/`@import`: `roxygen2::roxygenise()`.
-- **Tests:** `testthat::test_local(".")` (loads the package; internal functions are reachable from tests). Full gate: `R CMD build .` then `R CMD check foxplots_*.tar.gz` (run via PowerShell).
+- **Tests:** `testthat::test_local(".")` (loads the package; internal functions are reachable from tests). Full gate: `R CMD build .` then `R CMD check foxplots_*.tar.gz`.
 - **Add a feature:** write the `do_*`/helper + its test → thin `mod_*` that calls it → wire it into a launcher (`run_*.R`) → `roxygenise()` if you exported anything.
 
-**Environment gotchas (this machine):**
-- **Run anything that loads the package (load_all, roxygenise, `R CMD check`, app launch) via PowerShell `R.exe`/`Rscript.exe`, not git-bash** — Shiny/bslib segfault under git-bash here. Pure text/`testthat`-helper runs are fine in either.
+**Environment gotchas (Windows dev box):**
+- **Run anything that loads the package (load_all, roxygenise, `R CMD check`, app launch) via PowerShell `R.exe`/`Rscript.exe`, not git-bash** — Shiny/bslib segfault under git-bash there. Pure text/`testthat`-helper runs are fine in either.
 - **Build/check/install are PowerShell:** `R.exe CMD build .`, `R.exe CMD check --no-manual <tarball>`, `R.exe CMD INSTALL .`. `devtools`/`usethis` are NOT installed; `roxygen2` + `pkgload` are.
+
+**Environment notes (macOS dev box — current, since 2026-07-21):**
+- macOS/arm64, R 4.5.1. **None of the PowerShell workarounds above apply**: plain `Rscript` in any shell works, and Shiny/bslib do not segfault. Build/check are plain `R CMD build .` / `R CMD check --no-manual <tarball>`.
+- **`shiny::testServer` works here** (it segfaulted on the Windows box, which is why module coverage is thin). Read a module's return with `session$returned()`.
+- **No XQuartz**, and `capabilities("cairo")` **lies** — it reports build-time support while `cairo.so` fails to load. So `cairo_pdf()`/`svg()` open no device and write nothing, silently. `render_plots_to_file()` therefore uses base `grDevices::pdf()` and probes `dev.cur()` instead of trusting `capabilities()`; never reintroduce a `capabilities("cairo")` gate.
+- No pandoc and no quarto — fine, the reports are pandoc-free by design. Chrome is present, so map PNG snapshots work.
+
+**Both platforms:**
 - New non-ASCII in **R strings** must use `\uXXXX` escapes (portability); keep comments ASCII. R CMD check must stay clean (currently `Status: OK`).
 - Exported functions need full `@param`/`@return`; mark internal documented helpers `@noRd`. A string token that also appears quoted in a roxygen comment can leak a `\u` into the `.Rd` (Rd "unknown macro") — keep doc text plain ASCII.
 - Module `conditionalPanel` conditions must use **bracket notation** with `ns()` — `input['<ns-id>']` — because namespaced ids contain a hyphen (dot notation breaks).
@@ -187,5 +195,4 @@ test_that("do_stack errors on unknown columns", {
 
 ### Possible next steps (not yet done)
 - **Full app-state save/restore.** Session save/restore (`helpers_state.R`) currently captures only the **data-prep stage** (working data + raw + filters + reshape settings) — analysis-tab choices are not saved. A future upgrade would also restore the **Visualize chart configs, Summarize selections, Regression model spec, and Compare Groups settings** so reloading a session lands the user back on every tab exactly as they left it. The plumbing already exists: extend the shared `session_store` pattern (each analysis module *publishes* its inputs to the store and *consumes* a staged restore, the way `mod_reshape` already does) to `mod_visualize` / `mod_summarize` / `mod_regression` / `mod_compare`. Watch the same picker repopulate-vs-restore race handled in `mod_reshape` (set choices + selection together). Bump `SESSION_STATE_VERSION` when the saved structure grows. (Deliberately deferred — the data-prep scope was chosen first; results are already preservable via the Report.)
-- A reshape "Summary" op (grouped-summary-as-a-new-table) — currently that logic lives in `mod_summarize`; decide whether it also belongs in `reshape`.
 - Deploy (shinyapps.io / Connect): apps are written deployment-safe (system.file/here-anchored paths, inlined logo). The thin entries in `inst/apps/<name>/app.R` call `foxplots::<name>_app()`, so a server deploy needs the `foxplots` package installed there (it is not on CRAN — install from GitHub). Current distribution is **local install** (`install_github("UFSDACU/FoxPlots")` / `install_local`); no rsconnect tooling is committed yet.

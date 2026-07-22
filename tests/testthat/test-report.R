@@ -95,6 +95,7 @@ test_that("report_spec includes a section only when its artifact is present", {
   expect_false(spec$sections[["charts"]])
   expect_false(spec$sections[["comparison"]])
   expect_false(spec$sections[["regression"]])
+  expect_false(spec$sections[["maps"]])
   expect_false(spec$show_code)
 
   full <- report_spec(
@@ -102,6 +103,8 @@ test_that("report_spec includes a section only when its artifact is present", {
     summary_tbl = grouped_summary(mtcars, "mpg", "cyl"),
     plots       = list("p1", "p2"),            # placeholders; spec only counts them
     plot_code   = list("code1", "code2"),
+    maps        = list("m1"),                  # ditto for maps
+    map_code    = list("mcode1"),
     comparison  = { r <- compare_groups_numeric(mtcars, "mpg", "cyl"); r$mode <- "num"; r },
     model       = fit_model(mtcars, "mpg", "wt", "linear"),
     show_code   = TRUE)
@@ -189,4 +192,116 @@ test_that(".fmt_cell rounds numbers and blanks NA without HTML escaping", {
   expect_equal(.fmt_cell(1.23456), "1.2346")
   expect_equal(.fmt_cell(NA), "")
   expect_equal(.fmt_cell("a < b"), "a < b")   # no escaping in the plain path
+})
+
+# ---- maps in the report (v0.6.0) --------------------------------------------
+# A leaflet map is an htmlwidget, not a ggplot, so it can't ride the chart path;
+# it is snapshotted to a PNG. The snapshot needs Suggests-only webshot2/chromote
+# plus Chrome, so the report must degrade to a note rather than fail.
+
+fake_map <- function() structure(list(x = list()), class = c("leaflet", "htmlwidget"))
+
+test_that("report_spec carries maps and flags the section", {
+  spec <- report_spec(mtcars, maps = list(fake_map()), map_code = list("# code"))
+  expect_true(spec$sections[["maps"]])
+  expect_length(spec$maps, 1L)
+  expect_equal(spec$map_code[[1]], "# code")
+})
+
+test_that("report_spec has no map section when no maps are supplied", {
+  spec <- report_spec(mtcars)
+  expect_false(spec$sections[["maps"]])
+  expect_null(spec$maps)
+  # An empty list must not switch the section on either.
+  expect_false(report_spec(mtcars, maps = list())$sections[["maps"]])
+})
+
+test_that("the HTML report embeds a map image when a snapshot exists", {
+  spec <- report_spec(mtcars, maps = list(fake_map()), map_code = list("# code"))
+  html <- build_report_html(spec, map_uris = "data:image/png;base64,AAAA")
+  expect_match(html, 'id="maps"')
+  expect_match(html, 'alt="Map 1"')
+  expect_match(html, "data:image/png;base64,AAAA", fixed = TRUE)
+})
+
+test_that("the HTML report explains a missing snapshot instead of dropping the section", {
+  spec <- report_spec(mtcars, maps = list(fake_map()))
+  html <- build_report_html(spec, map_uris = NA_character_)
+  expect_match(html, 'id="maps"')             # section still present
+  expect_match(html, "snapshot unavailable")  # and says why
+  expect_false(grepl('alt="Map 1"', html))    # but no broken <img>
+  # Same when the uris vector is simply absent.
+  expect_match(build_report_html(spec), "snapshot unavailable")
+})
+
+test_that("map code is only shown when show_code is on", {
+  spec_on  <- report_spec(mtcars, maps = list(fake_map()),
+                          map_code = list("leaflet(df)"), show_code = TRUE)
+  spec_off <- report_spec(mtcars, maps = list(fake_map()),
+                          map_code = list("leaflet(df)"), show_code = FALSE)
+  expect_match(build_report_html(spec_on, map_uris = "x"), "leaflet(df)", fixed = TRUE)
+  expect_false(grepl("leaflet(df)", build_report_html(spec_off, map_uris = "x"),
+                     fixed = TRUE))
+})
+
+test_that("the Word report gains a Maps section", {
+  skip_if_not_installed("officer")
+  spec <- report_spec(mtcars, maps = list(fake_map()))
+  doc  <- build_report_docx(spec, map_paths = NA_character_)
+  txt  <- paste(officer::docx_summary(doc)$text, collapse = " ")
+  expect_match(txt, "Maps")
+  expect_match(txt, "snapshot unavailable")
+})
+
+test_that("map_to_png_file and map_to_data_uri return NA rather than erroring", {
+  # NULL widget short-circuits regardless of what's installed.
+  expect_true(is.na(map_to_png_file(NULL)))
+  expect_true(is.na(map_to_data_uri(NULL)))
+})
+
+test_that("render_report embeds a real map snapshot end to end", {
+  skip_if_not_installed("webshot2")
+  skip_if_not_installed("chromote")
+  skip_if_not(map_snapshot_ok(), "no headless Chrome available")
+  d  <- make_map_example_data()
+  cc <- detect_coord_cols(d)
+  m  <- build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat, size_by = "acres"))
+  spec <- report_spec(d, maps = list(m), map_code = list("# code"))
+  f <- withr::local_tempfile(fileext = ".html")
+  expect_error(render_report(spec, f, format = "html"), NA)
+  html <- paste(readLines(f, warn = FALSE), collapse = "")
+  expect_match(html, 'alt="Map 1"')
+  expect_false(grepl("snapshot unavailable", html))
+})
+
+test_that("a snapshot honours the pane size stamped on the widget", {
+  skip_if_not_installed("webshot2")
+  skip_if_not_installed("png")
+  skip_if_not(map_snapshot_ok(), "no headless Chrome available")
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  w  <- build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat))
+  # mod_map stamps the pane's real pixel size so the snapshot reproduces the
+  # on-screen framing at the on-screen resolution (zoom 1: DPR 2 makes the
+  # CartoDB basemap drop ~half its tiles).
+  attr(w, "fox_snapshot") <- list(width = 640, height = 400, zoom = 1)
+  f <- map_to_png_file(w)
+  skip_if(is.na(f), "snapshot failed in this environment")
+  on.exit(unlink(f), add = TRUE)
+  dims <- dim(png::readPNG(f))
+  expect_equal(dims[2], 640L)
+  expect_equal(dims[1], 400L)
+})
+
+test_that("a widget with no stamp falls back to the default canvas", {
+  skip_if_not_installed("webshot2")
+  skip_if_not_installed("png")
+  skip_if_not(map_snapshot_ok(), "no headless Chrome available")
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  w  <- build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat))
+  f  <- map_to_png_file(w)
+  skip_if(is.na(f), "snapshot failed in this environment")
+  on.exit(unlink(f), add = TRUE)
+  dims <- dim(png::readPNG(f))
+  expect_equal(dims[2], MAP_PNG_W)
+  expect_equal(dims[1], MAP_PNG_H)
 })

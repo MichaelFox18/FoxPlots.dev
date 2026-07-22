@@ -1014,19 +1014,49 @@ draw_plot_grid <- function(plots) {
 }
 
 # Render a list of ggplots to an image file (png / pdf / svg) as a grid.
+#
+# Device choice is deliberate. NEVER gate this on capabilities("cairo"): that
+# reports BUILD-time support and returns TRUE even where cairo.so fails to load
+# at runtime (macOS without XQuartz is the common case). cairo_pdf()/svg() then
+# emit a warning only, open NO device, and the caller silently receives a path
+# that was never written -- while ggplot's print falls through to the default
+# device and drops a stray Rplots.pdf in the working directory.
+#
+# Base pdf() needs no cairo, so PDF works everywhere. SVG has no base-R
+# equivalent, so it is probed and reported instead of failing silently.
 render_plots_to_file <- function(plots, file, fmt, w_each, h_each, dpi) {
   n     <- max(1L, length(plots))
   ncols <- if (n <= 1) 1L else 2L
   nrows <- ceiling(n / ncols)
   W <- w_each * ncols
   H <- h_each * nrows
+  before <- grDevices::dev.cur()
   switch(fmt,
     png = grDevices::png(file, width = W, height = H, units = "in", res = dpi),
-    pdf = grDevices::cairo_pdf(file, width = W, height = H),
-    svg = grDevices::svg(file, width = W, height = H),
+    pdf = grDevices::pdf(file, width = W, height = H),
+    svg = suppressWarnings(grDevices::svg(file, width = W, height = H)),
     grDevices::png(file, width = W, height = H, units = "in", res = dpi))
-  on.exit(grDevices::dev.off())
+  if (identical(grDevices::dev.cur(), before)) {
+    stop(if (identical(fmt, "svg"))
+           paste0("SVG export needs cairo support, which isn't available on ",
+                  "this system. Choose PNG or PDF instead.")
+         else
+           sprintf("Could not open a %s graphics device on this system.",
+                   toupper(fmt)),
+         call. = FALSE)
+  }
+  # Safety net only: cleared by the explicit dev.off() on the success path.
+  on.exit(if (!identical(grDevices::dev.cur(), before)) grDevices::dev.off(),
+          add = TRUE)
   draw_plot_grid(plots)
+  grDevices::dev.off()
+  # The device has to be closed before the file is complete on disk, so this
+  # is the earliest honest point to confirm the export actually produced bytes.
+  if (!file.exists(file) || file.size(file) == 0) {
+    stop(sprintf("The %s export produced an empty file.", toupper(fmt)),
+         call. = FALSE)
+  }
+  invisible(file)
 }
 
 # --- plotly post-processing (interactive view only) -------------------------

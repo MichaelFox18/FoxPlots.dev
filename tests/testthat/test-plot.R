@@ -255,3 +255,42 @@ test_that("generate_code applies the same >30-level facet cap as the builder", {
   expect_true(grepl("group_by(df, x)", code, fixed = TRUE))
   expect_error(parse(text = code), NA)
 })
+
+# ---- render_plots_to_file: real round-trip per format ------------------------
+# Regression guard: PDF export used cairo_pdf(), which on a machine without
+# cairo (macOS sans XQuartz) warns, opens NO device, writes NOTHING, and raises
+# no condition -- so the download handler silently served an empty file. These
+# assert real bytes reach disk, which no previous test did.
+
+test_that("render_plots_to_file writes a real, non-empty PNG and PDF", {
+  p <- list(ggplot(mtcars, aes(wt, mpg)) + geom_point())
+  for (fmt in c("png", "pdf")) {
+    f <- withr::local_tempfile(fileext = paste0(".", fmt))
+    expect_silent(render_plots_to_file(p, f, fmt, 7, 4.5, 110))
+    expect_true(file.exists(f))
+    expect_gt(file.size(f), 1000)
+  }
+})
+
+test_that("render_plots_to_file leaves no device open and no stray Rplots.pdf", {
+  p   <- list(ggplot(mtcars, aes(wt, mpg)) + geom_point())
+  before <- grDevices::dev.cur()
+  f <- withr::local_tempfile(fileext = ".pdf")
+  render_plots_to_file(p, f, "pdf", 7, 4.5, 110)
+  expect_identical(grDevices::dev.cur(), before)
+  expect_false(file.exists(file.path(getwd(), "Rplots.pdf")))
+})
+
+test_that("render_plots_to_file reports an unavailable device instead of failing silently", {
+  # SVG needs cairo; where it is missing we must raise, never write nothing quietly.
+  p <- list(ggplot(mtcars, aes(wt, mpg)) + geom_point())
+  f <- withr::local_tempfile(fileext = ".svg")
+  res <- tryCatch({ render_plots_to_file(p, f, "svg", 7, 4.5, 110); "ok" },
+                  error = function(e) conditionMessage(e))
+  if (identical(res, "ok")) {
+    expect_gt(file.size(f), 100)          # cairo present: real file
+  } else {
+    expect_match(res, "cairo|device")     # cairo absent: a loud, useful error
+    expect_equal(unname(grDevices::dev.cur()), 1L)   # and no device left open
+  }
+})

@@ -1,3 +1,91 @@
+# foxplots 0.6.0
+
+## The map now appears in the report
+
+- **Reports include your map.** The Report tab gains a **Maps** section, in both
+  the HTML and the editable Word output, sitting between Charts and Group
+  comparison to match the tab order. The leaflet code is included too when
+  "show reproducible code" is on.
+- Maps are embedded as **static snapshots**, so a report still works emailed
+  around or opened offline. That costs a headless-browser launch per map
+  (several seconds), which the progress message now says out loud instead of
+  looking frozen.
+- **Exported maps now match what's on screen.** Snapshots used to render on a
+  fixed 1200x800 canvas -- a different size and shape from the map pane in the
+  browser -- so at the same zoom they framed a different area (typically a lot
+  of surrounding ocean). Both the Map tab's PNG download and the report snapshot
+  now render at the map pane's actual pixel size, so the image covers exactly
+  the area you framed. Two follow-on fixes came with it: the leaflet widget is
+  sized to the snapshot canvas so the basemap loads tiles for the whole image
+  (no more grey rectangles of un-loaded map), and snapshots render at the
+  screen's own pixel density (a 2x density made the CartoDB basemap drop about
+  half its tiles).
+- **A missing snapshot never fails the download.** Where the optional
+  `webshot2` / `chromote` packages or Chrome are absent, the Maps section still
+  appears and explains what's needed, rather than silently disappearing or
+  erroring the whole report.
+
+## Map: size scales and a size legend
+
+- **"Size by" now has a scale.** Alongside the default **Linear**
+  (area-proportional) sizing there is **Log**, which spreads out skewed values
+  so the small end stops looking identical, and **Quantile**, which gives every
+  bubble size an equal share of the points. Both fall back to linear -- with an
+  explanation in the hint line -- when the data can't support them (log needs
+  positive values; quantile needs at least three distinct ones).
+- **Bubbles finally have a key.** Sizing by a column used to draw graduated
+  circles with nothing to read them against. There is now a graduated-circle
+  size legend in the bottom-left corner (the color legend keeps the
+  bottom-right), and it can be switched off. Its circles are computed from the
+  same code path as the markers, so the key cannot drift from the map.
+- The generated leaflet code emits the chosen scale and the legend, and now
+  reproduces the app's radii exactly -- including for a constant column, where
+  the old snippet computed `0/0` and drew 4px markers while the app drew 11px
+  ones.
+- A non-finite value (`Inf`) in the size column is drawn at the smallest radius
+  as documented, instead of being clamped to the largest bubble on the map.
+
+## Fixes (several silent-failure paths made loud or correct)
+
+- **PDF chart export produced an empty file on macOS.** The exporter used
+  `cairo_pdf()`, and `capabilities("cairo")` reports build-time support even
+  where cairo cannot actually load (macOS without XQuartz). The device never
+  opened, no error was raised, the download served nothing, and a stray
+  `Rplots.pdf` was left in the working directory. PDF now uses base
+  `grDevices::pdf()` (no cairo, works everywhere), the device is probed rather
+  than trusted, and an empty result is reported instead of returned. SVG, which
+  has no base-R equivalent, now fails with an actionable message.
+- **Regression died on any column name containing a space.** Excel headers keep
+  their spaces (`readxl` preserves them verbatim, unlike `read.csv`), and the
+  unbackticked formula failed with an opaque `unexpected symbol`. Response and
+  predictors are now backticked, polynomial terms included.
+- **Summaries silently corrupted data when a column shared a stat's name.** A
+  grouping column called `N`, `Mean`, `Variable` (and so on) was overwritten by
+  the statistic, leaving rows grouped correctly but unidentifiable; an outcome
+  column named `Total` made `proportions_summary()` error outright. Statistics
+  are now computed under reserved internal names, and your column keeps its own
+  name if the two ever collide.
+- **A stale filter could silently empty every tab.** Numeric operators
+  dispatched on the operator alone, so a `pts > 20` filter left over after a
+  Change Type -> Factor recast produced an all-NA mask and dropped every row
+  while still displaying the filter chip. Comparisons are now type-aware and
+  fall back to the documented no-op.
+- **Exporting reshaped data with duplicate split keys.** List-columns broke CSV
+  export with an opaque 500 and were written to Excel as blank columns; they are
+  now flattened to `a; b; c` text for flat-file formats (RDS keeps the real
+  structure).
+- **Mixed Model fit statistics no longer error on a singular fit** —
+  `performance::icc()` returns a bare `NA` there, which broke the whole table.
+- `R CMD check` is back to `Status: OK`: the local `.claude/` directory is no
+  longer swept into the build.
+
+## Docs
+
+- Corrected "five apps" to six, generalised Windows-only install paths, refreshed
+  the test-count figure, and split the environment notes into Windows and macOS
+  sections (the PowerShell-only workaround is specific to the Windows dev box).
+- The test suite grew from ~666 to ~804 expectations across these changes.
+
 # foxplots 0.5.0
 
 ## Map Tool: layer groups, color scales, bulletproof export

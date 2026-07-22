@@ -76,3 +76,45 @@ test_that("proportions_summary gives percents and exact CIs by group", {
 test_that("proportions_summary returns NULL on unusable input", {
   expect_null(proportions_summary(data.frame(x = 1), "x", character(0)))
 })
+
+# ---- reserved-name collisions ------------------------------------------------
+# summarise() used to overwrite a GROUPING column that happened to be named
+# "N"/"Mean"/... with the statistic of the same name, so rows grouped correctly
+# but became unidentifiable (and the name-based select then duplicated a stat).
+
+test_that("grouped_summary keeps group labels when a group column is named N", {
+  df  <- data.frame(N = rep(c("a", "b"), each = 5), score = c(1:5, 11:15))
+  out <- grouped_summary(df, vars = "score", groups = "N")
+  expect_equal(as.character(out$N), c("a", "b"))   # group labels, not counts
+  expect_equal(out$Mean, c(3, 13))
+  expect_false(anyDuplicated(names(out)) > 0)      # our stat yielded, not theirs
+})
+
+test_that("grouped_summary survives group columns named after every stat", {
+  for (nm in c("Mean", "Median", "Min", "Max", "SD", "SE", "IQR", "Variable")) {
+    df <- data.frame(g = rep(c("a", "b"), each = 4), score = c(1:4, 11:14))
+    names(df)[1] <- nm
+    out <- grouped_summary(df, vars = "score", groups = nm)
+    expect_equal(as.character(out[[nm]]), c("a", "b"), info = nm)
+  }
+})
+
+test_that("proportions_summary handles an outcome column named Total", {
+  df  <- data.frame(grp = rep(c("x", "y"), each = 4),
+                    Total = rep(c("yes", "no"), 4))
+  out <- proportions_summary(df, outcome = "Total", groups = "grp")
+  expect_s3_class(out, "data.frame")
+  expect_equal(unique(out$Percent), 50)
+})
+
+test_that("proportions_summary keeps group labels when a group is named N", {
+  df  <- data.frame(N = rep(c("x", "y"), each = 4), val = rep(c("yes", "no"), 4))
+  out <- proportions_summary(df, outcome = "val", groups = "N")
+  expect_equal(unique(as.character(out$N)), c("x", "y"))
+})
+
+test_that("normal grouped_summary output is unchanged by the rename", {
+  out <- grouped_summary(mtcars, vars = "mpg", groups = "cyl")
+  expect_named(out, c("cyl", "Variable", "N", "Mean", "Median", "Mode",
+                      "Min", "Max", "SD", "SE", "IQR"))
+})

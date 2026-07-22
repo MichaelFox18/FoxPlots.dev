@@ -9,6 +9,8 @@ report_spec(
   summary_tbl = NULL,
   plots = NULL,
   plot_code = NULL,
+  maps = NULL,
+  map_code = NULL,
   comparison = NULL,
   model = NULL,
   title = "Data Explorer Report",
@@ -25,6 +27,10 @@ report_spec(
 \item{plots}{List of ggplots from mod_visualize, or NULL.}
 
 \item{plot_code}{Character list aligned to `plots` (the ggplot2 code), or NULL.}
+
+\item{maps}{List of leaflet widgets from mod_map, or NULL.}
+
+\item{map_code}{Character list aligned to `maps` (the leaflet code), or NULL.}
 
 \item{comparison}{Result list from mod_compare, or NULL.}
 

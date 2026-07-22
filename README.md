@@ -52,7 +52,8 @@ install.packages("remotes")
 remotes::install_github("UFSDACU/FoxPlots", upgrade = "never")
 
 # ...or from a local copy (on the GitHub page: Code -> Download ZIP, unzip, then):
-# remotes::install_local("C:/path/to/FoxPlots")
+# remotes::install_local("~/Downloads/FoxPlots")            # macOS / Linux
+# remotes::install_local("C:/Users/you/Downloads/FoxPlots") # Windows
 
 # Optional extras -- Word (.docx) reports and the Map tab's PNG snapshots:
 # install.packages(c("officer", "webshot2", "chromote"))
@@ -87,7 +88,7 @@ The package also exports the helper functions for use in your own scripts (e.g.
 
 ---
 
-## 2. The five apps — separately
+## 2. The six apps — separately
 
 ### Data Explorer — the full pipeline
 Tabs run **left → right**, each feeding the next:
@@ -224,7 +225,7 @@ It's a standard R package. From the source folder:
 pkgload::load_all(".")
 run_data_explorer()
 
-# Run the full test suite (~330 checks):
+# Run the full test suite (~670 checks):
 testthat::test_local(".")
 ```
 
@@ -236,6 +237,6 @@ R CMD check foxplots_*.tar.gz
 
 To add a feature, follow the path every existing one took: **pure helper + its
 test → a thin `mod_*` module that calls it → wire it into a launcher
-(`run_*.R`).** See `CLAUDE.md` for conventions and environment gotchas (notably:
-on this machine, run anything that loads Shiny via PowerShell `Rscript.exe`, not
-git-bash).
+(`run_*.R`).** See `CLAUDE.md` for conventions and per-platform environment
+notes (the PowerShell-only workaround there applies to the Windows dev box; on
+macOS and Linux a plain `Rscript` in any shell is fine).

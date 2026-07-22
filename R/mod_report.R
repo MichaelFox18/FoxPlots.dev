@@ -55,7 +55,8 @@ reportUI <- function(id, default_title = "Data Explorer Report") {
 }
 
 reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
-                         plot_code = NULL, comparison = NULL, model = NULL,
+                         plot_code = NULL, maps = NULL, map_code = NULL,
+                         comparison = NULL, model = NULL,
                          default_title = "Data Explorer Report") {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -69,11 +70,13 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
     # would be nonsense. Fixed at server start -- the arguments never change.
     wired <- list(summary    = !is.null(summary_tbl),
                   charts     = !is.null(plots),
+                  maps       = !is.null(maps),
                   comparison = !is.null(comparison),
                   regression = !is.null(model))
     STAGE_LABEL <- c(summary = "Summary table", charts = "Charts",
-                     comparison = "Group comparison", regression = "Regression")
-    STAGE_VERB  <- c(summary = "a summary", charts = "charts",
+                     maps = "Maps", comparison = "Group comparison",
+                     regression = "Regression")
+    STAGE_VERB  <- c(summary = "a summary", charts = "charts", maps = "a map",
                      comparison = "a comparison", regression = "a model")
     on_stages   <- names(wired)[vapply(wired, isTRUE, logical(1))]
 
@@ -98,11 +101,13 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
     # Which sections currently have usable content (drives the live checklist).
     avail <- reactive({
       s <- read_opt(summary_tbl); p <- read_opt(plots)
+      mp <- read_opt(maps)
       cmp <- read_opt(comparison); m <- read_opt(model)
       list(
         overview   = is.data.frame(data_in()),
         summary    = is.data.frame(s) && nrow(s) > 0,
         charts     = !is.null(p) && length(p) > 0,
+        maps       = !is.null(mp) && length(mp) > 0,
         comparison = is.list(cmp) && !is.null(cmp$mode),
         regression = inherits(m, "lm")
       )
@@ -147,13 +152,19 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
           summary_tbl = read_opt(summary_tbl),
           plots       = read_opt(plots),
           plot_code   = read_opt(plot_code),
+          maps        = read_opt(maps),
+          map_code    = read_opt(map_code),
           comparison  = read_opt(comparison),
           model       = read_opt(model),
           title       = label_or(input$title, default_title),
           show_code   = isTRUE(input$show_code),
           logo        = uf_logo_uri())
+        # Each map costs a headless-browser launch (several seconds), so say so
+        # rather than letting the download look frozen.
+        msg <- if (isTRUE(spec$sections[["maps"]]))
+          "Building report (snapshotting the map\u2026)" else "Building report\u2026"
         tryCatch(
-          withProgress(message = "Building report\u2026", value = 0.4, {
+          withProgress(message = msg, value = 0.4, {
             render_report(spec, file, format = fmt)
             incProgress(0.6)
           }),

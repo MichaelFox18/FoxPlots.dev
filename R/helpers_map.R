@@ -38,7 +38,14 @@ MAP_QUANT_BINS   <- 5      # quantile color scale bin count
 # (regional totals, populations); quantile guarantees every bin gets ink.
 MAP_SCALES <- c("Linear" = "linear", "Log" = "log",
                 "Quantile (5 bins)" = "quantile")
+# The same three scales drive "size by". Reused verbatim so the two pickers
+# offer identical wording; the quantile label reads as bins for color and as
+# ranks for size, which is the same idea either way.
+MAP_SIZE_SCALES <- c("Linear (area-proportional)" = "linear",
+                     "Log (spread out skewed values)" = "log",
+                     "Quantile (even spread of sizes)" = "quantile")
 MAP_RADIUS_RANGE <- c(4, 18)  # graduated-symbol radius bounds in px (sqrt scale)
+MAP_SIZE_LEG_N   <- 4      # graduated circles drawn in the size legend
 MAP_POPUP_MAX    <- 5      # the module preselects at most this many popup columns
 MAP_PNG_W        <- 1200   # fixed PNG snapshot size -- no extra inputs in v1
 MAP_PNG_H        <- 800
@@ -134,19 +141,107 @@ map_bbox <- function(df, lon, lat, pad = 0.05) {
   list(lng1 = rl[1], lat1 = rt[1], lng2 = rl[2], lat2 = rt[2])
 }
 
-# Graduated-symbol radii: sqrt so marker AREA (not radius) tracks the value --
-# linear radii visually exaggerate the large end. Constant column -> midpoint;
-# NA / non-finite -> smallest.
-scale_radius <- function(v, range = MAP_RADIUS_RANGE) {
+# Effective size scale for a numeric size-by column: the requested one unless
+# the data can't support it. Twin of map_color_scale() and the single source of
+# truth for the fallback -- builder, code-gen and map_hint all consult it.
+map_size_scale <- function(v, requested) {
+  requested <- requested %||% "linear"
+  if (!requested %in% c("log", "quantile")) return("linear")
+  vv <- v[is.finite(v)]
+  if (!length(vv)) return("linear")
+  if (requested == "log" && any(vv <= 0)) return("linear")
+  # With fewer than three distinct values the ranks carry no more information
+  # than the raw values, so quantile sizing just adds a confusing legend.
+  if (requested == "quantile" && length(unique(vv)) < 3) return("linear")
+  requested
+}
+
+# Position of each value along the chosen size scale, as a 0-1 fraction
+# measured against `domain`. Splitting this out is what lets the markers and
+# the size legend share ONE code path: the legend passes its break values as
+# `v` and the full column as `domain`, so a drawn circle is guaranteed to be
+# the size a marker of that value would be.
+map_size_frac <- function(v, domain, scale) {
+  scale <- scale %||% "linear"
+  if (identical(scale, "quantile")) {
+    d <- domain[is.finite(domain)]
+    if (!length(d)) return(rep(NA_real_, length(v)))
+    return(stats::ecdf(d)(v))
+  }
+  tf  <- if (identical(scale, "log")) log10 else identity
+  vt  <- suppressWarnings(tf(v))
+  dt  <- suppressWarnings(tf(domain))
+  fin <- is.finite(dt)
+  if (!any(fin)) return(rep(NA_real_, length(v)))
+  lo <- min(dt[fin]); hi <- max(dt[fin])
+  if (hi == lo) return(rep(0.5, length(v)))
+  pmin(pmax((vt - lo) / (hi - lo), 0), 1)
+}
+
+# Graduated-symbol radii. Under the LINEAR scale the fraction is sqrt-ed so
+# marker AREA (not radius) tracks the value -- linear radii visually exaggerate
+# the large end. Log and quantile are explicitly "amplify the spread" modes, so
+# they map straight to radius: a second sqrt would undo exactly the spreading
+# they were chosen for. Constant column -> midpoint; NA / non-finite -> smallest.
+scale_radius <- function(v, range = MAP_RADIUS_RANGE, scale = "linear",
+                         domain = v) {
   if (is.null(v) || !is.numeric(v)) return(NULL)
-  fin <- is.finite(v)
-  if (!any(fin)) return(rep(mean(range), length(v)))
-  v0  <- v - min(v[fin])
-  top <- max(v0[fin])
-  if (top == 0) return(rep(mean(range), length(v)))
-  r <- range[1] + (range[2] - range[1]) * sqrt(v0 / top)
-  r[!fin] <- range[1]
+  scale <- scale %||% "linear"
+  dfin  <- domain[is.finite(domain)]
+  if (!length(dfin) || max(dfin) == min(dfin))
+    return(rep(mean(range), length(v)))
+  frac <- map_size_frac(v, domain, scale)
+  if (identical(scale, "linear")) frac <- sqrt(frac)
+  r <- range[1] + (range[2] - range[1]) * frac
+  # Keyed off the INPUT, not the computed radius: an Inf clamps to frac = 1 and
+  # would otherwise be drawn as the largest bubble on the map rather than
+  # flagged as unusable. The emitted code keys off `v` for the same reason.
+  r[!is.finite(v)] <- range[1]
   r
+}
+
+# Representative value/radius pairs for the size legend: data quantiles, so the
+# breaks always exist in the data and span it even when it's badly skewed.
+# Radii come from scale_radius() against the full column -- same math as the
+# markers, by construction.
+size_legend_breaks <- function(v, scale = "linear", range = MAP_RADIUS_RANGE,
+                               n = MAP_SIZE_LEG_N) {
+  if (is.null(v) || !is.numeric(v)) return(NULL)
+  vv <- v[is.finite(v)]
+  if (!length(vv) || max(vv) == min(vv)) return(NULL)
+  brks <- unique(signif(stats::quantile(vv, probs = seq(0, 1, length.out = n),
+                                        na.rm = TRUE, names = FALSE), 3))
+  if (length(brks) < 2) return(NULL)
+  data.frame(value = brks,
+             radius = scale_radius(brks, range, scale, domain = v))
+}
+
+# Graduated-circle legend markup for addControl(). leaflet's addLegend() can
+# only draw color swatches, so sized symbols have to be hand-built. Circles are
+# right-aligned in a fixed-width cell (the widest circle) so the labels line up.
+size_legend_html <- function(brks, title = NULL, fill = UF_BLUE) {
+  if (is.null(brks) || !nrow(brks)) return(NULL)
+  cell <- 2 * max(brks$radius) + 2
+  rows <- vapply(rev(seq_len(nrow(brks))), function(i) {
+    dia <- 2 * brks$radius[i]
+    sprintf(paste0(
+      "<div style='display:flex;align-items:center;margin:1px 0;'>",
+      "<span style='width:%.0fpx;display:flex;justify-content:center;'>",
+      "<span style='display:inline-block;width:%.0fpx;height:%.0fpx;",
+      "border-radius:50%%;background:%s;opacity:0.75;border:1px solid #FFF;'>",
+      "</span></span>",
+      "<span style='font-size:11px;margin-left:6px;'>%s</span></div>"),
+      cell, dia, dia, fill,
+      htmltools::htmlEscape(format(brks$value[i], big.mark = ",",
+                                   trim = TRUE, scientific = FALSE)))
+  }, character(1))
+  head_html <- if (!is.null(title) && nzchar(title))
+    sprintf("<div style='font-weight:600;font-size:11px;margin-bottom:3px;'>%s</div>",
+            htmltools::htmlEscape(title))
+  else ""
+  sprintf(paste0("<div style='background:rgba(255,255,255,0.85);padding:6px 8px;",
+                 "border-radius:4px;line-height:1;'>%s%s</div>"),
+          head_html, paste(rows, collapse = ""))
 }
 
 # The palette decision tree of group_scales()/palette_code() (helpers_plot.R),
@@ -299,6 +394,17 @@ map_hint <- function(df, p) {
   if (!is.null(sv) && sv %in% names(df) && !is.numeric(df[[sv]]))
     hints <- c(hints, sprintf("'%s' isn't numeric %s sizing by it is ignored.",
                               sv, SYM_MDASH))
+  # Same loud fallback the color scale gets (map_size_scale is the shared rule).
+  if (!is.null(sv) && sv %in% names(df) && is.numeric(df[[sv]])) {
+    req_ssc <- p$size_scale %||% "linear"
+    if (req_ssc %in% c("log", "quantile") &&
+        map_size_scale(cc$data[[sv]], req_ssc) == "linear")
+      hints <- c(hints, if (req_ssc == "log") sprintf(
+        "'%s' has zero or negative values %s size can't use a log scale, so it's linear.",
+        sv, SYM_MDASH) else sprintf(
+        "'%s' doesn't have enough distinct values for quantile sizing %s using a linear scale.",
+        sv, SYM_MDASH))
+  }
   if (identical(p$cluster %||% "auto", "off") && nrow(cc$data) > MAP_BIG_ROWS)
     hints <- c(hints, sprintf(
       "%s points without clustering can be slow %s consider setting Cluster to Auto.",
@@ -324,6 +430,10 @@ map_hint <- function(df, p) {
 #   color_hex  : marker color when `color` is unset    (default UF_BLUE)
 #   size_by    : numeric column -> graduated radii; "__none__"/NULL -> fixed
 #   size       : fixed circle radius in px             (default 6)
+#   size_scale : "linear" / "log" / "quantile" for `size_by`
+#                (default "linear"; silent fallback per map_size_scale)
+#   size_legend: draw the graduated-circle key when `size_by` is set
+#                (default TRUE)
 #   alpha      : fill opacity                          (default 0.8)
 #   popup_cols : character vector of click-popup columns (default none)
 #   label_col  : hover-label column                    (default none)
@@ -337,6 +447,10 @@ map_hint <- function(df, p) {
 #   title      : optional map title                    (default none)
 #   view       : module-only: list(lng, lat, zoom) restoring the user's view;
 #                NULL -> fitBounds to the data. Never emitted in code.
+#   view_bounds: module-only: list(north, south, east, west) -- the area to
+#                cover. Takes precedence over `view`; used by the PNG/report
+#                snapshots, whose canvas differs in size from the live pane.
+#                Never emitted in code.
 build_leaflet_map <- function(df, p) {
   if (is.null(df) || !is.data.frame(df) || !nrow(df)) return(NULL)
   lon <- map_col(p$lon); lat <- map_col(p$lat)
@@ -377,7 +491,10 @@ build_leaflet_map <- function(df, p) {
   # scalar (fixed size / single color) and are passed through unsubset.
   fill   <- if (!is.null(pal_info)) pal_info$pal(pal_info$values)
             else (p$color_hex %||% UF_BLUE)
-  radius <- if (!is.null(sizev)) scale_radius(d[[sizev]]) else size
+  size_scale <- if (!is.null(sizev))
+    map_size_scale(d[[sizev]], p$size_scale %||% "linear") else "linear"
+  radius <- if (!is.null(sizev))
+    scale_radius(d[[sizev]], MAP_RADIUS_RANGE, size_scale) else size
   popup  <- popup_html(d, popc)
   labs   <- if (!is.null(labv)) as.character(d[[labv]])
   sub_i  <- function(x, i) if (length(x) > 1) x[i] else x
@@ -431,6 +548,18 @@ build_leaflet_map <- function(df, p) {
                             opacity = 0.9, labFormat = lab_fmt)
   }
 
+  # Size key. Without one, graduated circles are decoration -- there is no way
+  # to read a value off a bubble. Sits bottom-LEFT so it never collides with
+  # the color legend above.
+  if (!is.null(sizev) && isTRUE(p$size_legend %||% TRUE)) {
+    leg_html <- size_legend_html(
+      size_legend_breaks(d[[sizev]], size_scale, MAP_RADIUS_RANGE),
+      title = sizev,
+      fill  = if (is.null(pal_info)) (p$color_hex %||% UF_BLUE) else UF_BLUE)
+    if (!is.null(leg_html))
+      m <- leaflet::addControl(m, position = "bottomleft", html = leg_html)
+  }
+
   ttl <- if (!is.null(p$title) && nzchar(trimws(p$title))) trimws(p$title)
   if (!is.null(ttl))
     m <- leaflet::addControl(
@@ -439,7 +568,14 @@ build_leaflet_map <- function(df, p) {
         "<div style='font-weight:600; font-size:1.1em; padding:2px 6px;'>%s</div>",
         htmltools::htmlEscape(ttl)))
 
-  if (!is.null(p$view) && all(c("lng", "lat", "zoom") %in% names(p$view))) {
+  # view_bounds wins over view: "cover this area" survives being re-rendered at
+  # the snapshot canvas's size, whereas "this centre at this zoom" does not.
+  # The exports pass bounds; the live pane passes centre+zoom (exact there).
+  vb <- p$view_bounds
+  if (!is.null(vb) && all(c("north", "south", "east", "west") %in% names(vb))) {
+    m <- leaflet::fitBounds(m, vb$west, vb$south, vb$east, vb$north)
+  } else if (!is.null(p$view) &&
+             all(c("lng", "lat", "zoom") %in% names(p$view))) {
     m <- leaflet::setView(m, lng = p$view$lng, lat = p$view$lat,
                           zoom = p$view$zoom)
   } else {
@@ -513,6 +649,7 @@ generate_map_code <- function(df, p) {
   show_legend <- FALSE
   fill_expr <- sprintf("fillColor = %s", qq(p$color_hex %||% UF_BLUE))
   legend_args <- NULL
+  size_leg_args <- NULL
   if (!is.null(cv)) {
     n_lv    <- dplyr::n_distinct(d0[[cv]])
     is_cont <- is.numeric(d0[[cv]]) && n_lv > 10
@@ -559,13 +696,49 @@ generate_map_code <- function(df, p) {
       paste(parts, collapse = ', "<br/>",\n                     '), ")"))
   }
   if (!is.null(sizev)) {
-    pre <- c(pre, "",
-      "# Bubble radii: sqrt scaling so marker AREA tracks the value",
-      sprintf("v <- %s - min(%s, na.rm = TRUE)", dollar(sizev), dollar(sizev)),
-      sprintf("df$.map_radius <- %s + %s * sqrt(v / max(v, na.rm = TRUE))",
-              MAP_RADIUS_RANGE[1], MAP_RADIUS_RANGE[2] - MAP_RADIUS_RANGE[1]),
-      sprintf("df$.map_radius[!is.finite(df$.map_radius)] <- %s",
-              MAP_RADIUS_RANGE[1]))
+    r0   <- MAP_RADIUS_RANGE[1]
+    span <- MAP_RADIUS_RANGE[2] - MAP_RADIUS_RANGE[1]
+    mid  <- mean(MAP_RADIUS_RANGE)
+    ssc  <- map_size_scale(d0[[sizev]], p$size_scale %||% "linear")
+    # The `else` arms below are the constant-column midpoint guard the builder
+    # has always applied. The old emitted code had no guard and computed 0/0
+    # there, so a constant column drew 4px markers in the script and 11px ones
+    # in the app.
+    head_cmt <- switch(ssc,
+      log      = "# Bubble radii: log scale -- spreads out skewed values",
+      quantile = "# Bubble radii: quantile scale -- every size gets used",
+      "# Bubble radii: sqrt scaling so marker AREA tracks the value")
+    body <- switch(ssc,
+      quantile = c(
+        sprintf("v  <- %s", dollar(sizev)),
+        "ok <- is.finite(v)",
+        "df$.map_radius <- if (any(ok) && length(unique(v[ok])) > 1) {",
+        sprintf("  %s + %s * ecdf(v[ok])(v)", r0, span),
+        sprintf("} else %s", mid)),
+      c(
+        sprintf("v  <- %s%s", if (identical(ssc, "log")) "log10" else "",
+                if (identical(ssc, "log")) sprintf("(%s)", dollar(sizev))
+                else dollar(sizev)),
+        "ok <- is.finite(v)",
+        "df$.map_radius <- if (any(ok) && max(v[ok]) > min(v[ok])) {",
+        "  lo <- min(v[ok]); hi <- max(v[ok])",
+        sprintf("  %s + %s * %s((v - lo) / (hi - lo))", r0, span,
+                if (identical(ssc, "linear")) "sqrt" else ""),
+        sprintf("} else %s", mid)))
+    pre <- c(pre, "", head_cmt, body,
+             sprintf("df$.map_radius[!is.finite(v)] <- %s", r0))
+
+    # Size key. Emitted as literal markup rather than code that rebuilds it:
+    # leaflet has no graduated-symbol legend to call, and open-coding the
+    # rebuild would add ~15 lines of string assembly to a script whose job is
+    # to be readable. Regenerate from the app if the data changes.
+    if (isTRUE(p$size_legend %||% TRUE)) {
+      lh <- size_legend_html(
+        size_legend_breaks(d0[[sizev]], ssc, MAP_RADIUS_RANGE), title = sizev,
+        fill = if (is.null(cv)) (p$color_hex %||% UF_BLUE) else UF_BLUE)
+      if (!is.null(lh)) size_leg_args <- sprintf(
+        'position = "bottomleft", html = %s', qq(lh))
+    }
   }
 
   marker_args <- c(
@@ -589,6 +762,8 @@ generate_map_code <- function(df, p) {
       sprintf("addCircleMarkers(%s)",
               paste(marker_args, collapse = ",\n                   ")))
     if (!is.null(legend_args)) lines <- c(lines, sprintf("addLegend(%s)", legend_args))
+    if (!is.null(size_leg_args))
+      lines <- c(lines, sprintf("addControl(%s)", size_leg_args))
     if (!is.null(title_args))  lines <- c(lines, sprintf("addControl(%s)", title_args))
     code <- paste0(lines[1], " |>\n  ",
                    paste(lines[-1], collapse = " |>\n  "))
@@ -613,6 +788,8 @@ generate_map_code <- function(df, p) {
     '                      position = "topleft")')
   if (!is.null(legend_args))
     code <- c(code, sprintf("m <- addLegend(m, %s)", legend_args))
+  if (!is.null(size_leg_args))
+    code <- c(code, sprintf("m <- addControl(m, %s)", size_leg_args))
   if (!is.null(title_args))
     code <- c(code, sprintf("m <- addControl(m, %s)", title_args))
   code <- c(code, "m")
@@ -808,7 +985,7 @@ map_snapshot_ok <- function() {
 # first attempt retries ONCE with a fresh browser in the modern headless mode
 # (newer Chrome/Edge builds dropped the old one).
 save_map_png <- function(widget, file, width = MAP_PNG_W, height = MAP_PNG_H,
-                         delay = 1) {
+                         delay = 1, zoom = 1) {
   if (!map_snapshot_ok()) {
     stop("PNG snapshots need the optional 'webshot2' package and a ",
          "Chrome or Edge browser on this computer.")
@@ -816,10 +993,24 @@ save_map_png <- function(widget, file, width = MAP_PNG_W, height = MAP_PNG_H,
   tmp <- file.path(tempfile("mapshot"), "map.html")
   dir.create(dirname(tmp), recursive = TRUE)
   on.exit(unlink(dirname(tmp), recursive = TRUE), add = TRUE)
+  # Pin the widget's own CSS size to the snapshot canvas. Without this the saved
+  # page sizes the map to a default (~960px), so leaflet builds its tile grid
+  # and fits its view for THAT size; webshot then loads the page at the larger
+  # vwidth x vheight and the extra area is left as blank grey tiles (a hard
+  # rectangle of un-loaded map). Matching the two makes leaflet request tiles
+  # for the whole canvas. CSS px, not the zoom-scaled output px -- webshot's
+  # `zoom` handles the device pixel ratio on top.
+  widget$width  <- width
+  widget$height <- height
   htmlwidgets::saveWidget(widget, tmp, selfcontained = FALSE, title = "Map")
   .chromote_env()
+  # `zoom` raises the device pixel ratio: it multiplies the OUTPUT resolution
+  # without touching the CSS layout, so the map still covers exactly the same
+  # ground. That is what lets a snapshot taken at the on-screen pane size come
+  # out crisp instead of small.
   shot <- function() webshot2::webshot(tmp, file = file, vwidth = width,
-                                       vheight = height, delay = delay)
+                                       vheight = height, delay = delay,
+                                       zoom = zoom)
   out <- tryCatch(shot(), error = function(e) e)
   if (inherits(out, "error")) {
     .reset_chromote()   # a stale/crashed browser poisons every later attempt

@@ -540,11 +540,15 @@ lmer_fit_stats <- function(model, n_total, reml) {
   if (requireNamespace("performance", quietly = TRUE)) {
     r2  <- tryCatch(performance::r2(model),  error = function(e) NULL)
     icc <- tryCatch(performance::icc(model), error = function(e) NULL)
-    if (!is.null(r2)) {
+    # is.list() guards, not just !is.null(): on a SINGULAR fit performance::icc()
+    # returns a bare NA (atomic), and NA$ICC_adjusted errors with "$ operator is
+    # invalid for atomic vectors", reddening the whole Fit Statistics table.
+    if (is.list(r2) && !is.null(r2$R2_marginal)) {
       stats_l$R2_marginal    <- as.numeric(r2$R2_marginal)
       stats_l$R2_conditional <- as.numeric(r2$R2_conditional)
     }
-    if (!is.null(icc)) stats_l$ICC <- as.numeric(icc$ICC_adjusted)
+    if (is.list(icc) && !is.null(icc$ICC_adjusted))
+      stats_l$ICC <- as.numeric(icc$ICC_adjusted)
   } else if (requireNamespace("MuMIn", quietly = TRUE)) {
     r2m <- tryCatch(MuMIn::r.squaredGLMM(model), error = function(e) NULL)
     if (!is.null(r2m)) {

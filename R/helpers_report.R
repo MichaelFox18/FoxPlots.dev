@@ -181,6 +181,8 @@ regression_code <- function(model) {
 #' @param summary_tbl Result of mod_summarize (data frame) or NULL.
 #' @param plots List of ggplots from mod_visualize, or NULL.
 #' @param plot_code Character list aligned to `plots` (the ggplot2 code), or NULL.
+#' @param maps List of leaflet widgets from mod_map, or NULL.
+#' @param map_code Character list aligned to `maps` (the leaflet code), or NULL.
 #' @param comparison Result list from mod_compare, or NULL.
 #' @param model Fitted lm from mod_regression, or NULL.
 #' @param title Report title.
@@ -190,6 +192,7 @@ regression_code <- function(model) {
 #' @return A named list describing the report (see `sections`).
 #' @export
 report_spec <- function(data, summary_tbl = NULL, plots = NULL, plot_code = NULL,
+                        maps = NULL, map_code = NULL,
                         comparison = NULL, model = NULL,
                         title = "Data Explorer Report", show_code = FALSE,
                         logo = NULL, generated = Sys.time()) {
@@ -197,6 +200,8 @@ report_spec <- function(data, summary_tbl = NULL, plots = NULL, plot_code = NULL
   has_summary <- is.data.frame(summary_tbl) && nrow(summary_tbl) > 0
   # plots and plot_code are assumed aligned (mod_visualize guarantees this).
   has_charts  <- !is.null(plots) && length(plots) > 0
+  # maps/map_code likewise (mod_map returns the same list(widgets, code) shape).
+  has_maps    <- !is.null(maps) && length(maps) > 0
   has_compare <- !is.null(comparison) && is.list(comparison) && !is.null(comparison$mode)
   has_model   <- !is.null(model) && inherits(model, "lm")
 
@@ -211,6 +216,8 @@ report_spec <- function(data, summary_tbl = NULL, plots = NULL, plot_code = NULL
     summary_code  = if (has_summary) summary_code(summary_tbl) else NULL,
     plots         = if (has_charts) plots else NULL,
     plot_code     = if (has_charts) plot_code else NULL,
+    maps          = if (has_maps) maps else NULL,
+    map_code      = if (has_maps) map_code else NULL,
     comparison    = if (has_compare) comparison else NULL,
     compare_code  = if (has_compare) compare_code(comparison) else NULL,
     model         = if (has_model) model else NULL,
@@ -220,6 +227,7 @@ report_spec <- function(data, summary_tbl = NULL, plots = NULL, plot_code = NULL
       overview   = TRUE,
       summary    = has_summary,
       charts     = has_charts,
+      maps       = has_maps,
       comparison = has_compare,
       regression = has_model
     )
@@ -294,6 +302,24 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
     paste0("<h3>Chart ", i, "</h3>", img, code)
   }, character(1))
   paste0("<h2 id=\"charts\">Charts</h2>", paste0(figs, collapse = ""))
+}
+
+# Maps are static snapshots here, not live widgets: a report has to survive
+# being emailed around and opened offline. When no snapshot could be taken
+# (no headless Chrome) the section still appears, saying so, rather than
+# vanishing without explanation.
+.section_maps <- function(spec, map_uris) {
+  figs <- vapply(seq_along(spec$maps), function(i) {
+    uri <- if (i <= length(map_uris)) map_uris[[i]] else NA_character_
+    img <- if (!is.na(uri))
+      sprintf("<figure><img src=\"%s\" alt=\"Map %d\"></figure>", uri, i)
+    else paste0("<p class=\"note\">(map snapshot unavailable &mdash; it needs ",
+                "the optional webshot2 and chromote packages plus Chrome)</p>")
+    code <- if (isTRUE(spec$show_code) && length(spec$map_code) >= i)
+      code_block_html(spec$map_code[[i]]) else ""
+    paste0("<h3>Map ", i, "</h3>", img, code)
+  }, character(1))
+  paste0("<h2 id=\"maps\">Maps</h2>", paste0(figs, collapse = ""))
 }
 
 # A matrix (counts / percentages / residuals) as an HTML table with its row
@@ -414,15 +440,19 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
 #' @param spec A list from report_spec().
 #' @param plot_uris Character vector of data URIs aligned to spec$plots.
 #' @param reg_uris Character vector of data URIs for regression diagnostics (0-2).
+#' @param map_uris Character vector of data URIs aligned to spec$maps. An NA
+#'   entry renders an explanatory note instead of an image.
 #' @return A complete HTML document (character scalar).
 #' @export
 build_report_html <- function(spec, plot_uris = character(0),
-                              reg_uris = character(0)) {
+                              reg_uris = character(0),
+                              map_uris = character(0)) {
   sec <- spec$sections
   parts <- character(0)
   if (isTRUE(sec[["overview"]]))   parts <- c(parts, .section_overview(spec))
   if (isTRUE(sec[["summary"]]))    parts <- c(parts, .section_summary(spec))
   if (isTRUE(sec[["charts"]]))     parts <- c(parts, .section_charts(spec, plot_uris))
+  if (isTRUE(sec[["maps"]]))       parts <- c(parts, .section_maps(spec, map_uris))
   if (isTRUE(sec[["comparison"]])) parts <- c(parts, .section_comparison(spec))
   if (isTRUE(sec[["regression"]])) parts <- c(parts, .section_regression(spec, reg_uris))
 
@@ -601,10 +631,13 @@ build_report_html <- function(spec, plot_uris = character(0),
 #' @param spec A list from report_spec().
 #' @param plot_paths Character vector of PNG file paths aligned to spec$plots.
 #' @param reg_paths PNG file paths for the regression diagnostics (0-2).
+#' @param map_paths PNG file paths aligned to spec$maps. An NA entry writes an
+#'   explanatory line instead of an image.
 #' @return An `rdocx` object (print() it to a .docx file).
 #' @export
 build_report_docx <- function(spec, plot_paths = character(0),
-                              reg_paths = character(0)) {
+                              reg_paths = character(0),
+                              map_paths = character(0)) {
   if (!requireNamespace("officer", quietly = TRUE))
     stop("The 'officer' package is required for Word reports. install.packages('officer')")
   sec <- spec$sections
@@ -637,6 +670,24 @@ build_report_docx <- function(spec, plot_paths = character(0),
         doc <- officer::body_add_img(doc, pp, width = 6, height = 6 * 4.5 / 7)
       if (isTRUE(spec$show_code) && length(spec$plot_code) >= i)
         doc <- .docx_add_code(doc, spec$plot_code[[i]])
+    }
+  }
+  if (isTRUE(sec[["maps"]])) {
+    doc <- officer::body_add_par(doc, "Maps", style = "heading 1")
+    for (i in seq_along(spec$maps)) {
+      doc <- officer::body_add_par(doc, paste("Map", i), style = "heading 2")
+      mp <- if (i <= length(map_paths)) map_paths[[i]] else NA_character_
+      if (!is.na(mp) && file.exists(mp)) {
+        # Snapshots come back at MAP_PNG_W x MAP_PNG_H; keep that aspect ratio.
+        doc <- officer::body_add_img(doc, mp, width = 6,
+                                     height = 6 * MAP_PNG_H / MAP_PNG_W)
+      } else {
+        doc <- officer::body_add_par(doc, paste(
+          "(map snapshot unavailable - it needs the optional webshot2 and",
+          "chromote packages plus Chrome)"), style = "Normal")
+      }
+      if (isTRUE(spec$show_code) && length(spec$map_code) >= i)
+        doc <- .docx_add_code(doc, spec$map_code[[i]])
     }
   }
   if (isTRUE(sec[["comparison"]])) doc <- .docx_section_comparison(doc, spec)
@@ -676,6 +727,41 @@ plot_to_data_uri <- function(plot, width = 7, height = 4.5, dpi = 110) {
   base64enc::dataURI(file = tmp, mime = "image/png")
 }
 
+# A leaflet map is an htmlwidget, not a ggplot, so it can't go through
+# ggsave() -- it needs a headless-browser snapshot (save_map_png, helpers_map.R).
+# That depends on Suggests-only webshot2/chromote plus a real Chrome, so BOTH
+# helpers below return NA rather than erroring: for the report, a missing
+# snapshot means "skip this figure", never "fail the whole download".
+#' Snapshot one leaflet widget to a PNG file. NA when unavailable.
+#' @noRd
+map_to_png_file <- function(widget, width = MAP_PNG_W, height = MAP_PNG_H) {
+  if (is.null(widget) || !map_snapshot_ok()) return(NA_character_)
+  # mod_map stamps the on-screen pane size onto the widget so the report can
+  # reproduce the user's exact view (see snapshot_spec()). Without it we fall
+  # back to the fixed canvas, which frames a different area.
+  sp   <- attr(widget, "fox_snapshot")
+  zm   <- 1
+  if (is.list(sp) && is.numeric(sp$width) && is.numeric(sp$height)) {
+    width <- sp$width; height <- sp$height; zm <- sp$zoom %||% 1
+  }
+  tmp <- tempfile(fileext = ".png")
+  ok  <- tryCatch({ save_map_png(widget, tmp, width = width, height = height,
+                                 zoom = zm)
+                    TRUE }, error = function(e) FALSE)
+  if (!isTRUE(ok) || !file.exists(tmp) || file.size(tmp) == 0)
+    return(NA_character_)
+  tmp
+}
+
+#' Snapshot one leaflet widget to a base64 PNG data URI. NA when unavailable.
+#' @noRd
+map_to_data_uri <- function(widget, width = MAP_PNG_W, height = MAP_PNG_H) {
+  f <- map_to_png_file(widget, width = width, height = height)
+  if (is.na(f)) return(NA_character_)
+  on.exit(unlink(f), add = TRUE)
+  base64enc::dataURI(file = f, mime = "image/png")
+}
+
 #' Render a report spec to a file. HTML = a self-contained .html (charts as
 #' base64 data URIs); Word = an editable .docx via officer (charts as embedded
 #' PNGs). Both rasterize the charts and, if a model is present, the regression
@@ -704,7 +790,13 @@ render_report <- function(spec, file, format = c("html", "docx"),
                           width = 5.5, height = 4, dpi = dpi)
       reg_paths <- reg_paths[!is.na(reg_paths)]
     }
-    doc <- build_report_docx(spec, plot_paths = plot_paths, reg_paths = reg_paths)
+    # Snapshots are the slow part of a report (a headless browser launch each,
+    # ~7s), so they are only taken when the spec actually carries maps.
+    map_paths <- if (!is.null(spec$maps))
+      vapply(spec$maps, map_to_png_file, character(1))
+    else character(0)
+    doc <- build_report_docx(spec, plot_paths = plot_paths,
+                             reg_paths = reg_paths, map_paths = map_paths)
     print(doc, target = file)
     return(invisible(file))
   }
@@ -720,7 +812,11 @@ render_report <- function(spec, file, format = c("html", "docx"),
                        width = 5.5, height = 4, dpi = dpi)
     reg_uris <- reg_uris[!is.na(reg_uris)]
   }
-  html <- build_report_html(spec, plot_uris = plot_uris, reg_uris = reg_uris)
+  map_uris <- if (!is.null(spec$maps))
+    vapply(spec$maps, map_to_data_uri, character(1))
+  else character(0)
+  html <- build_report_html(spec, plot_uris = plot_uris, reg_uris = reg_uris,
+                            map_uris = map_uris)
   writeLines(html, file, useBytes = TRUE)
   invisible(file)
 }

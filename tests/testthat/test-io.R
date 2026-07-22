@@ -34,3 +34,31 @@ test_that("read_file_data reads a CSV and trims title/footnote lines", {
 test_that("read_file_data errors on an unsupported extension", {
   expect_error(read_file_data("x.foo", "foo"), "Unsupported")
 })
+
+# ---- list-column flattening --------------------------------------------------
+# Reshape > Split with duplicate keys yields list-columns. write.csv() dies on
+# them ("unimplemented type 'list'", surfaced as an opaque 500) and writexl
+# silently writes BLANK columns, so mod_export flattens first.
+
+test_that("flatten_list_cols collapses list-columns and leaves others alone", {
+  df <- data.frame(id = 1:2)
+  df$vals <- list(c("a", "b"), "c")
+  out <- flatten_list_cols(df)
+  expect_false(any(vapply(out, is.list, logical(1))))
+  expect_equal(out$vals, c("a; b", "c"))
+  expect_equal(out$id, 1:2)
+})
+
+test_that("flatten_list_cols is a no-op on a plain data frame", {
+  expect_equal(flatten_list_cols(mtcars), mtcars)
+})
+
+test_that("a flattened list-column can actually be written to CSV and XLSX", {
+  df <- data.frame(id = 1:2); df$vals <- list(c("a", "b"), "c")
+  f1 <- withr::local_tempfile(fileext = ".csv")
+  expect_error(utils::write.csv(flatten_list_cols(df), f1, row.names = FALSE), NA)
+  expect_equal(nrow(utils::read.csv(f1)), 2L)
+  f2 <- withr::local_tempfile(fileext = ".xlsx")
+  expect_error(writexl::write_xlsx(flatten_list_cols(df), f2), NA)
+  expect_equal(as.character(readxl::read_excel(f2)$vals), c("a; b", "c"))
+})

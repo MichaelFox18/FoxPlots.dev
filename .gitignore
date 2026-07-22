@@ -17,6 +17,11 @@ rsconnect/
 # Scratch / smoke-test files
 _smoke_tmp.R
 *_tmp.R
+Rplots.pdf
+
+# Local agent/editor settings (also covered by some global ignores, but a
+# repo-level rule is what protects a `git add -A` during a release).
+.claude/
 
 # OS
 .DS_Store

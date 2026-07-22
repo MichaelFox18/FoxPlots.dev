@@ -54,3 +54,30 @@ test_that("describe_condition reads naturally", {
   expect_equal(describe_condition(list(col = "pts", op = "between", value = c(10, 20))),
                "pts is between 10 and 20")
 })
+
+# ---- operator/type mismatch --------------------------------------------------
+# A numeric filter built BEFORE a Change Type -> Factor recast used to compare a
+# factor against a number: that warns, yields an all-NA mask, and the NA->FALSE
+# step then dropped every row -- silently emptying every downstream tab while
+# the filter chip still read "pts > 20". The file's contract is a no-op instead.
+
+test_that("comparison operators are a no-op on non-numeric columns", {
+  df <- data.frame(team = c("LAL", "BOS", "NYK"),
+                   pts  = factor(c("25", "18", "31")))
+  for (op in c(">", ">=", "<", "<=", "==", "!=")) {
+    out <- apply_filters(df, list(list(col = "pts", op = op, value = 20)))
+    expect_equal(nrow(out), 3L, info = op)
+  }
+})
+
+test_that("between is a no-op on a non-numeric, non-date column", {
+  df <- data.frame(g = factor(c("a", "b")))
+  expect_equal(nrow(apply_filters(df, list(
+    list(col = "g", op = "between", value = c(1, 5))))), 2L)
+})
+
+test_that("comparison operators still filter real numeric columns", {
+  df <- data.frame(pts = c(25, 18, 31))
+  expect_equal(nrow(apply_filters(df, list(
+    list(col = "pts", op = ">", value = 20)))), 2L)
+})

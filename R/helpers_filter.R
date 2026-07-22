@@ -21,20 +21,30 @@ filter_mask <- function(df, cond) {
   if (is.null(cond$col) || !cond$col %in% names(df)) return(rep(TRUE, nrow(df)))
   x <- df[[cond$col]]; v <- cond$value
   num <- function() suppressWarnings(as.numeric(v[1]))
+  # The comparison operators are numeric-only (categories use in/not_in/
+  # contains, dates use between). Dispatching on the operator alone used to
+  # break when a column was recast AFTER its filter was built: comparing a
+  # factor to a number warns, yields an all-NA mask, and line 43 turns that
+  # into "keep zero rows" -- silently emptying every downstream tab while the
+  # filter chip still reads "pts > 20". Fall back to the file's documented
+  # no-op instead.
+  cmp <- function(f) if (is_real_numeric(x)) f() else rep(TRUE, length(x))
   mask <- switch(cond$op %||% "",
     "between" = {
       if (inherits(x, c("Date", "POSIXct", "POSIXt"))) {
         vv <- as.Date(v); x >= min(vv) & x <= max(vv)
-      } else {
+      } else if (is_real_numeric(x)) {
         vv <- suppressWarnings(as.numeric(v)); x >= min(vv) & x <= max(vv)
+      } else {
+        rep(TRUE, length(x))
       }
     },
-    ">"  = x >  num(),
-    ">=" = x >= num(),
-    "<"  = x <  num(),
-    "<=" = x <= num(),
-    "==" = x == num(),
-    "!=" = x != num(),
+    ">"  = cmp(function() x >  num()),
+    ">=" = cmp(function() x >= num()),
+    "<"  = cmp(function() x <  num()),
+    "<=" = cmp(function() x <= num()),
+    "==" = cmp(function() x == num()),
+    "!=" = cmp(function() x != num()),
     "in"       = as.character(x) %in% as.character(v),
     "not_in"   = !(as.character(x) %in% as.character(v)),
     "contains" = grepl(tolower(as.character(v[1])), tolower(as.character(x)),

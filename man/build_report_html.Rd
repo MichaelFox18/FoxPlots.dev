@@ -5,7 +5,12 @@
 \title{Assemble the full self-contained HTML report as a single string. Pure: takes
 pre-rasterized plot data URIs so it can be unit-tested with fakes.}
 \usage{
-build_report_html(spec, plot_uris = character(0), reg_uris = character(0))
+build_report_html(
+  spec,
+  plot_uris = character(0),
+  reg_uris = character(0),
+  map_uris = character(0)
+)
 }
 \arguments{
 \item{spec}{A list from report_spec().}
@@ -13,6 +18,9 @@ build_report_html(spec, plot_uris = character(0), reg_uris = character(0))
 \item{plot_uris}{Character vector of data URIs aligned to spec$plots.}
 
 \item{reg_uris}{Character vector of data URIs for regression diagnostics (0-2).}
+
+\item{map_uris}{Character vector of data URIs aligned to spec$maps. An NA
+entry renders an explanatory note instead of an image.}
 }
 \value{
 A complete HTML document (character scalar).

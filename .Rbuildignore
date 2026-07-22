@@ -8,6 +8,9 @@
 ^\.here$
 ^\.git$
 ^\.gitignore$
+^\.claude$
+^Rplots\.pdf$
+^\.DS_Store$
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$

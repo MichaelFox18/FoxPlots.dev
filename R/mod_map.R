@@ -49,6 +49,18 @@ mapUI <- function(id) {
         checkboxInput(ns("legend"), "Show legend", TRUE)),
       uiOutput(ns("ui_size")),
       conditionalPanel(
+        sprintf("input['%s'] && input['%s'] != '__none__'",
+                ns("size_by"), ns("size_by")),
+        selectInput(ns("size_scale"),
+          tagList("Size scale", info_tip(
+            "How values map to bubble area. Linear keeps twice the value at ",
+            "twice the ink. Log spreads out skewed data so the small end ",
+            "stops looking identical. Quantile gives every size an equal ",
+            "share of points. Log and quantile fall back to linear when the ",
+            "data can't support them.")),
+          choices = MAP_SIZE_SCALES),
+        checkboxInput(ns("size_legend"), "Show size legend", TRUE)),
+      conditionalPanel(
         sprintf("!input['%s'] || input['%s'] == '__none__'",
                 ns("size_by"), ns("size_by")),
         sliderInput(ns("size"), "Point size", min = 2, max = 12, value = 6,
@@ -234,6 +246,8 @@ mapServer <- function(id, data_in) {
         color_hex  = input$color_hex %||% UF_BLUE,
         size_by    = input$size_by %||% "__none__",
         size       = input[["size"]] %||% 6,
+        size_scale = input$size_scale %||% "linear",
+        size_legend = isTRUE(input$size_legend %||% TRUE),
         alpha      = input$alpha %||% 0.8,
         popup_cols = input$popup_cols,
         label_col  = input$label_col %||% "__none__",
@@ -256,6 +270,47 @@ mapServer <- function(id, data_in) {
       if (!is.null(ctr) && !is.null(input$map_zoom))
         view_state(list(lng = ctr$lng, lat = ctr$lat, zoom = input$map_zoom))
     })
+    # The VISIBLE bounds, tracked separately for the exports. A snapshot is
+    # rendered on a fixed 1200x800 canvas, which is a different size and shape
+    # from the on-screen pane -- and center+zoom means "this scale", not "this
+    # area", so replaying it on a bigger canvas silently shows far more ground
+    # (an ocean of empty map around the points). Bounds say "cover this area",
+    # The map pane's real pixel size, published by Shiny for every output.
+    # Snapshotting at exactly this size and replaying centre+zoom reproduces
+    # the user's view EXACTLY -- zoom fixes the scale, so identical pixels give
+    # identical ground. This is the ONLY thing that makes the export match the
+    # screen; a fixed export canvas necessarily frames a different area.
+    #
+    # Do NOT try to do this from the visible bounds instead: leaflet does not
+    # publish input$<id>_bounds here (verified NULL even after zoom events), and
+    # fitBounds would anyway snap to whole zoom levels and pad whichever axis
+    # doesn't match the canvas.
+    pane_px <- reactive({
+      cd <- session$clientData
+      w  <- cd[[paste0("output_", ns("map"), "_width")]]
+      h  <- cd[[paste0("output_", ns("map"), "_height")]]
+      if (is.numeric(w) && is.numeric(h) && w > 50 && h > 50)
+        list(width = round(w), height = round(h)) else NULL
+    })
+
+    # How the exports should be framed. With a known pane size: that size, the
+    # user's centre+zoom, and a 2x pixel ratio so the image is crisp rather than
+    # merely screen-sized. Without one (the Map tab was never opened, so the
+    # browser never reported a size) there is nothing to match, so fall back to
+    # the default canvas fitted to the data.
+    # zoom stays 1 (device pixel ratio 1): at DPR 2 the CartoDB basemap returns
+    # roughly half its tiles blank, leaving grey rectangles in the snapshot. The
+    # pane's own pixel size is the right resolution anyway -- it is literally
+    # what the user is looking at.
+    snapshot_spec <- function(p) {
+      px <- pane_px()
+      if (is.null(px)) {
+        attr(p, "snap") <- list(width = MAP_PNG_W, height = MAP_PNG_H, zoom = 1)
+      } else {
+        attr(p, "snap") <- list(width = px$width, height = px$height, zoom = 1)
+      }
+      p
+    }
     # priority = 10: the resets must run BEFORE output$map's re-render in the
     # same flush, or a dataset swap that keeps the lon/lat column names could
     # re-render with the previous dataset's stale view.
@@ -339,13 +394,15 @@ mapServer <- function(id, data_in) {
       if (nzchar(stem)) stem else "map-export"
     })
     # Rebuild the widget fresh at click time with the CURRENT view: what you
-    # see is what you save.
+    # see is what you save, at the on-screen pane size -- see snapshot_spec().
     export_widget <- function() {
       df <- data_in()
       validate(need(is.data.frame(df), "No data to map yet."))
       p <- map_params()
       p$view <- view_state()
+      p <- snapshot_spec(p)
       w <- build_leaflet_map(df, p)
+      if (!is.null(w)) attr(w, "fox_snapshot") <- attr(p, "snap")
       validate(need(!is.null(w),
                     "Choose the longitude and latitude columns first."))
       w
@@ -378,7 +435,10 @@ mapServer <- function(id, data_in) {
         w <- export_widget()
         withProgress(message = "Rendering PNG (headless browser)...",
                      value = 0.4, {
-          tryCatch(save_map_png(w, file), error = function(e) {
+          sp <- attr(w, "fox_snapshot") %||%
+            list(width = MAP_PNG_W, height = MAP_PNG_H, zoom = 1)
+          tryCatch(save_map_png(w, file, width = sp$width, height = sp$height,
+                                zoom = sp$zoom %||% 1), error = function(e) {
             showNotification(paste("PNG export failed:", conditionMessage(e)),
                              type = "error", duration = 8)
             validate(need(FALSE, conditionMessage(e)))
@@ -396,8 +456,10 @@ mapServer <- function(id, data_in) {
       if (!is.data.frame(df)) return(list(maps = list(), code = list()))
       p <- map_params()
       p$view <- view_state()
+      p <- snapshot_spec(p)             # report snapshot: match the on-screen view
       w <- tryCatch(build_leaflet_map(df, p), error = function(e) NULL)
       if (is.null(w)) return(list(maps = list(), code = list()))
+      attr(w, "fox_snapshot") <- attr(p, "snap")
       list(maps = list(w),
            code = list(tryCatch(generate_map_code(df, p),
                                 error = function(e) NA_character_)))

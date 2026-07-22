@@ -147,9 +147,11 @@ data_explorer_app <- function() {
     viz        <- visualizeServer("viz", working)  # Visualize -> reactive(list(plots, code))
     plots      <- reactive(viz()$plots)            #   the ggplot list (for Export + Report)
     plot_code  <- reactive(viz()$code)             #   the matching ggplot2 code (for Report)
-    mapServer("map", working)                      # Map -> leaflet view of the working data
-                                                   #   (list(maps, code) return reserved for
-                                                   #   a future Report section)
+    map_out    <- mapServer("map", working)        # Map -> reactive(list(maps, code))
+    maps       <- reactive(map_out()$maps)         #   leaflet widgets (Report only --
+    map_code   <- reactive(map_out()$code)         #   mod_export's chart slot is
+                                                   #   ggplot-only, and the map's own
+                                                   #   HTML/PNG downloads live in mod_map)
     comparison <- compareServer("cmp", working)    # Compare   -> reactive(result list | NULL)
     model      <- regressionServer("reg", working) # Regression -> reactive(fitted lm)
 
@@ -158,6 +160,7 @@ data_explorer_app <- function() {
 
     reportServer("rep", working,                   # one-click HTML/Word report of
                  summary_tbl = summary_t, plots = plots, plot_code = plot_code,
+                 maps = maps, map_code = map_code,
                  comparison = comparison, model = model)       # the whole session
   }
 

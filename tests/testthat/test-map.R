@@ -432,3 +432,159 @@ test_that("make_map_example_data leaves the session RNG stream untouched", {
   invisible(make_map_example_data())
   expect_identical(.Random.seed, before)
 })
+
+# ---- size scales + size legend (v0.6.0) --------------------------------------
+
+test_that("map_size_scale falls back exactly like map_color_scale", {
+  expect_equal(map_size_scale(c(1, 10, 100), "log"), "log")
+  expect_equal(map_size_scale(c(0, 10, 100), "log"), "linear")   # log needs > 0
+  expect_equal(map_size_scale(c(-5, 10), "log"), "linear")
+  expect_equal(map_size_scale(c(1, 1, 2), "quantile"), "linear") # too few distinct
+  expect_equal(map_size_scale(1:5, "quantile"), "quantile")
+  expect_equal(map_size_scale(1:5, "nonsense"), "linear")
+  expect_equal(map_size_scale(c(NA_real_, NA_real_), "log"), "linear")
+})
+
+test_that("radii stay inside the range and increase with the value", {
+  v <- c(1, 2, 5, 10, 50, 1000)
+  for (s in c("linear", "log", "quantile")) {
+    r <- scale_radius(v, MAP_RADIUS_RANGE, s)
+    expect_true(all(r >= MAP_RADIUS_RANGE[1] & r <= MAP_RADIUS_RANGE[2]), info = s)
+    expect_false(is.unsorted(r), info = s)                 # monotone in the value
+  }
+})
+
+test_that("log sizing spreads skewed values more than linear does", {
+  v   <- c(1, 2, 5, 10, 50, 1000)
+  lin <- scale_radius(v, MAP_RADIUS_RANGE, "linear")
+  lg  <- scale_radius(v, MAP_RADIUS_RANGE, "log")
+  # The whole point: under linear the small end collapses together.
+  expect_lt(diff(range(lin[1:5])), diff(range(lg[1:5])))
+})
+
+test_that("a constant column gives the midpoint radius on every scale", {
+  for (s in c("linear", "log", "quantile"))
+    expect_equal(unique(scale_radius(rep(7, 4), MAP_RADIUS_RANGE, s)),
+                 mean(MAP_RADIUS_RANGE), info = s)
+})
+
+test_that("non-finite values fall to the smallest radius", {
+  r <- scale_radius(c(1, NA, 10, Inf), MAP_RADIUS_RANGE, "linear")
+  expect_equal(r[c(2, 4)], rep(MAP_RADIUS_RANGE[1], 2))
+})
+
+test_that("size_legend_breaks radii are computed by the same code path as markers", {
+  v <- c(1, 2, 5, 10, 50, 1000)
+  for (s in c("linear", "log", "quantile")) {
+    b <- size_legend_breaks(v, s)
+    expect_s3_class(b, "data.frame")
+    expect_true(all(b$radius >= MAP_RADIUS_RANGE[1] &
+                    b$radius <= MAP_RADIUS_RANGE[2]), info = s)
+    # The legend must not be able to drift from the markers.
+    expect_equal(b$radius,
+                 scale_radius(b$value, MAP_RADIUS_RANGE, s, domain = v), info = s)
+  }
+})
+
+test_that("size_legend_breaks declines to draw a key it can't justify", {
+  expect_null(size_legend_breaks(rep(5, 10), "linear"))   # constant
+  expect_null(size_legend_breaks(numeric(0), "linear"))
+  expect_null(size_legend_breaks(c("a", "b"), "linear"))  # not numeric
+})
+
+test_that("size_legend_html renders one circle per break and escapes its title", {
+  h <- size_legend_html(size_legend_breaks(c(1, 10, 100, 1000), "log"),
+                        title = "acres <b>")
+  expect_type(h, "character")
+  expect_equal(lengths(regmatches(h, gregexpr("border-radius:50%", h))), 4L)
+  expect_false(grepl("<b>", h, fixed = TRUE))            # escaped, not injected
+  expect_null(size_legend_html(NULL))
+})
+
+test_that("the map builder honours size_scale and the legend toggle", {
+  d  <- make_map_example_data()
+  cc <- detect_coord_cols(d)
+  base <- list(lon = cc$lon, lat = cc$lat, size_by = "acres")
+  for (s in c("linear", "log", "quantile")) {
+    m <- build_leaflet_map(d, c(base, list(size_scale = s)))
+    expect_s3_class(m, "leaflet")
+  }
+  with_leg <- build_leaflet_map(d, c(base, list(size_legend = TRUE)))
+  no_leg   <- build_leaflet_map(d, c(base, list(size_legend = FALSE)))
+  expect_gt(length(with_leg$x$calls), length(no_leg$x$calls))
+})
+
+test_that("generated code reproduces the builder's radii exactly", {
+  d  <- make_map_example_data()
+  cc <- detect_coord_cols(d)
+  skewed   <- within(d, acres <- c(rep(1, 60), rep(5, 40), rep(9000, 20)))
+  constant <- within(d, acres <- rep(42, nrow(d)))
+  for (df in list(d, skewed, constant)) {
+    for (s in c("linear", "log", "quantile")) {
+      p   <- list(lon = cc$lon, lat = cc$lat, size_by = "acres", size_scale = s)
+      cd  <- clean_coords(df, cc$lon, cc$lat)$data
+      app <- scale_radius(cd$acres, MAP_RADIUS_RANGE,
+                          map_size_scale(cd$acres, s))
+      env <- new.env(parent = globalenv()); assign("df", df, envir = env)
+      expect_error(eval(parse(text = generate_map_code(df, p)), envir = env), NA)
+      expect_equal(unname(get("df", envir = env)$.map_radius), unname(app),
+                   info = s)
+    }
+  }
+})
+
+test_that("map_hint explains a size-scale fallback", {
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  d0 <- d; d0$acres[1] <- 0
+  h  <- map_hint(d0, list(lon = cc$lon, lat = cc$lat, size_by = "acres",
+                          size_scale = "log"))
+  expect_match(h, "log scale")
+  # No hint when the scale is honoured.
+  expect_false(grepl("log scale", map_hint(
+    d, list(lon = cc$lon, lat = cc$lat, size_by = "acres",
+            size_scale = "log")) %||% ""))
+})
+
+# ---- export framing ----------------------------------------------------------
+# A snapshot is rendered on a fixed 1200x800 canvas, not the on-screen pane.
+# centre+zoom means "this scale", so replaying it on a differently-sized canvas
+# shows a different AREA -- the report map came back surrounded by empty ocean.
+# view_bounds says "cover this area", which survives the canvas change.
+
+test_that("view_bounds takes precedence over view", {
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  bb <- list(north = 27.5, south = 25.2, east = -79.8, west = -82.6)
+  m  <- build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat,
+                                  view = list(lng = 0, lat = 0, zoom = 2),
+                                  view_bounds = bb))
+  # leaflet stores these on the widget itself, not as entries in $calls.
+  expect_null(m$x$setView)
+  expect_equal(unname(unlist(m$x$fitBounds)),
+               c(bb$south, bb$west, bb$north, bb$east))
+})
+
+test_that("view is still honoured for the live pane when no bounds are given", {
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  m  <- build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat,
+                                  view = list(lng = -81, lat = 28, zoom = 7)))
+  expect_equal(unname(unlist(m$x$setView)), c(28, -81, 7))
+  expect_null(m$x$fitBounds)
+})
+
+test_that("an incomplete bounds list falls through instead of erroring", {
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  m  <- build_leaflet_map(d, list(lon = cc$lon, lat = cc$lat,
+                                  view_bounds = list(north = 27, south = 25)))
+  expect_s3_class(m, "leaflet")
+  expect_false(is.null(m$x$fitBounds))    # fell back to the data bbox
+  # ...and it is the DATA's bbox, not the half-specified one.
+  expect_false(identical(unname(unlist(m$x$fitBounds))[c(1, 3)], c(25, 27)))
+})
+
+test_that("view_bounds is never emitted into the generated code", {
+  d  <- make_map_example_data(); cc <- detect_coord_cols(d)
+  code <- generate_map_code(d, list(lon = cc$lon, lat = cc$lat,
+                                    view_bounds = list(north = 27, south = 25,
+                                                       east = -80, west = -82)))
+  expect_false(grepl("view_bounds|fitBounds", code))
+})

@@ -87,9 +87,10 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
       content  = function(file) {
         d <- data_in()
         validate(need(is.data.frame(d), "No data to export."))
+        # Flatten list-columns for the flat-file formats only; RDS keeps them.
         switch(input$fmt %||% "csv",
-          csv  = utils::write.csv(d, file, row.names = FALSE),
-          xlsx = writexl::write_xlsx(d, file),
+          csv  = utils::write.csv(flatten_list_cols(d), file, row.names = FALSE),
+          xlsx = writexl::write_xlsx(flatten_list_cols(d), file),
           rds  = saveRDS(d, file))
       }
     )

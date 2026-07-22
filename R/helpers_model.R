@@ -29,11 +29,15 @@ fit_model <- function(df, response, predictors,
   if (length(missing)) {
     stop("Columns not found in data: ", paste(missing, collapse = ", "))
   }
+  # Backtick non-syntactic names: Excel headers keep their spaces (readxl
+  # preserves them verbatim, unlike read.csv's check.names), and an unquoted
+  # "Body Weight" makes as.formula() die with "unexpected symbol".
   rhs <- if (type == "polynomial")
-           sprintf("poly(%s, %d, raw = TRUE)", predictors[1], as.integer(degree))
+           sprintf("poly(%s, %d, raw = TRUE)", bq(predictors[1]),
+                   as.integer(degree))
          else
-           paste(predictors, collapse = " + ")
-  stats::lm(stats::as.formula(paste(response, "~", rhs)), data = df)
+           paste(bq_each(predictors), collapse = " + ")
+  stats::lm(stats::as.formula(paste(bq(response), "~", rhs)), data = df)
 }
 
 #' Pull the headline numbers and significance out of a fitted model.

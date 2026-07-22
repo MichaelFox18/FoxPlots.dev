@@ -89,3 +89,18 @@ read_file_data <- function(path, ext, header = TRUE, sep = ",", dec = ".",
                             utils::read.table))
   stop("Unsupported file extension: .", ext)
 }
+
+# Collapse any list-columns to "a; b; c" text so the flat-file writers can take
+# them. Reshape > Split with duplicate keys ("keep separate") yields list
+# columns; write.csv() then dies with "unimplemented type 'list'" (surfaced as
+# an opaque browser 500) and writexl silently writes BLANK columns. DT previews
+# them without complaint, so there is no earlier warning. RDS keeps the real
+# structure and must not be flattened.
+flatten_list_cols <- function(df) {
+  if (!is.data.frame(df)) return(df)
+  lc <- vapply(df, is.list, logical(1))
+  if (!any(lc)) return(df)
+  df[lc] <- lapply(df[lc], function(col)
+    vapply(col, function(z) paste(unlist(z), collapse = "; "), character(1)))
+  df
+}
