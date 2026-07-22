@@ -1,5 +1,13 @@
 # foxplots 0.6.0
 
+## A seventh app: the Regression Tool
+
+- **`run_regression_tool()`** bundles the (now much deeper) Regression tab into
+  its own focused app -- Import -> Regression -> Export -> Report -- for users
+  who only want to fit models and can skip the rest of the Data Explorer. Like
+  the other mini-apps it imports data (with Data Health / type recasting),
+  exports the data and the fitted model, and produces a full HTML / Word report.
+
 ## Regression: categorical predictors, interactions, marginal means, and a real coefficient table
 
 - **Predictors can now be categorical.** The Regression tab used to accept only
