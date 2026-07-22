@@ -1,5 +1,21 @@
 # foxplots 0.6.0
 
+## Map: shaded regions (choropleth), density heatmap, and a scale bar
+
+- **A second map type: Shaded regions.** Upload a **GeoJSON** boundary file
+  (e.g. county outlines), match one of its properties to a column in your data,
+  and shade each region by the mean / sum / median of a numeric column. The
+  sidebar reports **exactly how many regions matched** and names the strays on
+  both sides -- a join mismatch is never a mystery blank map. Unmatched regions
+  draw pale grey. No GIS system dependencies (no sf/GDAL): styling is written
+  into the GeoJSON itself.
+- **A density heatmap layer** for point maps (optional `leaflet.extras`
+  package): a continuous surface for data where bubbles overlap into a blob,
+  optionally weighted by a numeric column, drawn under the markers.
+- **A distance scale bar** (km + miles), on by default.
+- The generated leaflet code emits all of the above; the choropleth script reads
+  your boundary file from disk and reproduces the join + shading standalone.
+
 ## Compare Groups: split the analysis by a third variable
 
 - **"Split by (optional)"** runs the whole comparison separately within each

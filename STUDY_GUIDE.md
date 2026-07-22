@@ -1,7 +1,7 @@
 # foxplots — Know Your Own Package
 
 *A presenter's crash course. Everything in here was checked against the actual source
-code (v0.4.0). Personal study material — not shipped in the package or the coworker repo.*
+code (v0.6.0). Personal study material — not shipped in the package or the coworker repo.*
 
 ---
 
@@ -9,11 +9,11 @@ code (v0.4.0). Personal study material — not shipped in the package or the cow
 
 **The elevator pitch:** "foxplots is a point-and-click toolkit for the full data
 workflow — import, clean, reshape, summarize, visualize, map, test, and model — built as
-six R Shiny apps on one tested engine. Every result can show you the exact R code that
+seven R Shiny apps on one tested engine. Every result can show you the exact R code that
 produced it."
 
 **The architecture sentence:** "All the logic lives in plain, unit-tested R functions
-(~610 test checks); the app screens are thin wrappers around them. That's why I trust
+(~940 test checks); the app screens are thin wrappers around them. That's why I trust
 the numbers."
 
 **Decision rules:**
@@ -22,8 +22,14 @@ the numbers."
   (Wilcoxon / Kruskal-Wallis).
 - **Two categorical variables** → Compare Groups, chi-square mode.
 - **Blocks / farms / repeated measures in the design** → Mixed Model Review (lmer).
-- **Predicting a number from others** → Regression.
-- **Rows have lat/lon** → Map Tool.
+- **Predicting a number from others** → Regression (linear; categorical predictors
+  are fine — that's ANCOVA).
+- **Predicting a yes/no** → Regression, Outcome type = Binary (logistic; read odds
+  ratios, not R²).
+- **Same test repeated within levels of a third variable** (mpg by cyl, split by am)
+  → Compare Groups, "Split by".
+- **Rows have lat/lon** → Map Tool (points / heatmap); **rows name regions** and you
+  have a boundary file → Map Tool, Shaded regions.
 
 **Numbers to hold:**
 | Number | Meaning |
@@ -61,7 +67,7 @@ cold, then re-read the crib card the morning of.
 
 ```mermaid
 flowchart LR
-    subgraph engine ["The engine (R/helpers_*.R) — pure functions, ~610 unit tests"]
+    subgraph engine ["The engine (R/helpers_*.R) — pure functions, ~940 unit tests"]
         H1[helpers_io<br/>read files] --> H2[helpers_clean<br/>Data Health]
         H3[helpers_reshape] ~~~ H4[helpers_plot<br/>11 charts + code gen]
         H5[helpers_compare<br/>tests engine] ~~~ H6[helpers_lmer<br/>mixed models]
@@ -148,9 +154,9 @@ Change the data upstream and every tab downstream sees the change.
 | **Combine** *(Combine Tool)* | Two-table ops: Concatenate (stack), Join (left/inner/full/right/cross by key), Update (overwrite or fill-blanks-only), Compare (which columns/cells differ). | "Anything that needs a *second* table lives here — the classic join-two-spreadsheets problem." |
 | **Summarize** | Group stats (N, Mean, Median, Mode, Min, Max, SD, SE, IQR) or category **proportions with exact binomial confidence intervals**. | "Proportions come with exact Clopper-Pearson intervals, not the rough approximation." |
 | **Visualize** | Up to 4 charts at once, 11 types, smart hints ("that X is categorical — try a box plot"), copy-ready ggplot2 code per chart. Interactive below 1,000 rows, static above (speed). | "Every chart has a copy button that gives you standalone ggplot2 code reproducing exactly what's on screen." |
-| **Map** | Any table with lat/lon becomes an interactive map: auto-detected coordinates, color/size by variables with a legend, popups, clustering, HTML/PNG download + leaflet code. | "If your rows have coordinates, they're on a basemap in two clicks — and your pan/zoom survives every styling change." |
-| **Compare Groups** | Do groups differ? t-test/ANOVA or rank-based, with assumption checks, effect sizes, post-hoc letters — or a whole grid of outcomes × groups with corrected p-values. | "It picks the right test from what you selected, checks the assumptions, and translates the result into a sentence." |
-| **Regression** | Predict a number: linear, multiple, or polynomial `lm`, with R², overall significance, significant-predictor lists, and two diagnostic plots. | "Fitted-vs-actual should hug the diagonal; residuals should be a patternless band around zero." |
+| **Map** | Two map types. **Points**: auto-detected lat/lon, color AND size by variables (log/quantile scales for both, a graduated size legend), layer groups, popups, clustering, an optional density heatmap, a scale bar. **Shaded regions**: upload a GeoJSON boundary file, match a property to a data column, shade by mean/sum/median — with a loud report of which regions matched. HTML/PNG download + leaflet code; the report includes a snapshot of exactly what you framed. | "If your rows have coordinates they're on a basemap in two clicks; if they name counties and you have a boundary file, you get a shaded map — and it tells you exactly which regions didn't match instead of going silently blank." |
+| **Compare Groups** | Do groups differ? t-test/ANOVA or rank-based, with assumption checks, effect sizes, post-hoc letters — or a whole grid of outcomes × groups with corrected p-values, optionally **split by a third variable** (one analysis per stratum, BH across the whole family). | "It picks the right test from what you selected, checks the assumptions, and translates the result into a sentence. Split-by is JMP's By box: mpg by cyl within each transmission type." |
+| **Regression** | Predict a number (linear `lm`) or a yes/no (logistic `glm`): numeric AND categorical predictors (pick each factor's reference level), interactions, polynomial fits. Coefficient table with 95% CIs, fit stats, EMMeans with letters, Q-Q / scale-location / Cook's diagnostics with an assumption panel (Shapiro, Breusch-Pagan, linearity, DW) and VIF, odds ratios for logistic, save-A/fit-B model comparison, copy-ready code. | "Fitted-vs-actual should hug the diagonal; residuals should be a patternless band. For logistic, read the odds ratios — an OR of 2 doubles the odds per unit. VIF above 5 means two predictors are telling me the same story." |
 | **Mixed Model Review** | Field-trial modeling (lmerTest/emmeans): fixed treatments + random blocks, ANOVA, variance components, EMMeans with letters, diagnostics, model comparison. | "This is the tool for block designs and repeated measures — where plain ANOVA would pretend correlated plots are independent." |
 | **Export** | Data (CSV/Excel/RDS), charts (PNG/PDF with size/DPI), summary CSV, model outputs. | "Everything you made leaves the app in the format your journal or advisor wants." |
 | **Report + session save** | One click bundles the session into a self-contained HTML or an editable Word file (with optional "show the R code"); sections appear only for what you actually did. Save/restore captures the data-prep stage as a .rds. | "The report mirrors exactly what you did — nothing you didn't run shows up in it." |
@@ -617,7 +623,7 @@ top 30 shown, rest lumped as "Other." Above 1,000 rows charts go static for spee
     result tab exports the exact R code, so anything can be reproduced or audited.
 26. **How does it compare to JMP — and didn't AI write it?** JMP's Tables menu and
     Fit-Y-by-X were the explicit design targets. It was built AI-assisted with the
-    statistical engine unit-tested (~610 checks) against reference values, and the
+    statistical engine unit-tested (~940 checks) against reference values, and the
     generated-code feature means nothing is a black box.
 
 ---
@@ -636,11 +642,64 @@ top 30 shown, rest lumped as "Other." Above 1,000 rows charts go static for spee
    `glmer` path (Poisson / binomial) is the modern treatment.
 4. **shinyapps.io / Connect deployment.** Coworkers without R could use everything
    from a browser link; the apps are already written deployment-safe.
-5. **Geocoding companion for the Map** (addresses → coordinates), plus GeoJSON/
-   shapefile upload for custom regions — the natural Map v2 pair.
+5. **Geocoding companion for the Map** (addresses → coordinates) — GeoJSON upload
+   for custom regions shipped in v0.6.0; geocoding is the remaining half.
 
 ---
 
-*Fact-checked against source v0.4.0 (helpers_compare.R, helpers_lmer.R, helpers_map.R,
+## Addendum — what changed in v0.6.0 (know these cold)
+
+**The three new concept cards:**
+
+### Card A1 — Odds ratio · *"per unit, how much do the odds multiply?"*
+Logistic regression models the **probability of the second level** of a binary
+outcome. Each coefficient exponentiates into an **odds ratio**: OR = 2 means one
+unit more of that predictor **doubles the odds** of the outcome; OR = 0.5 halves
+them; OR = 1 is no effect. The 95% CI matters the same way it does everywhere —
+**if it crosses 1, you can't call the effect**. Say: "Odds, not probability — a
+doubled odds is not a doubled risk unless the outcome is rare."
+*In the app:* Regression → Outcome type: Binary → the Odds ratios card names the
+level being modelled.
+
+### Card A2 — VIF · *"are two predictors telling me the same story?"*
+Variance Inflation Factor = how much a predictor's variance is inflated because
+the OTHER predictors can already predict it. **VIF > 5 = moderate concern, > 10 =
+high** — the model can't tell those predictors apart (unstable coefficients,
+weird signs). Fix: drop one of the pair, or combine them. Say: "The model is
+fine for *prediction*; it's the individual coefficients you can't trust."
+*In the app:* Regression → Diagnostics → the VIF table (hand-computed, matches
+`car::vif` exactly).
+
+### Card A3 — McFadden pseudo-R² · *"logistic's R², on a different scale"*
+For logistic models there is no variance to explain, so R² is replaced by
+McFadden's **1 − deviance/null-deviance**. The scale is different: **0.2–0.4
+already indicates a good fit** — do NOT read it like a linear R². The overall
+test is a likelihood-ratio test against the intercept-only model.
+*In the app:* Regression → Fit statistics ("McFadden R-sq") + the
+interpretation card wording.
+
+**New capabilities to demo (30-second scripts):**
+- **Split-by (Compare Groups):** load mtcars → outcome `mpg`, group `cyl`,
+  Split by `am` → two ANOVAs, one per transmission, Stratum column, BH across
+  both. "This is JMP's By box."
+- **Regression with a factor:** Import → Change Type `cyl` → factor → Regression
+  → predictors `wt` + `cyl` → the reference-level picker appears; Estimated
+  means tab gives the letters. "ANCOVA without writing a formula."
+- **Logistic:** Regression Tool → mtcars → Outcome type Binary → response `am`,
+  predictors `wt` + `hp` → odds ratios card. "The one model lmer can't do."
+- **Map size scales + legend:** size by a skewed column → flip Linear → Log —
+  "now the small bubbles stop lying," and the bottom-left key decodes them.
+- **Choropleth:** Map → Shaded regions → upload a county GeoJSON → match NAME to
+  your county column → shade by yield. If the map is blank, **read the match
+  report** — it names every region that didn't join.
+- **Report:** the map now lands IN the HTML/Word report, framed exactly as on
+  screen.
+
+**Crib updates:** seven apps; ~940 checks; the Map has two modes; Regression is
+linear + logistic; split-by caps at 6 strata; choropleth caps at 3,000 regions.
+
+---
+
+*Fact-checked against source v0.4.0; crib card, tab tour and the v0.6.0 addendum updated against v0.6.0 (helpers_compare.R, helpers_lmer.R, helpers_map.R, helpers_model.R,
 helpers_clean.R and friends). If the app and this guide ever disagree, trust the app
 and fix the guide.*

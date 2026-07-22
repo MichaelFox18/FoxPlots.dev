@@ -12,7 +12,7 @@ There are seven apps:
 | `run_combine_tool()`  | **Combine Tool**  | Merge / join / compare **two** tables |
 | `run_compare_groups()` | **Compare Groups** | Just the statistics: do these groups really differ? (t-test / ANOVA / rank tests / chi-square), then download a report |
 | `run_lmer_tool()`     | **Mixed Model Review** | Fit linear mixed models (lmer): ANOVA, EMMeans post-hoc, diagnostics |
-| `run_map_tool()`      | **Map Tool**      | Put rows with latitude / longitude on an interactive basemap: color / size by variables, group layers by any column (toggle + zoom per group), log / quantile color / size scales, popups, clustering, one-file HTML + PNG download (basemap tiles need internet) |
+| `run_map_tool()`      | **Map Tool**      | Interactive maps two ways: **points** (color / size by variables with log / quantile scales + a size legend, layer groups with toggle + zoom, popups, clustering, an optional density heatmap, scale bar) or **shaded regions** (upload a GeoJSON boundary file and shade each region by your data). One-file HTML + PNG download (basemap tiles need internet) |
 | `run_regression_tool()` | **Regression Tool** | Fit linear or logistic regression: numeric / categorical predictors, interactions, coefficient table with CIs, estimated marginal means, diagnostics with assumption checks and VIF, odds ratios, model comparison, then export or report |
 
 ---
@@ -45,11 +45,12 @@ otherwise makes the install look frozen while it waits for an answer.)
 That single line is also how you **update** later: re-run it any time to pull the
 newest version.
 
-Two optional extras unlock two features — install them if you want them:
+A few optional extras unlock extra features — install them if you want them:
 
 ```r
-# Word (.docx) reports, and the Map tab's PNG snapshot button:
-install.packages(c("officer", "webshot2", "chromote"))
+# Word (.docx) reports, the Map tab's PNG snapshot button, and the map's
+# density-heatmap layer:
+install.packages(c("officer", "webshot2", "chromote", "leaflet.extras"))
 ```
 
 <details>
@@ -75,7 +76,7 @@ can take a few minutes the first time; you only do it once.
 library(foxplots)
 run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
                          #    run_compare_groups() / run_lmer_tool() /
-                         #    run_map_tool()
+                         #    run_map_tool() / run_regression_tool()
 ```
 
 The app opens in your web browser. To stop it, press **Esc** in the R console
@@ -111,6 +112,7 @@ See `help(package = "foxplots")` for the full list.
 | The app opens but the UF logo is missing | Reinstall the package (Step 2) so its bundled files come along. |
 | Map tab: no PNG button, or a note about webshot2 | Install the optional extras from Step 2 (`webshot2`, `chromote`) — PNG snapshots also need Chrome or Edge on the computer. |
 | Map is grey / no background | Basemap tiles load from the internet — check the connection. Your points still export fine. |
+| Shaded-regions map is blank | Check the sidebar's match report — the boundary file's name property must exactly match your data column's values (e.g. "Alachua" vs "ALACHUA" won't match). |
 
 ---
 

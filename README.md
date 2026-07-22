@@ -22,18 +22,23 @@ Install it once and run anywhere.
 
 Highlights:
 - **One-click report** — HTML or editable Word (`.docx`), pandoc-free, with a
-  "show the R code" toggle.
+  "show the R code" toggle — now **including your map** as a snapshot of what
+  you framed on screen.
 - **Save / restore your progress** — a `.rds` of your data + all data prep.
-- **11 chart types** (incl. a bubble option), regression, and a reversible Data
-  Health cleaner with outlier flagging.
+- **11 chart types** (incl. a bubble option) and a reversible Data Health
+  cleaner with outlier flagging.
+- **Real regression** — linear or **logistic**, numeric + **categorical**
+  predictors, interactions, coefficient table with CIs, estimated marginal means
+  with letters, diagnostics + assumption checks + VIF, odds ratios, and model
+  comparison.
 - **JMP-style one-way analysis** — group means with SE/95% CI, a full ANOVA table
   and R-squared, Welch's ANOVA, **connecting letters**, and non-parametric parity
   (Dunn's / **Steel-Dwass** all-pairs, rank effect sizes). Test **many outcomes
-  against many groups at once** and see every combination in one table.
-- **Interactive maps** — lat/lon auto-detection, ArcGIS-style **layer groups**
-  (toggle + zoom any group, clustering that never mixes groups), log/quantile
-  color scales, one-file interactive HTML + PNG export, and copy-ready leaflet
-  code.
+  against many groups at once**, and **split any analysis by a third variable**.
+- **Interactive maps** — points with layer groups, log/quantile color **and
+  size** scales with a graduated size legend, an optional **density heatmap**,
+  or a **choropleth** (regions shaded from an uploaded GeoJSON boundary file) —
+  plus one-file interactive HTML + PNG export and copy-ready leaflet code.
 
 The look stays UF/IFAS-themed (blue/orange + the IFAS logo) throughout.
 
@@ -55,8 +60,9 @@ remotes::install_github("UFSDACU/FoxPlots", upgrade = "never")
 # remotes::install_local("~/Downloads/FoxPlots")            # macOS / Linux
 # remotes::install_local("C:/Users/you/Downloads/FoxPlots") # Windows
 
-# Optional extras -- Word (.docx) reports and the Map tab's PNG snapshots:
-# install.packages(c("officer", "webshot2", "chromote"))
+# Optional extras -- Word (.docx) reports, the Map tab's PNG snapshots,
+# and the map's density-heatmap layer:
+# install.packages(c("officer", "webshot2", "chromote", "leaflet.extras"))
 ```
 
 > If this repository is **private**, `install_github()` needs a GitHub token in R
@@ -70,7 +76,7 @@ Then launch any app:
 library(foxplots)
 run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
                          #    run_compare_groups() / run_lmer_tool() /
-                         #    run_map_tool()
+                         #    run_map_tool() / run_regression_tool()
 ```
 
 | Launcher | App | For… |
@@ -78,9 +84,10 @@ run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
 | `run_data_explorer()` | **Data Explorer** | the whole workflow in one place |
 | `run_reshape_tool()`  | **Reshape Tool**  | restructuring one table |
 | `run_combine_tool()`  | **Combine Tool**  | merging / joining / comparing two tables |
-| `run_compare_groups()` | **Compare Groups** | testing whether groups differ (t-test / ANOVA / rank tests / chi-square) |
+| `run_compare_groups()` | **Compare Groups** | testing whether groups differ (t-test / ANOVA / rank tests / chi-square), optionally split by a third variable |
 | `run_lmer_tool()`     | **Mixed Model Review** | fitting linear mixed models (lmer) |
-| `run_map_tool()`      | **Map Tool**      | putting lat/lon data on an interactive map (leaflet) |
+| `run_map_tool()`      | **Map Tool**      | interactive maps — points, density heatmap, or shaded regions (choropleth) |
+| `run_regression_tool()` | **Regression Tool** | linear / logistic regression with diagnostics, marginal means, and a report |
 
 The package also exports the helper functions for use in your own scripts (e.g.
 `do_stack()`, `grouped_summary()`, `build_full_plot()`); see
@@ -110,22 +117,32 @@ Tabs run **left → right**, each feeding the next:
    density, box, violin, mean ± error, pie, hexbin, correlation heatmap), with
    styling and a **"copy the ggplot2 code"** panel for each. A scatter can be
    **sized by a variable** to make a bubble chart.
-5. **Compare Groups** — a JMP-style one-way analysis: t-test / ANOVA (or
+5. **Map** — put rows with coordinates on an interactive basemap (see the **Map
+   Tool** below for everything it can do — points, layer groups, density
+   heatmap, or shaded regions from an uploaded boundary file).
+6. **Compare Groups** — a JMP-style one-way analysis: t-test / ANOVA (or
    non-parametric Wilcoxon / Kruskal with **Dunn's or Steel-Dwass** all-pairs)
    across groups, with a group-means table (SE + 95% CI), the full ANOVA table
    and R-squared, Welch's ANOVA, a means plot with **connecting letters**, and
    assumption checks + effect sizes. Pick **several outcomes and several grouping
    variables** to test every combination at once — a summary table (with p-values
    corrected across the whole set) plus a collapsible full write-up per
-   combination. Or a chi-square between two categories, with expected counts,
-   standardized residuals and optional row / column / total percentages.
-6. **Regression** — fit linear / multiple / polynomial models with a
-   plain-English interpretation and diagnostic plots.
-7. **Export** — download the (reshaped) data (CSV/Excel/RDS), the **charts**
+   combination — and optionally **split the whole analysis by a third variable**
+   (e.g. mpg by cyl, split by am → one analysis per transmission type). Or a
+   chi-square between two categories, with expected counts, standardized
+   residuals and optional row / column / total percentages.
+7. **Regression** — linear **or logistic** models with numeric **and
+   categorical** predictors (with a reference-level picker), interactions, and
+   polynomial fits: a coefficient table with 95% CIs, fit statistics, estimated
+   marginal means with **connecting letters**, full residual diagnostics with
+   an **assumption-check panel** and **VIF**, odds ratios (logistic), nested
+   model comparison, and copy-ready R code.
+8. **Export** — download the (reshaped) data (CSV/Excel/RDS), the **charts**
    (PNG/PDF), the **summary**, and the **regression** results.
-8. **Report** — one click bundles the whole session into a report: **HTML** (a
+9. **Report** — one click bundles the whole session into a report: **HTML** (a
    single self-contained file) or an editable **Word `.docx`**, with an optional
-   "show the R code" toggle.
+   "show the R code" toggle. **The map is included** as a snapshot of exactly
+   what you framed on screen.
 
 > **The pipeline is live:** whatever you do on Import + Reshape is the "working
 > data" that Summarize, Visualize, Compare Groups, Regression, and Export all
@@ -184,6 +201,38 @@ test), and a copy-paste R script for everything.
 > This app pulls in the mixed-model stack (`lme4`, `lmerTest`, `emmeans`,
 > `multcomp`), so the **first install is a little heavier** than the other tools.
 
+### Map Tool — interactive maps from a spreadsheet
+
+**Import → Map → Export.** Two map types:
+
+- **Points** — rows with latitude / longitude become markers on a pannable
+  basemap (coordinates auto-detected, with a swap button). Color by any column
+  (with log / quantile scales for skewed values), **size by** a numeric column
+  (also with log / quantile scales, and a **graduated-circle size legend** so
+  bubbles are actually readable), group into **toggleable layers** by a column
+  (clustering stays within each group, plus a per-group zoom), click popups and
+  hover labels, an optional **density heatmap** layer for dense data (optionally
+  weighted by a value column), and a distance **scale bar**.
+- **Shaded regions (choropleth)** — upload a **GeoJSON** boundary file (e.g.
+  county outlines), match a boundary property to a column in your data, and
+  shade each region by the mean / sum / median of a numeric column. The app
+  reports exactly **how many regions matched** and names the strays on both
+  sides, so a join problem is never a mystery blank map.
+
+Downloads: a **one-file interactive HTML** map (works offline, no extra
+software) and a **PNG snapshot** framed exactly as on screen (needs the optional
+`webshot2` + `chromote` packages plus Chrome). Every map comes with copy-ready
+leaflet R code.
+
+### Regression Tool — model fitting on its own
+
+**Import → Regression → Export → Report.** The Data Explorer's (deep) Regression
+tab as a focused app: linear or logistic models, numeric + categorical
+predictors, interactions, coefficient table with CIs, estimated marginal means
+with letters, diagnostics + assumptions + VIF, odds ratios, model comparison,
+and a full HTML / Word report. Built-in **iris** (ANCOVA demo: `Sepal.Length ~
+Petal.Length + Species`) and **mtcars** (logistic demo: response `am`) examples.
+
 ---
 
 ## 3. How the apps work together
@@ -194,17 +243,19 @@ package's `R/`:
 ```
 R/   the whole package
        helpers_*  pure, unit-tested data logic (io, clean, filter, stats, plot,
-                  model, reshape, combine, compare, report, state)
+                  model, reshape, combine, compare, lmer, map, report, state)
        mod_*      Shiny modules — thin wrappers over the helpers
        run_*      the app builders + launchers
             |  (a launcher assembles the modules into an app)
             v
-   run_data_explorer()  .  run_reshape_tool()  .  run_combine_tool()
+   run_data_explorer() . run_reshape_tool()  . run_combine_tool()
+   run_compare_groups() . run_lmer_tool()    . run_map_tool()
+   run_regression_tool()
 ```
 
 - The **`mod_reshape`** in the Reshape Tool is the *exact same module* as the
   Reshape tab in the Data Explorer. **`mod_import`** / **`mod_export`** are shared
-  by all three apps. Fix or improve a module once, and every app gets it.
+  by every app. Fix or improve a module once, and every app gets it.
 - Stages connect by **returns-and-arguments**: each module returns its result as
   a reactive, and the launcher passes that into the next module. (e.g. Import
   returns the data → Reshape takes it and returns the working data →
@@ -225,7 +276,7 @@ It's a standard R package. From the source folder:
 pkgload::load_all(".")
 run_data_explorer()
 
-# Run the full test suite (~670 checks):
+# Run the full test suite (~940 checks):
 testthat::test_local(".")
 ```
 
