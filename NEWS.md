@@ -17,6 +17,17 @@
   means), Tukey/Sidak/Bonferroni pairwise comparisons, a compact-letter-display
   grouping, and a means-with-CI plot -- the same emmeans / multcomp engine the
   Mixed Model tool uses.
+- **Logistic regression.** Switch the outcome type to Binary and the tab fits a
+  `glm(family = binomial)` for a two-level response (factor / logical / 0-1),
+  reporting **odds ratios with 95% CIs**, logistic fit statistics (null and
+  residual deviance, McFadden pseudo-R2, classification accuracy), and a
+  logistic-appropriate interpretation. The linear-only diagnostics (Q-Q,
+  Scale-Location, the assumption panel) step aside with a note. This is the
+  biggest gap the Mixed Model tool can't fill -- `lmerTest` is linear-only.
+- **Model comparison.** Save the current fit as Model A, change the setup, fit
+  again, and the tab runs a nested test (F for linear, likelihood-ratio for
+  logistic) with an AIC/BIC delta and a clear caveat that it's valid only for
+  nested models on the same rows.
 - **A full diagnostics tab.** Beyond the original fitted-vs-actual and
   residuals-vs-fitted plots there are now Normal Q-Q, Scale-Location, and Cook's
   distance (with the 4/n influence line), an **assumption-check panel** with

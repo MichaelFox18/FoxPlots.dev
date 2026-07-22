@@ -28,14 +28,43 @@
 #' @param poly_degree If non-NULL, fit `poly(predictors[1], degree)` -- a curved
 #'   fit on the first predictor (which must be numeric).
 #' @param ref_levels Optional named list, column -> reference level.
+#' @param family "gaussian" (linear, lm) or "binomial" (logistic, glm).
 #' @return A spec list.
 #' @noRd
 reg_spec <- function(response, predictors, interactions = FALSE,
-                     poly_degree = NULL, ref_levels = NULL) {
+                     poly_degree = NULL, ref_levels = NULL,
+                     family = "gaussian") {
   list(response = response, predictors = predictors,
        interactions = isTRUE(interactions),
        poly_degree = if (!is.null(poly_degree)) as.integer(poly_degree),
-       ref_levels = ref_levels)
+       ref_levels = ref_levels,
+       family = match.arg(family, c("gaussian", "binomial")))
+}
+
+# Is x a usable binary response for logistic regression? A 2-level factor, a
+# logical, or a numeric taking only two distinct values (mapped to 0/1).
+reg_binary_ok <- function(x) {
+  x <- x[!is.na(x)]
+  if (!length(x)) return(FALSE)
+  if (is.logical(x)) return(TRUE)
+  if (is.factor(x) || is.character(x)) return(length(unique(as.character(x))) == 2L)
+  if (is.numeric(x)) return(length(unique(x)) == 2L)
+  FALSE
+}
+
+# Coerce a binary response to a 0/1 numeric (glm models P(the "high" level)).
+# Factor/character -> second sorted level = 1; logical -> TRUE = 1; two-value
+# numeric -> larger value = 1. The mapped-to-1 level is stored on the result.
+reg_binary_response <- function(x) {
+  if (is.logical(x)) {
+    return(structure(as.integer(x), success = "TRUE"))
+  }
+  if (is.factor(x) || is.character(x)) {
+    lv <- sort(unique(as.character(x[!is.na(x)])))
+    return(structure(as.integer(as.character(x) == lv[2]), success = lv[2]))
+  }
+  u <- sort(unique(x[!is.na(x)]))
+  structure(as.integer(x == u[2]), success = as.character(u[2]))
 }
 
 # Coerce character/factor predictors to factors, honouring any reference level.
@@ -86,9 +115,16 @@ reg_validate <- function(df, spec) {
                    paste(missing, collapse = ", ")))
 
   problems <- character(0)
-  if (!is.numeric(df[[response]]))
+  binomial <- identical(spec$family, "binomial")
+  if (binomial) {
+    if (!reg_binary_ok(df[[response]]))
+      problems <- c(problems, sprintf(paste(
+        "Logistic regression needs a binary response; '%s' isn't (it must be a",
+        "two-level factor, a logical, or a 0/1 numeric)."), response))
+  } else if (!is.numeric(df[[response]])) {
     problems <- c(problems, sprintf(
       "The response '%s' must be numeric for linear regression.", response))
+  }
   if (response %in% predictors)
     problems <- c(problems, "The response can't also be a predictor.")
   if (!is.null(spec$poly_degree) &&
@@ -117,13 +153,27 @@ reg_validate <- function(df, spec) {
 
 #' Fit a regression from a spec. Assumes reg_validate() already passed.
 #'
+#' Gaussian family -> lm(); binomial -> glm(family = binomial) after mapping the
+#' binary response to 0/1. The "success" level modelled is recorded on the
+#' returned object as attr(fit, "success") for display.
+#'
 #' @param df A data frame.
 #' @param spec A list from reg_spec().
-#' @return An lm object.
+#' @return An lm object (gaussian) or a glm object (binomial).
 #' @noRd
 reg_fit <- function(df, spec) {
   stopifnot(is.data.frame(df))
-  stats::lm(reg_build_formula(spec), data = reg_prep_data(df, spec))
+  model_df <- reg_prep_data(df, spec)
+  fml      <- reg_build_formula(spec)
+  if (identical(spec$family, "binomial")) {
+    y <- reg_binary_response(model_df[[spec$response]])
+    model_df[[spec$response]] <- as.numeric(y)
+    fit <- stats::glm(fml, data = model_df, family = stats::binomial())
+    attr(fit, "success") <- attr(y, "success")
+    fit
+  } else {
+    stats::lm(fml, data = model_df)
+  }
 }
 
 #' Fit a linear / multiple / polynomial regression.
@@ -157,26 +207,40 @@ fit_model <- function(df, response, predictors,
 
 #' Pull the headline numbers and significance out of a fitted model.
 #'
-#' @param model An lm object.
-#' @return A list: r2, adj_r2, overall_p (model F-test p), and the names of the
-#'   significant / non-significant predictors at alpha = 0.05.
+#' Linear (lm): r2 / adj_r2 and the overall F-test p. Logistic (glm): r2 is
+#' McFadden's pseudo-R2, adj_r2 is NA, and overall_p is the likelihood-ratio
+#' test against the null model. `family` says which.
+#'
+#' @param model An lm or glm object.
+#' @return A list: family, r2, adj_r2, overall_p, significant, nonsignificant.
 #' @export
 model_interpretation <- function(model) {
-  s     <- summary(model)
+  s         <- summary(model)
+  co        <- stats::coef(s)
+  pred_rows <- co[rownames(co) != "(Intercept)", , drop = FALSE]
+  pvals     <- pred_rows[, 4]
+  sig    <- rownames(pred_rows)[pvals <  0.05]
+  nonsig <- rownames(pred_rows)[pvals >= 0.05]
+
+  if (inherits(model, "glm")) {
+    mcf <- if (model$null.deviance == 0) NA_real_ else
+      1 - model$deviance / model$null.deviance
+    dev_diff <- model$null.deviance - model$deviance
+    df_diff  <- model$df.null - model$df.residual
+    overall_p <- if (df_diff > 0)
+      stats::pchisq(dev_diff, df_diff, lower.tail = FALSE) else NA_real_
+    return(list(family = "binomial", r2 = round(mcf, 3), adj_r2 = NA_real_,
+                overall_p = overall_p, significant = sig,
+                nonsignificant = nonsig))
+  }
+
   fstat <- s$fstatistic
   overall_p <- if (!is.null(fstat))
     unname(stats::pf(fstat[1], fstat[2], fstat[3], lower.tail = FALSE))
   else NA_real_
-  coef_df   <- as.data.frame(s$coefficients)
-  pred_rows <- coef_df[rownames(coef_df) != "(Intercept)", , drop = FALSE]
-  pvals     <- pred_rows[, 4]
-  list(
-    r2             = round(s$r.squared, 3),
-    adj_r2         = round(s$adj.r.squared, 3),
-    overall_p      = overall_p,
-    significant    = rownames(pred_rows)[pvals <  0.05],
-    nonsignificant = rownames(pred_rows)[pvals >= 0.05]
-  )
+  list(family = "gaussian", r2 = round(s$r.squared, 3),
+       adj_r2 = round(s$adj.r.squared, 3), overall_p = overall_p,
+       significant = sig, nonsignificant = nonsig)
 }
 
 #' Tidy coefficient table with 95% confidence intervals.
@@ -215,19 +279,43 @@ reg_coef_table <- function(model, digits = 4) {
 
 #' Model fit statistics as a Statistic/Value table.
 #'
-#' @param model An lm object.
+#' Linear (lm): n, R2, adj-R2, RMSE, AIC, BIC, overall F. Logistic (glm): n,
+#' null/residual deviance, AIC, BIC, McFadden pseudo-R2, and classification
+#' accuracy at a 0.5 cutoff.
+#'
+#' @param model An lm or glm object.
 #' @param digits Rounding.
 #' @return A data frame [Statistic, Value], or NULL.
 #' @noRd
 reg_fit_stats <- function(model, digits = 4) {
   if (is.null(model) || !inherits(model, "lm")) return(NULL)
+  mk <- function(v) data.frame(Statistic = names(v), Value = unname(v),
+                               row.names = NULL, stringsAsFactors = FALSE)
+  if (inherits(model, "glm")) {
+    y    <- model$y
+    phat <- stats::fitted(model)
+    acc  <- mean((phat >= 0.5) == (y == 1))
+    # McFadden = 1 - logLik(model)/logLik(null). For ungrouped 0/1 data the
+    # saturated logLik is 0, so logLik = -deviance/2 and this reduces to
+    # 1 - deviance/null.deviance -- exact, and avoids update()'s data-scoping trap.
+    mcf  <- if (model$null.deviance == 0) NA_real_ else
+      1 - model$deviance / model$null.deviance
+    return(mk(c(
+      N                   = length(y),
+      `Null deviance`     = round(model$null.deviance, digits),
+      `Residual deviance` = round(model$deviance, digits),
+      AIC                 = round(stats::AIC(model), digits),
+      BIC                 = round(stats::BIC(model), digits),
+      `McFadden R-sq`     = round(mcf, digits),
+      `Accuracy (0.5)`    = round(acc, digits))))
+  }
   s    <- summary(model)
   res  <- stats::residuals(model)
   rmse <- sqrt(mean(res^2))
   fst  <- s$fstatistic
   fp   <- if (!is.null(fst))
     unname(stats::pf(fst[1], fst[2], fst[3], lower.tail = FALSE)) else NA_real_
-  vals <- c(
+  mk(c(
     N                = length(res),
     `R-squared`      = round(s$r.squared, digits),
     `Adj. R-squared` = round(s$adj.r.squared, digits),
@@ -235,9 +323,33 @@ reg_fit_stats <- function(model, digits = 4) {
     AIC              = round(stats::AIC(model), digits),
     BIC              = round(stats::BIC(model), digits),
     `F statistic`    = if (!is.null(fst)) round(unname(fst[1]), digits) else NA_real_,
-    `F p-value`      = round(fp, digits))
-  data.frame(Statistic = names(vals), Value = unname(vals),
-             row.names = NULL, stringsAsFactors = FALSE)
+    `F p-value`      = round(fp, digits)))
+}
+
+#' Odds ratios (exp of the coefficients) with 95% CI, for a logistic glm.
+#'
+#' @param model A binomial glm.
+#' @return A data frame [Term, `Odds ratio`, CI 2.5%, CI 97.5%, p], or NULL if
+#'   `model` isn't a logistic glm.
+#' @noRd
+reg_odds_ratios <- function(model, digits = 4) {
+  if (is.null(model) || !inherits(model, "glm") ||
+      !identical(model$family$family, "binomial")) return(NULL)
+  co <- stats::coef(summary(model))
+  or <- exp(co[, 1])
+  ci <- tryCatch(suppressMessages(exp(stats::confint(model))),
+                 error = function(e) NULL, warning = function(w) NULL)
+  out <- data.frame(
+    Term         = rownames(co),
+    `Odds ratio` = round(or, digits),
+    check.names  = FALSE, row.names = NULL, stringsAsFactors = FALSE)
+  if (!is.null(ci)) {
+    m <- match(rownames(co), rownames(ci))
+    out[["CI 2.5%"]]  <- round(ci[m, 1], digits)
+    out[["CI 97.5%"]] <- round(ci[m, 2], digits)
+  }
+  out[["p"]] <- round(co[, 4], digits)
+  out
 }
 
 #' Copy-ready code that reproduces the fitted model.
@@ -265,11 +377,70 @@ reg_code <- function(model) {
         "df[[%s]] <- relevel(factor(df[[%s]]), ref = %s)",
         qq(v), qq(v), qq(xl[[v]][1])))
   }
-  lines <- c(lines, "",
-    sprintf("model <- lm(%s, data = df)", f),
-    "summary(model)",
-    "confint(model)   # 95% confidence intervals")
+  is_logit <- inherits(model, "glm") &&
+    identical(model$family$family, "binomial")
+  if (is_logit) {
+    lines <- c(lines, "",
+      sprintf("model <- glm(%s, data = df, family = binomial)", f),
+      "summary(model)",
+      "exp(cbind(`odds ratio` = coef(model), confint(model)))  # ORs + 95% CI")
+  } else {
+    lines <- c(lines, "",
+      sprintf("model <- lm(%s, data = df)", f),
+      "summary(model)",
+      "confint(model)   # 95% confidence intervals")
+  }
   paste(lines, collapse = "\n")
+}
+
+#' Compare two nested regressions.
+#'
+#' A likelihood-ratio (glm) or nested F (lm) test plus an AIC/BIC delta,
+#' mirroring lmer_compare(). Warns when the models aren't comparable (different
+#' response, family, or number of rows) -- the test is only valid for nested
+#' models fit on identical data. B is the current model, A the saved one.
+#'
+#' @param fitA,fitB Two lm or two glm objects (B current, A saved).
+#' @return A list: warnings (character), table (data frame or NULL), error.
+#' @noRd
+reg_compare <- function(fitA, fitB) {
+  if (is.null(fitA) || is.null(fitB))
+    return(list(warnings = "Save a model (A), then fit another (B) to compare.",
+                table = NULL, error = NULL))
+  msgs <- character(0)
+  glmA <- inherits(fitA, "glm"); glmB <- inherits(fitB, "glm")
+  if (glmA != glmB)
+    return(list(warnings = paste(
+      "Model A and B are different kinds (one linear, one logistic) and can't",
+      "be compared."), table = NULL, error = NULL))
+  respA <- as.character(stats::formula(fitA))[2]
+  respB <- as.character(stats::formula(fitB))[2]
+  if (!identical(respA, respB))
+    msgs <- c(msgs, paste(
+      "WARNING: the two models use different responses, so their likelihoods",
+      "and AIC/BIC are not comparable."))
+  if (stats::nobs(fitA) != stats::nobs(fitB))
+    msgs <- c(msgs, sprintf(paste(
+      "WARNING: the models were fit on different numbers of rows (A: %d, B: %d),",
+      "usually different missing-value patterns. A valid test needs identical rows."),
+      stats::nobs(fitA), stats::nobs(fitB)))
+  msgs <- c(msgs, paste(
+    "Valid only if one model is nested within the other and both use the same rows."))
+
+  an <- tryCatch(
+    if (glmB) stats::anova(fitA, fitB, test = "LRT") else stats::anova(fitA, fitB),
+    error = function(e) e)
+  if (inherits(an, "error"))
+    return(list(warnings = msgs, table = NULL, error = conditionMessage(an)))
+
+  tab <- as.data.frame(an)
+  tab <- cbind(Model = c("A", "B"), round_df(tab))
+  aic <- round(c(stats::AIC(fitA), stats::AIC(fitB)), 3)
+  bic <- round(c(stats::BIC(fitA), stats::BIC(fitB)), 3)
+  tab$AIC <- aic; tab$BIC <- bic
+  list(warnings = msgs, table = tab, error = NULL,
+       aic_delta = round(aic[2] - aic[1], 3),
+       bic_delta = round(bic[2] - bic[1], 3))
 }
 
 # --- estimated marginal means (factor predictors) ---------------------------
@@ -474,7 +645,9 @@ reg_cooks_gg <- function(model) {
 #'   carries an order-dependent caveat in `attr(x, "independence_note")`.
 #' @noRd
 reg_assumptions <- function(model) {
-  if (is.null(model) || !inherits(model, "lm")) return(NULL)
+  # Linear-model assumptions only; logistic residuals don't work this way.
+  if (is.null(model) || !inherits(model, "lm") || inherits(model, "glm"))
+    return(NULL)
   r <- stats::residuals(model); f <- stats::fitted(model); n <- length(r)
   row <- function(a, t, s, p, ok)
     data.frame(Assumption = a, Test = t, Statistic = s, p_value = p, OK = ok,

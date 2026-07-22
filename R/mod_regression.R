@@ -16,6 +16,13 @@ regressionUI <- function(id) {
       sidebar = sidebar(
         width = 300,
         h5("Model setup"),
+        radioButtons(ns("family"),
+          tagList("Outcome type", info_tip(
+            "Continuous -> linear regression (lm). Binary (two categories, ",
+            "e.g. yes/no) -> logistic regression (glm) with odds ratios.")),
+          choices = c("Continuous (linear)" = "gaussian",
+                      "Binary (logistic)"   = "binomial"),
+          selected = "gaussian"),
         uiOutput(ns("ui_resp")),
         uiOutput(ns("ui_pred")),
         checkboxInput(ns("poly"),
@@ -50,6 +57,13 @@ regressionUI <- function(id) {
                  DT::DTOutput(ns("coefs"))),
             card(card_header(icon("gauge-high"), " Fit statistics"),
                  DT::DTOutput(ns("fitstats")))
+          ),
+          conditionalPanel(
+            sprintf("input['%s'] == 'binomial'", ns("family")),
+            card(card_header(icon("scale-unbalanced"),
+                             " Odds ratios (95% CI)"),
+                 DT::DTOutput(ns("odds")),
+                 uiOutput(ns("odds_note")))
           ),
           card(card_header(icon("lightbulb"), " Statistical interpretation"),
                uiOutput(ns("interpretation")))
@@ -106,6 +120,24 @@ regressionUI <- function(id) {
                  uiOutput(ns("vif_note")))
           )
         ),
+        nav_panel("Model comparison",
+          card(
+            card_body(
+              tags$p(class = "mb-2",
+                "Save the current fit as ", tags$b("Model A"), ", then change ",
+                "the setup and fit again to compare the two. Valid only when one ",
+                "model is nested in the other and both use the same rows."),
+              actionButton(ns("save_a"), "Save current fit as Model A",
+                           class = "btn-outline-primary btn-sm",
+                           icon = icon("bookmark")),
+              uiOutput(ns("saved_a"))
+            )
+          ),
+          card(card_header(icon("code-compare"),
+                           " A (saved) vs B (current)"),
+               DT::DTOutput(ns("compare")),
+               uiOutput(ns("compare_notes")))
+        ),
         nav_panel("Model summary & code",
           card(card_header(icon("file-lines"), " Model summary"),
                verbatimTextOutput(ns("summary"))),
@@ -134,6 +166,11 @@ regressionServer <- function(id, data_in) {
     cols_all <- reactive({
       df <- data_in(); req(is.data.frame(df)); names(df)
     })
+    # Columns eligible as a logistic response (binary).
+    cols_binary <- reactive({
+      df <- data_in(); req(is.data.frame(df))
+      names(df)[vapply(df, reg_binary_ok, logical(1))]
+    })
     # Predictors the user picked that are categorical (need a reference level).
     cat_preds <- reactive({
       df <- data_in(); preds <- input$pred
@@ -147,13 +184,18 @@ regressionServer <- function(id, data_in) {
     observeEvent(data_in(), model(NULL), ignoreNULL = FALSE)
 
     output$ui_resp <- renderUI({
-      nums <- cols_num()
-      if (!length(nums))
-        return(helpText("This dataset has no numeric columns to model."))
+      binomial <- identical(input$family, "binomial")
+      choices  <- if (binomial) cols_binary() else cols_num()
+      if (!length(choices))
+        return(helpText(if (binomial)
+          "This dataset has no binary columns (two-level factor / logical / 0-1) to model."
+          else "This dataset has no numeric columns to model."))
+      tip <- if (binomial)
+        "The two-category outcome to predict. The model estimates the probability of the second level."
+        else "The numeric outcome you want to predict."
       selectInput(ns("resp"),
-        tagList("Response variable (Y)", info_tip(
-          "The numeric outcome you want to predict.")),
-        choices = nums)
+        tagList("Response variable (Y)", info_tip(tip)),
+        choices = choices)
     })
 
     output$ui_pred <- renderUI({
@@ -201,7 +243,8 @@ regressionServer <- function(id, data_in) {
         predictors   = preds,
         interactions = isTRUE(input$interactions) && !isTRUE(input$poly),
         poly_degree  = if (isTRUE(input$poly)) input$poly_deg %||% 2 else NULL,
-        ref_levels   = refs)
+        ref_levels   = refs,
+        family       = input$family %||% "gaussian")
     }
 
     observeEvent(input$fit, {
@@ -224,6 +267,23 @@ regressionServer <- function(id, data_in) {
 
     # summary() is the expensive call; compute once, share.
     model_summary <- reactive({ req(model()); summary(model()) })
+
+    is_logistic <- reactive(inherits(model(), "glm"))
+
+    # -- Odds ratios (logistic only) -------------------------------------------
+    output$odds <- DT::renderDT({
+      validate(need(!is.null(model()), "Fit a model first."))
+      or <- reg_odds_ratios(model())
+      validate(need(!is.null(or), "Odds ratios apply to logistic models."))
+      DT::datatable(or, rownames = FALSE, class = "compact stripe hover",
+                    options = list(scrollX = TRUE, dom = "t", paging = FALSE))
+    })
+    output$odds_note <- renderUI({
+      if (!isTRUE(is_logistic())) return(NULL)
+      tags$p(class = "text-muted small mt-2 mb-0", sprintf(
+        "Odds of '%s'. An odds ratio > 1 raises the odds, < 1 lowers them; a numeric predictor's OR is per one-unit increase.",
+        attr(model(), "success") %||% "the modelled level"))
+    })
 
     # -- Estimated marginal means (factor predictors) --------------------------
     # The factors in the CURRENTLY fitted model (not the live picks), so the
@@ -351,20 +411,30 @@ regressionServer <- function(id, data_in) {
       p_label <- if (!is.na(op)) {
         if (op < 0.001) "p < 0.001" else paste0("p = ", round(op, 4))
       } else "p = N/A"
+      logit <- identical(info$family, "binomial")
+      test_lab <- if (logit) "likelihood-ratio test" else "F-test"
       overall_tag <- if (!is.na(op) && op < 0.05)
         tags$p(tags$span(style = "color:#2e7d32; font-weight:600;",
           icon("circle-check"),
-          sprintf(" The overall model is statistically significant (%s).", p_label)))
+          sprintf(" The overall model is statistically significant (%s, %s).",
+                  test_lab, p_label)))
       else
         tags$p(tags$span(style = "color:#c62828; font-weight:600;",
           icon("circle-xmark"),
-          sprintf(" The overall model is NOT statistically significant (%s).", p_label)))
-      tagList(
-        overall_tag,
+          sprintf(" The overall model is NOT statistically significant (%s, %s).",
+                  test_lab, p_label)))
+      fit_line <- if (logit)
+        tags$p(tags$b(sprintf("McFadden R\u00b2 = %s", info$r2)),
+               " \u2014 a pseudo-R\u00b2 for logistic models (0.2\u20130.4 already ",
+               "indicates a good fit; it does not mean % of variance).")
+      else
         tags$p(tags$b(sprintf("R\u00b2 = %s", info$r2)), " \u2014 explains ",
                tags$b(paste0(round(info$r2 * 100, 1), "%")), " of the variance. ",
                tags$span(style = "color:#555;",
-                         sprintf("(Adj. R\u00b2 = %s)", info$adj_r2))),
+                         sprintf("(Adj. R\u00b2 = %s)", info$adj_r2)))
+      tagList(
+        overall_tag,
+        fit_line,
         if (length(info$significant))
           tags$p(tags$b(style = "color:#2e7d32;", "Significant (p < 0.05): "),
                  paste(info$significant, collapse = ", ")),
@@ -389,14 +459,16 @@ regressionServer <- function(id, data_in) {
         plotly::layout(margin = list(t = 90, b = 40, l = 55, r = 20))
     })
     # Static (these carry a loess smooth / per-obs stems that ggplotly mangles).
-    output$plot_qq <- renderPlot({
+    # Q-Q and Scale-Location assume normal residuals -- meaningless for logistic,
+    # so they show a note there instead.
+    linear_only <- function(gg) {
       validate(need(!is.null(model()), "Fit a model first."))
-      reg_qq_gg(model())
-    }, res = 96)
-    output$plot_scaleloc <- renderPlot({
-      validate(need(!is.null(model()), "Fit a model first."))
-      reg_scale_loc_gg(model())
-    }, res = 96)
+      validate(need(!isTRUE(is_logistic()),
+                    "This diagnostic is for linear models; logistic uses deviance residuals (see Residuals vs Fitted and Cook's distance)."))
+      gg(model())
+    }
+    output$plot_qq       <- renderPlot(linear_only(reg_qq_gg), res = 96)
+    output$plot_scaleloc <- renderPlot(linear_only(reg_scale_loc_gg), res = 96)
     output$plot_cooks <- renderPlot({
       validate(need(!is.null(model()), "Fit a model first."))
       reg_cooks_gg(model())
@@ -408,6 +480,9 @@ regressionServer <- function(id, data_in) {
         return(tags$p(class = "text-muted fst-italic",
                       "Fit a model to check its assumptions."))
       a <- reg_assumptions(model())
+      if (is.null(a))
+        return(tags$p(class = "text-muted",
+          "These assumption checks are for linear regression. Logistic models are assessed by deviance and classification accuracy (Fit statistics) and the residual/Cook's plots above."))
       badge <- function(ok) {
         if (is.na(ok))
           tags$span(class = "badge bg-secondary", "n/a")
@@ -442,6 +517,56 @@ regressionServer <- function(id, data_in) {
       tags$p(class = "text-muted small mt-2 mb-0",
              "VIF > 5 is moderate, > 10 is high multicollinearity. Factor and ",
              "interaction terms are shown per level.")
+    })
+
+    # -- model comparison (A saved vs B current) -------------------------------
+    saved_model <- reactiveVal(NULL)
+    observeEvent(input$save_a, {
+      req(!is.null(model()))
+      saved_model(model())
+      showNotification("Saved the current fit as Model A.", type = "message")
+    })
+    # A saved model no longer matches a new dataset.
+    observeEvent(data_in(), saved_model(NULL), ignoreNULL = FALSE)
+
+    output$saved_a <- renderUI({
+      m <- saved_model()
+      if (is.null(m))
+        return(tags$p(class = "text-muted fst-italic mt-2 mb-0",
+                      "No model saved yet."))
+      f <- gsub("\\s+", " ", paste(deparse(stats::formula(m)), collapse = " "))
+      tags$p(class = "mt-2 mb-0",
+             tags$b("Model A: "), tags$code(f))
+    })
+
+    comparison <- reactive({
+      req(!is.null(saved_model()), !is.null(model()))
+      reg_compare(saved_model(), model())
+    })
+
+    output$compare <- DT::renderDT({
+      validate(need(!is.null(saved_model()),
+                    "Save a model as A, then fit another to compare."))
+      validate(need(!is.null(model()), "Fit a current model (B)."))
+      cmp <- comparison()
+      validate(need(is.null(cmp$error), cmp$error %||% "Comparison failed."))
+      validate(need(!is.null(cmp$table),
+                    "These models can't be compared (see the notes below)."))
+      DT::datatable(cmp$table, rownames = FALSE, class = "compact stripe",
+                    options = list(dom = "t", paging = FALSE, scrollX = TRUE))
+    })
+    output$compare_notes <- renderUI({
+      if (is.null(saved_model()) || is.null(model())) return(NULL)
+      cmp <- comparison()
+      deltas <- if (!is.null(cmp$table))
+        tags$p(class = "small mt-2 mb-1", tags$b("B - A: "),
+               sprintf("AIC %+.3g, BIC %+.3g (negative favours B).",
+                       cmp$aic_delta, cmp$bic_delta))
+      tagList(
+        deltas,
+        lapply(cmp$warnings, function(w)
+          tags$p(class = "text-muted small mb-1", w))
+      )
     })
 
     output$download <- downloadHandler(

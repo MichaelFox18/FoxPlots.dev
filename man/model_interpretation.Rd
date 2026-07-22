@@ -7,12 +7,13 @@
 model_interpretation(model)
 }
 \arguments{
-\item{model}{An lm object.}
+\item{model}{An lm or glm object.}
 }
 \value{
-A list: r2, adj_r2, overall_p (model F-test p), and the names of the
-  significant / non-significant predictors at alpha = 0.05.
+A list: family, r2, adj_r2, overall_p, significant, nonsignificant.
 }
 \description{
-Pull the headline numbers and significance out of a fitted model.
+Linear (lm): r2 / adj_r2 and the overall F-test p. Logistic (glm): r2 is
+McFadden's pseudo-R2, adj_r2 is NA, and overall_p is the likelihood-ratio
+test against the null model. `family` says which.
 }

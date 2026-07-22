@@ -237,3 +237,101 @@ test_that("reg_vif buckets concern at the 5 / 10 thresholds", {
   # disp is the collinear one here (VIF ~7.3 -> moderate)
   expect_equal(v$Concern[v$Term == "disp"], "moderate")
 })
+
+# ---- logistic regression + model comparison (Phase 5) -----------------------
+
+make_logit_data <- function() {
+  withr::local_seed(42)
+  n <- 300; x1 <- stats::rnorm(n)
+  grp <- factor(sample(c("A", "B", "C"), n, replace = TRUE))
+  lp <- -0.5 + 1.2 * x1 + ifelse(grp == "B", 0.8, ifelse(grp == "C", -0.6, 0))
+  y  <- stats::rbinom(n, 1, stats::plogis(lp))
+  data.frame(y = y, yn = factor(ifelse(y == 1, "yes", "no")), x1 = x1, grp = grp)
+}
+
+test_that("reg_binary_ok detects binary responses", {
+  expect_true(reg_binary_ok(c(0L, 1L, 1L, 0L)))
+  expect_true(reg_binary_ok(factor(c("a", "b", "a"))))
+  expect_true(reg_binary_ok(c(TRUE, FALSE, TRUE)))
+  expect_false(reg_binary_ok(1:5))
+  expect_false(reg_binary_ok(factor(c("a", "b", "c"))))
+})
+
+test_that("reg_validate enforces a binary response for logistic", {
+  d <- make_logit_data()
+  expect_length(reg_validate(d, reg_spec("yn", c("x1", "grp"), family = "binomial")), 0L)
+  expect_length(reg_validate(d, reg_spec("y",  c("x1", "grp"), family = "binomial")), 0L)
+  expect_gt(length(reg_validate(d, reg_spec("x1", "grp", family = "binomial"))), 0L)
+})
+
+test_that("reg_fit dispatches to glm for binomial and records the success level", {
+  d <- make_logit_data()
+  m <- reg_fit(d, reg_spec("yn", c("x1", "grp"), family = "binomial"))
+  expect_s3_class(m, "glm")
+  expect_equal(m$family$family, "binomial")
+  expect_equal(attr(m, "success"), "yes")     # second sorted level
+})
+
+test_that("reg_odds_ratios equal exp(coef) and only apply to logistic glm", {
+  d  <- make_logit_data()
+  m  <- reg_fit(d, reg_spec("yn", c("x1", "grp"), family = "binomial"))
+  or <- reg_odds_ratios(m)
+  expect_named(or, c("Term", "Odds ratio", "CI 2.5%", "CI 97.5%", "p"))
+  expect_equal(or[["Odds ratio"]], round(unname(exp(stats::coef(m))), 4))
+  expect_null(reg_odds_ratios(reg_fit(mtcars, reg_spec("mpg", "wt"))))  # lm
+})
+
+test_that("logistic fit stats report deviance / McFadden / accuracy", {
+  d  <- make_logit_data()
+  m  <- reg_fit(d, reg_spec("yn", c("x1", "grp"), family = "binomial"))
+  fs <- reg_fit_stats(m)
+  expect_true(all(c("Null deviance", "Residual deviance", "McFadden R-sq",
+                    "Accuracy (0.5)") %in% fs$Statistic))
+  # McFadden = 1 - deviance/null.deviance for ungrouped 0/1 data
+  expect_equal(fs$Value[fs$Statistic == "McFadden R-sq"],
+               round(1 - m$deviance / m$null.deviance, 4))
+  expect_true(fs$Value[fs$Statistic == "Accuracy (0.5)"] >= 0 &&
+              fs$Value[fs$Statistic == "Accuracy (0.5)"] <= 1)
+})
+
+test_that("model_interpretation is glm-aware and assumptions are linear-only", {
+  d  <- make_logit_data()
+  m  <- reg_fit(d, reg_spec("yn", "x1", family = "binomial"))
+  info <- model_interpretation(m)
+  expect_equal(info$family, "binomial")
+  expect_true(is.na(info$adj_r2))
+  expect_true(info$overall_p < 0.05)          # x1 clearly predicts y
+  expect_null(reg_assumptions(m))              # no linear-model assumptions
+})
+
+test_that("reg_code emits a glm call for logistic", {
+  d <- make_logit_data()
+  m <- reg_fit(d, reg_spec("yn", c("x1", "grp"), family = "binomial"))
+  code <- reg_code(m)
+  expect_match(code, "family = binomial", fixed = TRUE)
+  expect_match(code, "odds ratio", fixed = TRUE)
+  expect_error(parse(text = code), NA)
+})
+
+test_that("reg_compare runs a nested F (lm) and LRT (glm)", {
+  a <- reg_fit(mtcars, reg_spec("mpg", "wt"))
+  b <- reg_fit(mtcars, reg_spec("mpg", c("wt", "hp")))
+  cmp <- reg_compare(a, b)
+  expect_true(is.data.frame(cmp$table))
+  expect_true("Pr(>F)" %in% names(cmp$table))
+  expect_true(!is.null(cmp$aic_delta))
+
+  d  <- make_logit_data()
+  ga <- reg_fit(d, reg_spec("yn", "x1", family = "binomial"))
+  gb <- reg_fit(d, reg_spec("yn", c("x1", "grp"), family = "binomial"))
+  cg <- reg_compare(ga, gb)
+  expect_true("Pr(>Chi)" %in% names(cg$table))
+})
+
+test_that("reg_compare guards mixed families and missing models", {
+  a  <- reg_fit(mtcars, reg_spec("mpg", "wt"))
+  d  <- make_logit_data()
+  ga <- reg_fit(d, reg_spec("yn", "x1", family = "binomial"))
+  expect_match(reg_compare(a, ga)$warnings[1], "different kinds")
+  expect_match(reg_compare(NULL, a)$warnings[1], "Save a model")
+})
