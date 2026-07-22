@@ -305,3 +305,41 @@ test_that("a widget with no stamp falls back to the default canvas", {
   expect_equal(dims[2], MAP_PNG_W)
   expect_equal(dims[1], MAP_PNG_H)
 })
+
+test_that("regression_code is glm-aware (mapping line + glm call + ORs)", {
+  d <- mtcars; d$am <- factor(d$am, labels = c("auto", "manual"))
+  m <- reg_fit(d, reg_spec("am", c("wt", "hp"), family = "binomial"))
+  code <- regression_code(m)
+  expect_match(code, "family = binomial", fixed = TRUE)
+  expect_match(code, '== "manual"', fixed = TRUE)   # the success mapping
+  expect_match(code, "odds ratio", fixed = TRUE)
+  expect_error(parse(text = code), NA)
+  # lm path unchanged
+  expect_match(regression_code(stats::lm(mpg ~ wt, mtcars)), "^model <- lm")
+})
+
+test_that("the report headline is logistic-aware and the TOC lists Maps", {
+  d <- mtcars; d$vs <- factor(d$vs)
+  m <- reg_fit(d, reg_spec("vs", "wt", family = "binomial"))
+  spec <- report_spec(d, model = m, maps = list(structure(list(x = list()),
+                        class = c("leaflet", "htmlwidget"))))
+  html <- build_report_html(spec, map_uris = "data:image/png;base64,AAAA")
+  expect_match(html, "McFadden pseudo-R", fixed = TRUE)
+  expect_false(grepl("adjusted NA", html, fixed = TRUE))
+  expect_match(html, '<li><a href="#maps">Maps</a></li>', fixed = TRUE)
+})
+
+test_that("compare_code reproduces the stratified analysis", {
+  d <- mtcars
+  gr <- compare_grid(d, "mpg", "cyl", split_by = "am")
+  res <- list(mode = "num_multi", grid = gr, outcomes = "mpg", groups = "cyl",
+              p_adjust = "BH")
+  code <- compare_code(res)
+  expect_match(code, "strata", fixed = TRUE)
+  expect_match(code, "stratum = s", fixed = TRUE)
+  expect_error(parse(text = code), NA)
+  # and eval reproduces the same number of tests
+  env <- new.env(parent = globalenv()); assign("data", d, envir = env)
+  out <- eval(parse(text = code), envir = env)
+  expect_equal(nrow(out), nrow(gr$summary))
+})

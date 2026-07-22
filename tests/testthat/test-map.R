@@ -618,7 +618,8 @@ test_that("generated code emits the heatmap and scale bar to match the builder",
   code <- generate_map_code(d, list(lon = cc$lon, lat = cc$lat,
                                     heatmap = TRUE, heat_by = "acres"))
   expect_match(code, "addHeatmap", fixed = TRUE)
-  expect_match(code, "intensity = ~acres", fixed = TRUE)
+  expect_match(code, "intensity = ~pmax(0, ifelse(is.finite(acres), acres, 0))",
+               fixed = TRUE)
   expect_match(code, "addScaleBar", fixed = TRUE)
   expect_error(parse(text = code), NA)
   # scalebar off -> not emitted
@@ -701,4 +702,67 @@ test_that("choropleth code-gen parses and reads like the builder", {
   expect_match(code, "addGeoJSON", fixed = TRUE)
   expect_match(code, "tapply(df$yield, as.character(df$county), sum", fixed = TRUE)
   expect_error(parse(text = code), NA)
+})
+
+# ---- adversarial-review fixes (v0.6.0 release hardening) --------------------
+
+test_that("choro_palette falls back to linear on tied quantile breaks", {
+  vals <- c(rep(0, 8), 1, 2, 3, 4)               # 5 distinct but tied quartiles
+  cp <- choro_palette(vals, "auto", "quantile")
+  expect_equal(cp$scale, "linear")
+  expect_match(cp$pal(1), "^#")                   # and the pal actually works
+  expect_equal(choro_palette(rep(5, 4))$scale, "constant")
+})
+
+test_that("hostile GeoJSON property shapes degrade to unmatched, never error", {
+  gj_mk <- function(pl) sprintf(
+    '{"type":"FeatureCollection","features":[{"type":"Feature","properties":%s,"geometry":{"type":"Polygon","coordinates":[[[-82,29],[-81,29],[-81,30],[-82,30],[-82,29]]]}}]}', pl)
+  for (pl in c('{"NAME":["A","Alpha"]}', '{"NAME":[]}', '{"OTHER":"x"}'))
+    expect_s3_class(build_leaflet_map(
+      data.frame(county = "A", yield = 1),
+      list(geojson = gj_mk(pl), region_key = "county", region_prop = "NAME",
+           region_value = "yield")), "leaflet")
+  expect_equal(geojson_prop_chr(list(NAME = list("A", "B")), "NAME"), "A")
+  expect_equal(geojson_prop_chr(list(NAME = list()), "NAME"), "")
+})
+
+test_that("geojson_props unions keys across heterogeneous features", {
+  gj <- parse_geojson(paste0(
+    '{"type":"FeatureCollection","features":[',
+    '{"type":"Feature","properties":{"A":1},"geometry":null},',
+    '{"type":"Feature","properties":{"B":2},"geometry":null}]}'))
+  expect_setequal(geojson_props(gj), c("A", "B"))
+})
+
+test_that("map_heat_weights sanitises hostile weight columns", {
+  expect_false(map_heat_weights(c(NA_real_, NA_real_))$weighted)  # all-NA
+  expect_false(map_heat_weights(c(-5, -1))$weighted)              # all-negative
+  hw <- map_heat_weights(c(1, NA, 3, Inf))
+  expect_true(hw$weighted)
+  expect_equal(hw$intensity, c(1, 0, 3, 0))                        # NA/Inf -> 0
+  expect_equal(hw$max, 3)
+})
+
+test_that("emitted heatmap code carries max= and matches the builder's weights", {
+  d <- make_map_example_data(); cc <- detect_coord_cols(d)
+  code <- generate_map_code(d, list(lon = cc$lon, lat = cc$lat,
+                                    heatmap = TRUE, heat_by = "acres"))
+  expect_match(code, "max = ", fixed = TRUE)
+  expect_match(code, "pmax(0", fixed = TRUE)
+})
+
+test_that("choropleth code-gen honours scalebar/legend flags and quantile fallback", {
+  dat <- data.frame(county = LETTERS[1:8], yield = c(0,0,0,0,0,1,2,3))
+  gjm <- paste0('{"type":"FeatureCollection","features":[',
+    paste(sprintf('{"type":"Feature","properties":{"NAME":"%s"},"geometry":{"type":"Polygon","coordinates":[[[%d,29],[%d,29],[%d,30],[%d,30],[%d,29]]]}}',
+      LETTERS[1:8], -90:-83, -89:-82, -89:-82, -90:-83, -90:-83), collapse=","), "]}")
+  base <- list(geojson = gjm, region_key = "county", region_prop = "NAME",
+               region_value = "yield")
+  c1 <- generate_map_code(dat, c(base, list(scalebar = FALSE, legend = FALSE)))
+  expect_false(grepl("addScaleBar", c1)); expect_false(grepl("addLegend", c1))
+  # tied values + quantile request -> emitted code must use the LINEAR pal too
+  c2 <- generate_map_code(dat, c(base, list(color_scale = "quantile")))
+  expect_match(c2, "colorNumeric", fixed = TRUE)
+  expect_false(grepl("colorQuantile", c2))
+  expect_error(parse(text = c2), NA)
 })

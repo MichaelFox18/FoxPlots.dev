@@ -260,6 +260,17 @@ mapServer <- function(id, data_in) {
           choices = c("Choose..." = "__none__", numeric_cols(df))),
         selectInput(ns("region_agg"), "Summary",
           choices = c("Mean" = "mean", "Sum" = "sum", "Median" = "median")),
+        # Choro styling gets its OWN inputs: the points palette/scale/legend
+        # controls are hidden in this mode, and driving the map from hidden
+        # inputs' stale values is exactly the trap we're avoiding.
+        selectInput(ns("choro_palette"), "Color palette", choices = PALETTES),
+        selectInput(ns("choro_scale"),
+          tagList("Color scale", info_tip(
+            "Quantile gives every colour an equal share of the regions - ",
+            "useful when a few regions dwarf the rest. Falls back to linear ",
+            "when values are too tied for unique bins.")),
+          choices = c("Linear" = "linear", "Quantile (5 bins)" = "quantile")),
+        checkboxInput(ns("choro_legend"), "Show legend", TRUE),
         uiOutput(ns("choro_diag"))
       )
     })
@@ -361,7 +372,7 @@ mapServer <- function(id, data_in) {
     # --- settings list (slot_params analog) ----------------------------------
     map_params <- function() {
       choro <- identical(input$map_type %||% "points", "choro")
-      c(list(
+      base <- list(
         lon        = input$lon %||% "",
         lat        = input$lat %||% "",
         basemap    = input$basemap %||% "CartoDB.Positron",
@@ -384,14 +395,22 @@ mapServer <- function(id, data_in) {
         heat_radius = input$heat_radius %||% MAP_HEAT_RADIUS,
         scalebar   = isTRUE(input$scalebar %||% TRUE),
         title      = input$title
-      ),
+      )
+      if (!choro) return(base)
       # Choropleth mode: the GeoJSON's presence is what routes the builder.
-      if (choro) list(
+      # modifyList (not c()) so the choro-mode styling controls OVERRIDE the
+      # hidden points-mode palette/scale/legend inputs -- c() would keep the
+      # stale points values (first duplicate name wins).
+      utils::modifyList(base, list(
         geojson      = geojson_state(),
         region_key   = input$region_key %||% "__none__",
         region_prop  = input$region_prop %||% "",
         region_value = input$region_value %||% "__none__",
-        region_agg   = input$region_agg %||% "mean"))
+        region_agg   = input$region_agg %||% "mean",
+        palette      = input$choro_palette %||% "auto",
+        color_scale  = input$choro_scale %||% "linear",
+        legend       = isTRUE(input$choro_legend %||% TRUE),
+        heatmap      = FALSE))
     }
     # Debounced so slider drags rebuild the widget once, not per tick.
     params_d <- debounce(reactive(map_params()), 350)
@@ -453,6 +472,11 @@ mapServer <- function(id, data_in) {
                  priority = 10)
     observeEvent({ input$lon; input$lat }, view_state(NULL),
                  ignoreInit = TRUE, priority = 10)
+    # Switching Points <-> Shaded regions is a different geography: without
+    # this reset the choropleth inherits the points view (its own fitBounds
+    # would be unreachable), and vice versa.
+    observeEvent(input$map_type, view_state(NULL),
+                 ignoreInit = TRUE, priority = 10)
 
     # The built widget, shared between the pane and the choropleth diagnostics.
     current_widget <- reactive({
@@ -503,15 +527,34 @@ mapServer <- function(id, data_in) {
 
     output$ui_hint <- renderUI({
       df <- data_in(); req(is.data.frame(df))
-      msg <- map_hint(df, params_d())   # debounced: the hint scans all rows
-      if (is.null(msg)) return(NULL)
+      if (identical(input$map_type, "choro")) {
+        # Points hints (coords, clustering...) don't apply to a choropleth.
+        if (isTRUE(input$heatmap) &&
+            !requireNamespace("leaflet.extras", quietly = TRUE)) return(NULL)
+        return(NULL)
+      }
+      msgs <- map_hint(df, params_d())   # debounced: the hint scans all rows
+      if (isTRUE(input$heatmap) &&
+          !requireNamespace("leaflet.extras", quietly = TRUE))
+        msgs <- paste(c(msgs, paste0(
+          "The density layer needs the optional leaflet.extras package, so ",
+          "it is not drawn (and the generated code needs it installed).")),
+          collapse = " ")
+      if (is.null(msgs)) return(NULL)
       div(class = "alert alert-warning py-1 px-2 small mb-2", role = "alert",
           icon("triangle-exclamation"),
-          HTML(paste0(" ", htmltools::htmlEscape(msg))))
+          HTML(paste0(" ", htmltools::htmlEscape(msgs))))
     })
 
     output$rowcount <- renderUI({
       df <- data_in(); req(is.data.frame(df))
+      if (identical(input$map_type, "choro")) {
+        w <- current_widget(); diag <- attr(w, "choro_diag")
+        if (is.null(diag)) return(NULL)
+        return(span(class = "text-muted small",
+                    sprintf("%d of %d regions matched your data.",
+                            diag$n_matched, diag$n_features)))
+      }
       lon <- map_col(input$lon); lat <- map_col(input$lat)
       if (is.null(lon) || is.null(lat) || identical(lon, lat) ||
           !all(c(lon, lat) %in% names(df)) ||
@@ -544,8 +587,9 @@ mapServer <- function(id, data_in) {
       p <- snapshot_spec(p)
       w <- build_leaflet_map(df, p)
       if (!is.null(w)) attr(w, "fox_snapshot") <- attr(p, "snap")
-      validate(need(!is.null(w),
-                    "Choose the longitude and latitude columns first."))
+      validate(need(!is.null(w), if (identical(input$map_type, "choro"))
+        "Upload boundaries and pick the region property, key column, and value first."
+        else "Choose the longitude and latitude columns first."))
       w
     }
 

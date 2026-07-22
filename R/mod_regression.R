@@ -257,9 +257,25 @@ regressionServer <- function(id, data_in) {
                          duration = 8)
         return(invisible(NULL))
       }
+      # Collect fit-time warnings: for logistic these are the important ones
+      # (non-convergence, "fitted probabilities numerically 0 or 1" = perfect
+      # separation) -- swallowing them and announcing success would mislead.
+      fit_warnings <- character(0)
       tryCatch({
-        model(reg_fit(df, spec))
-        showNotification("Model fitted successfully.", type = "message")
+        m <- withCallingHandlers(
+          reg_fit(df, spec),
+          warning = function(w) {
+            fit_warnings <<- c(fit_warnings, conditionMessage(w))
+            invokeRestart("muffleWarning")
+          })
+        model(m)
+        if (length(fit_warnings)) {
+          showNotification(paste("Model fitted with warnings:",
+                                 paste(unique(fit_warnings), collapse = " / ")),
+                           type = "warning", duration = 10)
+        } else {
+          showNotification("Model fitted successfully.", type = "message")
+        }
       }, error = function(e)
         showNotification(paste("Fitting error:", conditionMessage(e)),
                          type = "error", duration = 8))
@@ -365,7 +381,12 @@ regressionServer <- function(id, data_in) {
       validate(need(!is.null(model()), "Fit a model first."))
       er <- emm_res()
       validate(need(isTRUE(er$ok), er$error %||% "EMMeans unavailable."))
-      lmer_emm_plot(er, input$resp, "none") + labs(title = NULL)
+      p <- lmer_emm_plot(er, input$resp, "none") + labs(title = NULL)
+      # Logistic estimates come back on the probability scale; label it so.
+      if (isTRUE(is_logistic()))
+        p <- p + labs(y = sprintf("P(%s = %s)", input$resp,
+                                  attr(model(), "success") %||% "1"))
+      p
     }, res = 96)
 
     output$emm_code <- renderText({

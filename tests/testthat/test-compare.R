@@ -406,3 +406,25 @@ test_that("p-values are BH-adjusted across the whole stratified grid", {
   expect_equal(g$summary$p_adj,
                stats::p.adjust(g$summary$p_value, method = "BH"))
 })
+
+test_that("split strata order numerically for numeric splits and by factor levels", {
+  d <- data.frame(y = rnorm(60), g = factor(rep(c("a", "b"), 30)),
+                  s = rep(c(1, 2, 10), each = 20))
+  gr <- compare_grid(d, "y", "g", split_by = "s")
+  expect_equal(unique(gr$summary$Stratum), c("1", "2", "10"))   # not 1,10,2
+  d$sf <- factor(rep(c("high", "low", "mid"), each = 20),
+                 levels = c("low", "mid", "high"))
+  gr2 <- compare_grid(d, "y", "g", split_by = "sf")
+  expect_equal(unique(gr2$summary$Stratum), c("low", "mid", "high"))
+})
+
+test_that("compare_grid reports NA-split rows and dropped strata", {
+  d <- mtcars; d$am2 <- d$am; d$am2[1:8] <- NA
+  gr <- compare_grid(d, "mpg", "cyl", split_by = "am2")
+  expect_equal(gr$n_split_na, 8L)
+  # a stratum whose group collapses is named, not silently vanished
+  d2 <- mtcars; d2$s <- ifelse(d2$cyl == 4, "only4", "mixed")
+  d2$gg <- ifelse(d2$s == "only4", "same", c("x", "y"))  # only4 stratum: 1 level
+  gr2 <- compare_grid(d2, "mpg", "gg", split_by = "s")
+  expect_true("only4" %in% gr2$dropped_strata)
+})

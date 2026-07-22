@@ -143,6 +143,11 @@ reg_validate <- function(df, spec) {
     problems <- c(problems, paste(
       "Not enough complete rows to fit this model after dropping missing",
       "values. Add data or use fewer predictors."))
+  if (binomial && sum(cc) > 0 &&
+      length(unique(stats::na.omit(as.character(used[[response]])))) < 2L)
+    problems <- c(problems, sprintf(paste(
+      "After dropping rows with missing predictor values, '%s' has only one",
+      "outcome level left -- there is nothing to model."), response))
   for (v in predictors)
     if (is.factor(used[[v]]) && nlevels(droplevels(used[[v]])) < 2L)
       problems <- c(problems, sprintf(
@@ -478,11 +483,24 @@ reg_emmeans <- function(model, emmvars, by = NULL, adjust = "tukey",
     return(list(ok = FALSE, error = paste(
       "Your selection isn't a categorical predictor in this model. Refit, then",
       "pick a factor.")))
+  if (!is.null(by) && !all(by %in% factors))
+    return(list(ok = FALSE, error =
+      "The 'within' factor isn't a categorical predictor in this model."))
 
-  roles <- emm_roles(emmvars, by)
-  spec  <- emm_spec_formula(emmvars, by)
-  emm <- tryCatch(emmeans::emmeans(model, spec, level = level),
-                  error = function(e) e)
+  # emm_split() derives the by-role by INTERSECTING with the variable set, so
+  # the by-factor must be part of it -- passing emmvars alone silently drops
+  # the conditioning and you'd get plain means labelled as simple effects.
+  allv  <- unique(c(emmvars, by))
+  roles <- emm_roles(allv, by)
+  spec  <- emm_spec_formula(allv, by)
+  # Logistic models estimate on the RESPONSE (probability) scale; the logit
+  # scale would be near-meaningless to this audience.
+  is_logit <- inherits(model, "glm") &&
+    identical(model$family$family, "binomial")
+  emm <- tryCatch(
+    emmeans::emmeans(model, spec, level = level,
+                     type = if (is_logit) "response" else "link"),
+    error = function(e) e)
   if (inherits(emm, "error"))
     return(list(ok = FALSE,
                 error = paste("EMMeans failed:", conditionMessage(emm))))
@@ -501,11 +519,13 @@ reg_emmeans <- function(model, emmvars, by = NULL, adjust = "tukey",
                     data.frame(note = paste("Pairwise comparisons unavailable:",
                                             conditionMessage(e))))
 
-  # Numeric predictors emmeans held at their mean, for an "adjusted means" note.
+  # Numeric predictors emmeans held at their mean, for an "adjusted means"
+  # note. Single-column numeric only (a poly() term is a matrix column); the
+  # name's syntax doesn't matter -- Excel-style spaced covariates count too.
   mf   <- stats::model.frame(model)
   cand <- setdiff(names(mf), c(names(mf)[1], factors))
   held_vars <- cand[vapply(cand, function(v)
-    is.numeric(mf[[v]]) && make.names(v) == v, logical(1))]
+    is.numeric(mf[[v]]) && is.null(dim(mf[[v]])), logical(1))]
   held <- if (length(held_vars))
     paste(sprintf("%s = %.4g", held_vars,
                   vapply(held_vars, function(v) mean(mf[[v]], na.rm = TRUE),
@@ -513,7 +533,7 @@ reg_emmeans <- function(model, emmvars, by = NULL, adjust = "tukey",
 
   list(ok = TRUE, error = NULL, emm = emm, vars = emmvars, roles = roles,
        main_vars = roles$main, by_var = roles$by, cld = cld_df, pairs = prs,
-       held = held, backtransformed = FALSE)
+       held = held, backtransformed = is_logit)
 }
 
 #' Copy-ready code for the EMMeans / post-hoc block.

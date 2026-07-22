@@ -224,7 +224,12 @@ compareServer <- function(id, data_in) {
         para  <- identical(input$method, "param")
         ph    <- input$posthoc %||% "dunn"
         split <- input$split_by %||% ""
-        split <- if (nzchar(split) && !split %in% c(outs, grps)) split else NULL
+        # A split that is also an outcome/group makes no sense; say so rather
+        # than silently running unsplit (the chip would still show a split).
+        validate(need(!(nzchar(split) && split %in% c(outs, grps)), paste(
+          "The split variable is also selected as an outcome or group. Pick a",
+          "different split, or remove it there.")))
+        split <- if (nzchar(split)) split else NULL
         # A split makes even one outcome x group a family (one test per stratum),
         # so route through the grid whenever a split is set OR n_combo > 1.
         if (n_combo == 1L && is.null(split)) {
@@ -241,6 +246,14 @@ compareServer <- function(id, data_in) {
             p_adjust = input$p_adjust %||% "BH", split_by = split))
           validate(need(!is.null(gr),
             "None of those combinations are testable. Each needs a numeric outcome and a group with 2+ levels and 2+ rows each."))
+          # The per-combination renderers are pre-created up to
+          # COMPARE_MAX_COMBOS; a split multiplies the grid, and any panel
+          # beyond the cap would render permanently blank.
+          validate(need(length(gr$keys) <= COMPARE_MAX_COMBOS, sprintf(
+            paste("That is %d tests once the split is applied (the limit is",
+                  "%d). Pick fewer outcomes/groups or a split variable with",
+                  "fewer levels."),
+            length(gr$keys), COMPARE_MAX_COMBOS)))
           list(mode = "num_multi", grid = gr, outcomes = outs, groups = grps,
                p_adjust = input$p_adjust %||% "BH")
         }
@@ -539,12 +552,21 @@ compareServer <- function(id, data_in) {
         helpText(class = "text-warning", sprintf(
           "Only the first %d levels of %s are shown (a split variable is capped).",
           COMPARE_SPLIT_MAX, r$grid$split_by)) else NULL
+      na_note <- if (!is.null(r$grid$split_by) && (r$grid$n_split_na %||% 0L) > 0L)
+        helpText(class = "text-warning", sprintf(
+          "%s rows with a missing %s value are in NO stratum.",
+          format(r$grid$n_split_na, big.mark = ","), r$grid$split_by)) else NULL
+      dropped_note <- if (length(r$grid$dropped_strata %||% character(0)))
+        helpText(class = "text-warning", sprintf(
+          "Stratum %s had nothing testable (group needs 2+ levels with 2+ rows) and is not shown; p_adj is corrected across the %d tests that ran.",
+          paste(shQuote(r$grid$dropped_strata), collapse = ", "),
+          nrow(r$grid$summary))) else NULL
       smry <- card(
         card_header(icon("table-list"), " All combinations"),
         helpText(sprintf(paste("One test per outcome x group%s. p_adj corrects",
                                "across all %d combinations (%s)."),
                          split_lab, nrow(r$grid$summary), adj_lab %||% r$p_adjust)),
-        cap_note,
+        cap_note, na_note, dropped_note,
         DT::DTOutput(ns("grid_tbl")))
       panels <- lapply(seq_along(r$grid$keys), function(i) {
         ri <- r$grid$results[[i]]

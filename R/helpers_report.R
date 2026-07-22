@@ -118,23 +118,42 @@ summary_code <- function(summary_tbl) {
 #' @noRd
 compare_code <- function(res) {
   if (is.null(res) || !is.list(res)) return(NULL)
-  # A grid: loop the same test over every outcome x group, then adjust across all.
+  # A grid: loop the same test over every outcome x group (and, when the
+  # analysis was split by a third variable, over each of its levels -- the
+  # emitted code must reproduce the STRATIFIED analysis, not an unsplit one),
+  # then adjust across all.
   if (identical(res$mode, "num_multi")) {
-    para <- isTRUE(res$grid$results[[1]]$parametric)
+    para  <- isTRUE(res$grid$results[[1]]$parametric)
+    split <- res$grid$split_by
     call <- if (para)
-      "      fit <- aov(data[[o]] ~ factor(data[[g]]))\n      p <- summary(fit)[[1]][[\"Pr(>F)\"]][1]"
+      "      fit <- aov(d[[o]] ~ factor(d[[g]]))\n      p <- summary(fit)[[1]][[\"Pr(>F)\"]][1]"
     else
-      "      kt <- kruskal.test(data[[o]] ~ factor(data[[g]]))\n      p <- kt$p.value"
+      "      kt <- kruskal.test(d[[o]] ~ factor(d[[g]]))\n      p <- kt$p.value"
+    if (is.null(split)) {
+      return(sprintf(paste0(
+        "outcomes <- c(%s)\ngroups   <- c(%s)\nd <- data\n\n",
+        "res <- data.frame()\nfor (o in outcomes) {\n  for (g in groups) {\n",
+        "%s\n",
+        "      res <- rbind(res, data.frame(outcome = o, group = g, p_value = p))\n",
+        "  }\n}\n",
+        "res$p_adj <- p.adjust(res$p_value, method = \"%s\")\nres"),
+        paste(sprintf("\"%s\"", res$outcomes), collapse = ", "),
+        paste(sprintf("\"%s\"", res$groups), collapse = ", "),
+        call, res$p_adjust %||% "BH"))
+    }
     return(sprintf(paste0(
-      "outcomes <- c(%s)\ngroups   <- c(%s)\n\n",
-      "res <- data.frame()\nfor (o in outcomes) {\n  for (g in groups) {\n",
-      "%s\n",
-      "      res <- rbind(res, data.frame(outcome = o, group = g, p_value = p))\n",
-      "  }\n}\n",
-      "res$p_adj <- p.adjust(res$p_value, method = \"%s\")\nres"),
+      "outcomes <- c(%s)\ngroups   <- c(%s)\n",
+      "strata   <- sort(unique(na.omit(data[[\"%s\"]])))  # analysis is split by %s\n\n",
+      "res <- data.frame()\nfor (s in strata) {\n",
+      "  d <- data[!is.na(data[[\"%s\"]]) & data[[\"%s\"]] == s, ]\n",
+      "  for (o in outcomes) {\n    for (g in groups) {\n",
+      "  %s\n",
+      "      res <- rbind(res, data.frame(outcome = o, group = g, stratum = s, p_value = p))\n",
+      "    }\n  }\n}\n",
+      "res$p_adj <- p.adjust(res$p_value, method = \"%s\")  # across the whole stratified family\nres"),
       paste(sprintf("\"%s\"", res$outcomes), collapse = ", "),
       paste(sprintf("\"%s\"", res$groups), collapse = ", "),
-      call, res$p_adjust %||% "BH"))
+      split, split, split, split, call, res$p_adjust %||% "BH"))
   }
   is_cat <- !is.null(res$var1) && !is.null(res$var2) && is.null(res$outcome)
   if (is_cat)
@@ -165,6 +184,21 @@ regression_code <- function(model) {
   if (is.null(model) || !inherits(model, "lm")) return(NULL)
   f <- paste(deparse(stats::formula(model)), collapse = " ")
   f <- gsub("\\s+", " ", f)
+  if (inherits(model, "glm") &&
+      identical(model$family$family, "binomial")) {
+    # The app mapped the binary response to 0/1 with attr "success" as the
+    # modelled level; without the same mapping the pasted code can flip signs
+    # (glm on a factor models P(second FACTOR level), not P(success)).
+    resp <- as.character(stats::formula(model))[2]
+    succ <- attr(model, "success")
+    map_line <- if (!is.null(succ)) sprintf(
+      "data[[%s]] <- as.integer(as.character(data[[%s]]) == %s)  # 1 = %s\n",
+      qq(resp), qq(resp), qq(succ), succ) else ""
+    return(paste0(map_line,
+                  "model <- glm(", f, ", data = data, family = binomial)\n",
+                  "summary(model)\n",
+                  "exp(cbind(`odds ratio` = coef(model), confint(model)))"))
+  }
   paste0("model <- lm(", f, ", data = data)\nsummary(model)")
 }
 
@@ -412,9 +446,17 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
 .section_regression <- function(spec, reg_uris) {
   m  <- spec$model; info <- spec$model_interp
   f  <- paste(deparse(stats::formula(m)), collapse = " ")
+  logit <- identical(info$family, "binomial")
   sig <- !is.na(info$overall_p) && info$overall_p < 0.05
   vcl <- if (sig) "verdict-sig" else "verdict-ns"
-  headline <- sprintf(
+  # Logistic models get a McFadden line (a linear-R2 reading would be wrong)
+  # and a likelihood-ratio label for the overall test.
+  headline <- if (logit) sprintf(
+    "<p><b>Model:</b> <code>%s</code> (logistic)</p><p><b>McFadden pseudo-R&sup2; = %s</b> \u2014 0.2\u20130.4 already indicates a good fit for a logistic model (this is not %% of variance). <span class=\"%s\">%s (likelihood-ratio test, %s).</span></p>",
+    html_escape(f), info$r2, vcl,
+    if (sig) "Overall model is significant" else "Overall model is not significant",
+    .report_p(info$overall_p))
+  else sprintf(
     "<p><b>Model:</b> <code>%s</code></p><p><b>R&sup2; = %s</b> (adjusted %s) \u2014 explains %s%% of the variance. <span class=\"%s\">%s (%s).</span></p>",
     html_escape(f), info$r2, info$adj_r2, round(info$r2 * 100, 1), vcl,
     if (sig) "Overall model is significant" else "Overall model is not significant",
@@ -423,8 +465,11 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
   co <- cbind(Term = rownames(co), co); rownames(co) <- NULL
   sig_txt <- if (length(info$significant))
     paste(info$significant, collapse = ", ") else "none"
+  diag_note <- if (logit) paste0(
+    "<p class=\"note\">For a logistic model these plots show deviance ",
+    "residuals against fitted probabilities (the response is 0/1).</p>") else ""
   diag <- if (length(reg_uris) >= 1)
-    paste0("<h3>Diagnostics</h3>",
+    paste0("<h3>Diagnostics</h3>", diag_note,
            paste0(sprintf("<figure><img src=\"%s\" alt=\"Diagnostic\"></figure>", reg_uris),
                   collapse = "")) else ""
   code <- if (isTRUE(spec$show_code)) code_block_html(spec$regression_code) else ""
@@ -458,6 +503,7 @@ build_report_html <- function(spec, plot_uris = character(0),
 
   toc_items <- c(
     overview   = "Data overview", summary = "Summary", charts = "Charts",
+    maps       = "Maps",
     comparison = "Group comparison", regression = "Regression")
   toc <- paste0(vapply(names(toc_items), function(k)
     if (isTRUE(sec[[k]]))

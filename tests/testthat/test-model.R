@@ -335,3 +335,31 @@ test_that("reg_compare guards mixed families and missing models", {
   expect_match(reg_compare(a, ga)$warnings[1], "different kinds")
   expect_match(reg_compare(NULL, a)$warnings[1], "Save a model")
 })
+
+test_that("reg_emmeans honours the 'by' factor (simple effects)", {
+  d <- mtcars; d$cyl <- factor(d$cyl); d$am <- factor(d$am)
+  er <- reg_emmeans(reg_fit(d, reg_spec("mpg", c("cyl", "am"),
+                                        interactions = TRUE)),
+                    "cyl", by = "am")
+  expect_true(er$ok)
+  expect_equal(er$by_var, "am")
+  expect_true("am" %in% names(er$cld))            # per-stratum letters
+  expect_false(reg_emmeans(reg_fit(d, reg_spec("mpg", c("cyl", "wt"))),
+                           "cyl", by = "wt")$ok)  # numeric by rejected
+})
+
+test_that("logistic EMMeans come back on the probability scale", {
+  withr::local_seed(42)
+  n <- 300; x <- rnorm(n); g <- factor(sample(c("A","B","C"), n, TRUE))
+  y <- rbinom(n, 1, plogis(-0.3 + 0.8*x + ifelse(g=="B", 1, 0)))
+  d <- data.frame(y = y, x = x, g = g)
+  er <- reg_emmeans(reg_fit(d, reg_spec("y", c("x", "g"), family = "binomial")), "g")
+  expect_true(er$ok)
+  expect_true("prob" %in% names(er$cld))          # response scale, not logit
+  expect_true(all(er$cld$prob >= 0 & er$cld$prob <= 1))
+})
+
+test_that("reg_validate rejects a binomial response constant among usable rows", {
+  d <- data.frame(y = c(0, 0, 0, 1, 1), x = c(1, 2, 3, NA, NA))
+  expect_gt(length(reg_validate(d, reg_spec("y", "x", family = "binomial"))), 0L)
+})

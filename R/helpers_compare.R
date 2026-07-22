@@ -496,18 +496,30 @@ compare_grid <- function(df, outcomes, groups, parametric = TRUE,
   split_by <- if (!is.null(split_by) && length(split_by) && nzchar(split_by) &&
                   split_by %in% names(df)) split_by else NULL
   split_capped <- FALSE
+  n_split_na  <- 0L
   strata <- if (is.null(split_by)) {
     list(list(label = NA_character_, rows = rep(TRUE, nrow(df))))
   } else {
-    sv <- as.character(df[[split_by]])
-    lv <- sort(unique(sv[!is.na(sv)]))
+    svr <- df[[split_by]]
+    sv  <- as.character(svr)
+    n_split_na <- sum(is.na(sv))
+    # Level ORDER matters for which strata survive the cap: honour factor
+    # levels, sort numerics numerically (character-sorting a coded-numeric
+    # split gives 1,10,11,...,2), and only fall back to character sort.
+    lv <- if (is.factor(svr)) {
+      intersect(levels(svr), unique(sv[!is.na(sv)]))
+    } else if (is.numeric(svr)) {
+      as.character(sort(unique(svr[!is.na(svr)])))
+    } else sort(unique(sv[!is.na(sv)]))
     if (length(lv) > COMPARE_SPLIT_MAX) { split_capped <- TRUE; lv <- lv[seq_len(COMPARE_SPLIT_MAX)] }
     lapply(lv, function(l) list(label = l, rows = !is.na(sv) & sv == l))
   }
 
   keys <- character(0); results <- list(); rows <- list()
+  dropped_strata <- character(0)
   for (st in strata) {
     sdf <- df[st$rows, , drop = FALSE]
+    stratum_hit <- FALSE
     for (o in outcomes) for (g in groups) {
       if (identical(o, g) || identical(o, split_by) || identical(g, split_by))
         next
@@ -515,6 +527,7 @@ compare_grid <- function(df, outcomes, groups, parametric = TRUE,
         compare_groups_numeric(sdf, o, g, parametric = parametric,
                                var_equal = var_equal, posthoc = posthoc))
       if (is.null(r)) next
+      stratum_hit <- TRUE
       key <- if (is.na(st$label)) paste0(o, " by ", g)
              else sprintf("%s by %s | %s = %s", o, g, split_by, st$label)
       keys <- c(keys, key)
@@ -535,6 +548,8 @@ compare_grid <- function(df, outcomes, groups, parametric = TRUE,
       if (!is.null(split_by)) row$Stratum <- st$label
       rows[[key]] <- row
     }
+    if (!is.null(split_by) && !stratum_hit)
+      dropped_strata <- c(dropped_strata, st$label)
   }
   if (!length(keys)) return(NULL)
 
@@ -550,7 +565,8 @@ compare_grid <- function(df, outcomes, groups, parametric = TRUE,
   smry <- smry[, cols]
   list(summary = smry, results = results, keys = keys, p_adjust = p_adjust,
        outcomes = outcomes, groups = groups, split_by = split_by,
-       split_capped = split_capped)
+       split_capped = split_capped, dropped_strata = dropped_strata,
+       n_split_na = n_split_na)
 }
 
 # --- two categorical variables ----------------------------------------------

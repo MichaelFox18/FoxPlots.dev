@@ -144,6 +144,20 @@ map_bbox <- function(df, lon, lat, pad = 0.05) {
   list(lng1 = rl[1], lat1 = rt[1], lng2 = rl[2], lat2 = rt[2])
 }
 
+# Sanitise a heatmap weight column. leaflet.heat needs finite, positive
+# intensities and a positive max; an all-NA column would make max() return
+# -Inf (serialised to null -> invisible layer + a warning per rebuild), and
+# negative weights produce NaN cell math. Unusable weights -> plain density.
+# The single source of truth: builder AND code generator both call this.
+map_heat_weights <- function(v) {
+  if (is.null(v) || !is.numeric(v))
+    return(list(intensity = NULL, max = 1, weighted = FALSE))
+  fin <- is.finite(v) & v > 0
+  if (!any(fin)) return(list(intensity = NULL, max = 1, weighted = FALSE))
+  w <- ifelse(fin, v, 0)          # NA/Inf/negative rows count as zero weight
+  list(intensity = w, max = max(w), weighted = TRUE)
+}
+
 # Effective size scale for a numeric size-by column: the requested one unless
 # the data can't support it. Twin of map_color_scale() and the single source of
 # truth for the fallback -- builder, code-gen and map_hint all consult it.
@@ -440,11 +454,22 @@ parse_geojson <- function(x) {
   gj
 }
 
-# The distinct feature-property names available to join on (the first feature's
-# property keys; GeoJSON features share a schema in practice).
+# The distinct feature-property names available to join on. Real-world files
+# are NOT always homogeneous, so union the keys across (up to) the first 100
+# features rather than trusting feature 1's schema.
 geojson_props <- function(gj) {
   if (is.null(gj) || !length(gj$features)) return(character(0))
-  names(gj$features[[1]]$properties)
+  n <- min(length(gj$features), 100L)
+  unique(unlist(lapply(gj$features[seq_len(n)],
+                       function(f) names(f$properties))))
+}
+
+# A feature property as a length-1 character, whatever shape the JSON gave it:
+# scalars pass through, arrays take their first element, empty/NULL -> "".
+geojson_prop_chr <- function(props, name) {
+  v <- props[[name]]
+  v <- unlist(v, use.names = FALSE)
+  if (is.null(v) || !length(v)) "" else as.character(v[[1]])
 }
 
 # Bounding box of every coordinate in the collection, walking the nested
@@ -476,13 +501,25 @@ choro_palette <- function(vals, palette = "auto", color_scale = "linear") {
   vv   <- vals[is.finite(vals)]
   nuni <- length(unique(vv))
   cols <- map_palette_colors(palette, TRUE, max(nuni, 3L))
-  scale <- if (identical(color_scale, "quantile") && nuni >= MAP_CHORO_BINS)
-    "quantile" else "linear"
+  # Quantile needs UNIQUE breaks, not just enough distinct values -- tied
+  # quantiles (e.g. many regions sharing one value) make colorQuantile()'s cut()
+  # error at CALL time with "'breaks' are not unique". Same fallback rule as
+  # map_color_scale(); a constant column (nuni < 2) can't even do linear.
+  scale <- "linear"
+  if (identical(color_scale, "quantile") && nuni >= MAP_CHORO_BINS) {
+    qs <- stats::quantile(vv, probs = seq(0, 1, 1 / MAP_CHORO_BINS),
+                          na.rm = TRUE)
+    if (length(unique(qs)) == MAP_CHORO_BINS + 1L) scale <- "quantile"
+  }
   pal <- if (identical(scale, "quantile"))
-    leaflet::colorQuantile(cols, domain = vv,
-                           n = min(MAP_CHORO_BINS, nuni), na.color = "#dddddd")
-  else
+    leaflet::colorQuantile(cols, domain = vv, n = MAP_CHORO_BINS,
+                           na.color = "#dddddd")
+  else if (nuni >= 2L)
     leaflet::colorNumeric(cols, domain = range(vv), na.color = "#dddddd")
+  else {
+    scale <- "constant"    # single value: one colour, and no legend to draw
+    function(x) rep(UF_BLUE, length(x))
+  }
   list(pal = pal, scale = scale)
 }
 
@@ -519,7 +556,9 @@ build_choropleth <- function(df, p) {
   gj$features <- gj$features[seq_len(n_feat)]
   geo_keys <- character(0); matched <- 0L
   for (i in seq_len(n_feat)) {
-    rk <- as.character(gj$features[[i]]$properties[[prop]] %||% "")
+    # geojson_prop_chr: arrays take their first element, NULL/empty -> "" --
+    # a hostile property shape must degrade to "unmatched", never error.
+    rk <- geojson_prop_chr(gj$features[[i]]$properties, prop)
     geo_keys <- c(geo_keys, rk)
     v   <- if (nzchar(rk) && rk %in% names(vals_by)) unname(vals_by[[rk]]) else NA_real_
     col <- if (is.finite(v)) cp$pal(v) else "#dddddd"
@@ -534,7 +573,7 @@ build_choropleth <- function(df, p) {
   m <- leaflet::addProviderTiles(m, p$basemap %||% "CartoDB.Positron")
   m <- leaflet::addGeoJSON(m, gj, weight = 1, color = "#ffffff",
                            fillOpacity = p$alpha %||% 0.75)
-  if (isTRUE(p$legend %||% TRUE))
+  if (isTRUE(p$legend %||% TRUE) && !identical(cp$scale, "constant"))
     m <- leaflet::addLegend(m, position = "bottomright", pal = cp$pal,
                             values = as.numeric(vals_by), title = val,
                             opacity = 0.9)
@@ -653,6 +692,21 @@ build_leaflet_map <- function(df, p) {
 
   m <- leaflet::leaflet(d)
   m <- leaflet::addProviderTiles(m, basemap)
+
+  # Density heatmap overlay (leaflet.extras, optional). Added BEFORE the
+  # markers so it draws under them (leaflet stacks layers in add order).
+  # Weighting uses map_heat_weights() -- the shared sanitiser the code
+  # generator also consults -- and quietly falls back to plain density when
+  # the weight column is unusable (all-NA/Inf, or a non-positive max).
+  if (isTRUE(p$heatmap) && requireNamespace("leaflet.extras", quietly = TRUE)) {
+    hw <- map_heat_weights(if (!is.null(map_col(p$heat_by)) &&
+                               map_col(p$heat_by) %in% names(d))
+      d[[map_col(p$heat_by)]] else NULL)
+    m <- leaflet.extras::addHeatmap(
+      m, lng = d[[lon]], lat = d[[lat]], intensity = hw$intensity,
+      radius = p$heat_radius %||% MAP_HEAT_RADIUS, blur = 15, max = hw$max)
+  }
+
   if (is.null(gv)) {
     m <- leaflet::addCircleMarkers(
       m, lng = d[[lon]], lat = d[[lat]],
@@ -712,19 +766,6 @@ build_leaflet_map <- function(df, p) {
       m <- leaflet::addControl(m, position = "bottomleft", html = leg_html)
   }
 
-  # Density heatmap overlay (leaflet.extras, optional). Weighted by heat_by when
-  # it is a numeric column, otherwise plain point density. Drawn UNDER the
-  # markers so both read; requireNamespace-guarded like the hexbin chart.
-  if (isTRUE(p$heatmap) && requireNamespace("leaflet.extras", quietly = TRUE)) {
-    hb <- map_col(p$heat_by)
-    intensity <- if (!is.null(hb) && hb %in% names(d) && is.numeric(d[[hb]]))
-      d[[hb]] else NULL
-    m <- leaflet.extras::addHeatmap(
-      m, lng = d[[lon]], lat = d[[lat]], intensity = intensity,
-      radius = p$heat_radius %||% MAP_HEAT_RADIUS, blur = 15,
-      max = if (is.null(intensity)) 1 else max(intensity, na.rm = TRUE))
-  }
-
   # Scale bar (native leaflet). On by default -- it makes an exported PNG read
   # as a real map. Bottom-left, where it can share the corner with the size key.
   if (isTRUE(p$scalebar %||% TRUE))
@@ -762,11 +803,48 @@ build_leaflet_map <- function(df, p) {
 
 # Standalone script for the choropleth. The GeoJSON itself is the user's
 # uploaded file, so the script reads it from disk rather than embedding it.
-generate_choropleth_code <- function(p) {
+# Mirrors the builder: same aggregated values, same palette decision
+# (choro_palette) computed here on the actual data, scale bar honoured.
+generate_choropleth_code <- function(p, df = NULL) {
   key  <- map_col(p$region_key);  prop <- p$region_prop %||% "NAME"
   val  <- map_col(p$region_value)
   agg  <- p$region_agg %||% "mean"
   if (is.null(key) || is.null(val)) return("# Choose the join key and value.")
+
+  # Decide the palette exactly as the builder will, using the real values.
+  cols  <- map_palette_colors(p$palette %||% "auto", TRUE, MAP_CHORO_BINS)
+  scale <- "linear"
+  if (!is.null(df) && all(c(key, val) %in% names(df)) &&
+      is.numeric(df[[val]])) {
+    fn <- switch(agg, sum = function(x) sum(x, na.rm = TRUE),
+                 median = function(x) stats::median(x, na.rm = TRUE),
+                 function(x) mean(x, na.rm = TRUE))
+    vb <- tapply(df[[val]], as.character(df[[key]]), fn)
+    scale <- choro_palette(as.numeric(vb[is.finite(vb)]),
+                           p$palette %||% "auto",
+                           p$color_scale %||% "linear")$scale
+  }
+  pal_line <- if (identical(scale, "quantile")) sprintf(
+    'pal  <- colorQuantile(%s, domain = vals[is.finite(vals)], n = %d, na.color = "#dddddd")',
+    map_palette_code(cols), MAP_CHORO_BINS)
+  else if (identical(scale, "constant")) sprintf(
+    "pal  <- function(x) rep(%s, length(x))   # single value: one colour",
+    qq(UF_BLUE))
+  else sprintf(
+    'pal  <- colorNumeric(%s, domain = range(vals, finite = TRUE), na.color = "#dddddd")',
+    map_palette_code(cols))
+
+  pipe <- c(
+    "leaflet()",
+    sprintf('addProviderTiles("%s")', p$basemap %||% "CartoDB.Positron"),
+    "addGeoJSON(gj, weight = 1)",
+    if (isTRUE(p$legend %||% TRUE) && !identical(scale, "constant")) sprintf(
+      'addLegend(position = "bottomright", pal = pal, values = vals[is.finite(vals)], title = %s)',
+      qq(val)),
+    if (isTRUE(p$scalebar %||% TRUE)) 'addScaleBar(position = "bottomleft")')
+  pipe_txt <- paste0(pipe[1], " |>\n  ",
+                     paste(pipe[-1], collapse = " |>\n  "))
+
   paste(c(
     "library(leaflet)",
     "library(jsonlite)",
@@ -777,13 +855,12 @@ generate_choropleth_code <- function(p) {
     sprintf("# %s of %s within each %s", agg, bq(val), bq(key)),
     sprintf("vals <- tapply(df$%s, as.character(df$%s), %s, na.rm = TRUE)",
             bq(val), bq(key), agg),
-    'pal  <- colorNumeric("viridis", domain = range(vals, finite = TRUE),',
-    '                     na.color = "#dddddd")',
+    pal_line,
     "",
     "# Colour each region by writing its style into the feature properties",
     "# (leaflet's default style function reads feature.properties.style):",
     "for (i in seq_along(gj$features)) {",
-    sprintf('  k <- as.character(gj$features[[i]]$properties[["%s"]])', prop),
+    sprintf('  k <- unlist(gj$features[[i]]$properties[["%s"]])[1]', prop),
     "  v <- if (!is.null(k) && k %in% names(vals)) vals[[k]] else NA_real_",
     "  gj$features[[i]]$properties$style <- list(",
     '    fillColor = if (is.finite(v)) pal(v) else "#dddddd",',
@@ -791,12 +868,7 @@ generate_choropleth_code <- function(p) {
     "    fillOpacity = if (is.finite(v)) 0.75 else 0.35)",
     "}",
     "",
-    "leaflet() |>",
-    sprintf('  addProviderTiles("%s") |>', p$basemap %||% "CartoDB.Positron"),
-    "  addGeoJSON(gj, weight = 1) |>",
-    sprintf('  addLegend(position = "bottomright", pal = pal, values = vals, title = %s) |>',
-            qq(val)),
-    '  addScaleBar(position = "bottomleft")'),
+    pipe_txt),
     collapse = "\n")
 }
 
@@ -824,7 +896,7 @@ generate_map_code <- function(df, p) {
     return("# Import data to generate map code.")
   # Choropleth mode has its own (much shorter) script.
   if (!is.null(p$geojson) && !is.null(map_col(p$region_value)))
-    return(generate_choropleth_code(p))
+    return(generate_choropleth_code(p, df))
   lon <- map_col(p$lon); lat <- map_col(p$lat)
   if (is.null(lon) || is.null(lat) || identical(lon, lat) ||
       !lon %in% names(df) || !lat %in% names(df) ||
@@ -969,14 +1041,20 @@ generate_map_code <- function(df, p) {
     '%s, position = "topright"',
     qq(sprintf("<b>%s</b>", htmltools::htmlEscape(ttl))))
 
-  # Heatmap overlay + scale bar (emitted to match the builder).
+  # Heatmap overlay + scale bar (emitted to match the builder). The same
+  # map_heat_weights() rule decides weighting, and max= is emitted -- without
+  # it leaflet.heat's default max=1 saturates every weighted cell into one
+  # uniform blob, nothing like the app's map.
   heat_args <- if (isTRUE(p$heatmap)) {
     hb <- map_col(p$heat_by)
-    weighted <- !is.null(hb) && hb %in% names(d0) && is.numeric(d0[[hb]])
-    sprintf("lng = ~%s, lat = ~%s%s, radius = %s, blur = 15",
+    hw <- map_heat_weights(if (!is.null(hb) && hb %in% names(d0)) d0[[hb]]
+                           else NULL)
+    sprintf("lng = ~%s, lat = ~%s%s, radius = %s, blur = 15, max = %s",
             bq(lon), bq(lat),
-            if (weighted) sprintf(", intensity = ~%s", bq(hb)) else "",
-            p$heat_radius %||% MAP_HEAT_RADIUS)
+            if (hw$weighted) sprintf(", intensity = ~pmax(0, ifelse(is.finite(%s), %s, 0))",
+                                     bq(hb), bq(hb)) else "",
+            p$heat_radius %||% MAP_HEAT_RADIUS,
+            if (hw$weighted) format(hw$max) else "1")
   }
   scalebar_on <- isTRUE(p$scalebar %||% TRUE)
 
