@@ -17,6 +17,13 @@
   means), Tukey/Sidak/Bonferroni pairwise comparisons, a compact-letter-display
   grouping, and a means-with-CI plot -- the same emmeans / multcomp engine the
   Mixed Model tool uses.
+- **A full diagnostics tab.** Beyond the original fitted-vs-actual and
+  residuals-vs-fitted plots there are now Normal Q-Q, Scale-Location, and Cook's
+  distance (with the 4/n influence line), an **assumption-check panel** with
+  pass/check badges (residual normality via Shapiro-Wilk, constant variance via
+  Breusch-Pagan, linearity via a quadratic-residual test, and an order-dependent
+  Durbin-Watson independence flag), and a **VIF multicollinearity** table --
+  hand-rolled to match `car::vif` with no `car` dependency.
 - **Copy-ready R code.** Regression was the last major tab without a code export;
   it now emits scripts that reproduce the fit exactly (including factor reference
   levels and interaction/polynomial terms) and the EMMeans/post-hoc block.

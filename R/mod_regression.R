@@ -83,9 +83,27 @@ regressionUI <- function(id) {
           layout_columns(
             col_widths = c(6, 6),
             card(card_header(icon("chart-line"), " Fitted vs Actual"),
-                 plotly::plotlyOutput(ns("plot_fitted"), height = "320px")),
+                 plotly::plotlyOutput(ns("plot_fitted"), height = "300px")),
             card(card_header(icon("chart-simple"), " Residuals vs Fitted"),
-                 plotly::plotlyOutput(ns("plot_resid"), height = "320px"))
+                 plotly::plotlyOutput(ns("plot_resid"), height = "300px"))
+          ),
+          layout_columns(
+            col_widths = c(6, 6),
+            card(card_header(icon("chart-area"), " Normal Q-Q"),
+                 plotOutput(ns("plot_qq"), height = "300px")),
+            card(card_header(icon("chart-simple"), " Scale-Location"),
+                 plotOutput(ns("plot_scaleloc"), height = "300px"))
+          ),
+          card(card_header(icon("magnifying-glass-chart"), " Cook's distance"),
+               plotOutput(ns("plot_cooks"), height = "260px")),
+          layout_columns(
+            col_widths = c(7, 5),
+            card(card_header(icon("clipboard-check"), " Assumption checks"),
+                 uiOutput(ns("assumptions"))),
+            card(card_header(icon("diagram-project"),
+                             " Multicollinearity (VIF)"),
+                 DT::DTOutput(ns("vif")),
+                 uiOutput(ns("vif_note")))
           )
         ),
         nav_panel("Model summary & code",
@@ -369,6 +387,61 @@ regressionServer <- function(id, data_in) {
                     "Fit a model to see the residuals diagnostic."))
       plotly::ggplotly(reg_resid_gg(model())) |>
         plotly::layout(margin = list(t = 90, b = 40, l = 55, r = 20))
+    })
+    # Static (these carry a loess smooth / per-obs stems that ggplotly mangles).
+    output$plot_qq <- renderPlot({
+      validate(need(!is.null(model()), "Fit a model first."))
+      reg_qq_gg(model())
+    }, res = 96)
+    output$plot_scaleloc <- renderPlot({
+      validate(need(!is.null(model()), "Fit a model first."))
+      reg_scale_loc_gg(model())
+    }, res = 96)
+    output$plot_cooks <- renderPlot({
+      validate(need(!is.null(model()), "Fit a model first."))
+      reg_cooks_gg(model())
+    }, res = 96)
+
+    # -- assumption checks + VIF -----------------------------------------------
+    output$assumptions <- renderUI({
+      if (is.null(model()))
+        return(tags$p(class = "text-muted fst-italic",
+                      "Fit a model to check its assumptions."))
+      a <- reg_assumptions(model())
+      badge <- function(ok) {
+        if (is.na(ok))
+          tags$span(class = "badge bg-secondary", "n/a")
+        else if (isTRUE(ok))
+          tags$span(class = "badge bg-success", "OK")
+        else
+          tags$span(class = "badge bg-warning text-dark", "Check")
+      }
+      rows <- lapply(seq_len(nrow(a)), function(i) {
+        p_txt <- if (is.na(a$p_value[i])) "" else
+          sprintf(" (%s, p = %s)", a$Test[i],
+                  if (a$p_value[i] < 0.001) "< 0.001" else round(a$p_value[i], 3))
+        tags$li(class = "mb-1", badge(a$OK[i]), " ",
+                tags$b(a$Assumption[i]), tags$span(class = "text-muted", p_txt))
+      })
+      tagList(
+        tags$ul(class = "list-unstyled mb-2", rows),
+        tags$p(class = "text-muted small mb-0", attr(a, "independence_note"))
+      )
+    })
+
+    output$vif <- DT::renderDT({
+      validate(need(!is.null(model()), "Fit a model first."))
+      v <- reg_vif(model())
+      validate(need(!is.null(v),
+                    "VIF needs at least two predictor terms."))
+      DT::datatable(v, rownames = FALSE, class = "compact stripe",
+                    options = list(dom = "t", paging = FALSE, scrollX = TRUE))
+    })
+    output$vif_note <- renderUI({
+      if (is.null(model()) || is.null(reg_vif(model()))) return(NULL)
+      tags$p(class = "text-muted small mt-2 mb-0",
+             "VIF > 5 is moderate, > 10 is high multicollinearity. Factor and ",
+             "interaction terms are shown per level.")
     })
 
     output$download <- downloadHandler(

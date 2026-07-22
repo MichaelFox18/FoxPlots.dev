@@ -182,3 +182,58 @@ test_that("reg_emm_code parses and calls the emmeans engine", {
   expect_match(code, "cld(", fixed = TRUE)
   expect_null(reg_emm_code(NULL))
 })
+
+# ---- diagnostics, assumptions, VIF (Phase 4) --------------------------------
+
+test_that("the extra diagnostic plots are buildable ggplots", {
+  m <- reg_fit(mtcars, reg_spec("mpg", c("wt", "hp")))
+  for (fn in c(reg_qq_gg, reg_scale_loc_gg, reg_cooks_gg)) {
+    p <- fn(m)
+    expect_s3_class(p, "ggplot")
+    expect_silent(ggplot2::ggplot_build(p))
+  }
+})
+
+test_that("reg_assumptions returns the four verdicts", {
+  a <- reg_assumptions(reg_fit(mtcars, reg_spec("mpg", c("wt", "hp"))))
+  expect_named(a, c("Assumption", "Test", "Statistic", "p_value", "OK"))
+  expect_setequal(a$Assumption,
+                  c("Normality of residuals", "Constant variance",
+                    "Linearity", "Independence (row order)"))
+  expect_match(attr(a, "independence_note"), "time order")
+  expect_null(reg_assumptions(NULL))
+})
+
+test_that("reg_assumptions flags a heteroscedastic fit (Breusch-Pagan)", {
+  withr::local_seed(1)
+  x <- 1:200; y <- x + stats::rnorm(200, sd = x / 6)   # variance grows with x
+  bp <- reg_assumptions(stats::lm(y ~ x))
+  expect_false(bp$OK[bp$Assumption == "Constant variance"])
+})
+
+test_that("reg_assumptions flags a curved (non-linear) fit", {
+  withr::local_seed(2)
+  x <- seq(-3, 3, length.out = 100); y <- x^2 + stats::rnorm(100, sd = 0.3)
+  a <- reg_assumptions(stats::lm(y ~ x))                # straight line on a parabola
+  expect_false(a$OK[a$Assumption == "Linearity"])
+})
+
+test_that("reg_vif matches car::vif and guards the small case", {
+  m  <- reg_fit(mtcars, reg_spec("mpg", c("wt", "hp", "disp")))
+  v  <- reg_vif(m)
+  expect_named(v, c("Term", "VIF", "Concern"))
+  skip_if_not_installed("car")
+  expect_equal(v$VIF, round(unname(car::vif(m)), 3))
+})
+
+test_that("reg_vif needs at least two predictors", {
+  expect_null(reg_vif(reg_fit(mtcars, reg_spec("mpg", "wt"))))
+  expect_null(reg_vif(NULL))
+})
+
+test_that("reg_vif buckets concern at the 5 / 10 thresholds", {
+  v <- reg_vif(reg_fit(mtcars, reg_spec("mpg", c("wt", "hp", "disp"))))
+  expect_true(all(v$Concern %in% c("low", "moderate", "high", "n/a")))
+  # disp is the collinear one here (VIF ~7.3 -> moderate)
+  expect_equal(v$Concern[v$Term == "disp"], "moderate")
+})

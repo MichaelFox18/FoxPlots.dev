@@ -403,3 +403,143 @@ reg_resid_gg <- function(model) {
     theme(plot.title = element_text(hjust = 0.5, face = "bold"),
           plot.subtitle = element_text(hjust = 0.5, size = 9, color = "#777"))
 }
+
+# Shared theme for the extra diagnostics.
+.reg_diag_theme <- function() {
+  theme_minimal(base_size = 12) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+          plot.subtitle = element_text(hjust = 0.5, size = 9, color = "#777"))
+}
+
+#' Normal Q-Q plot of the standardized residuals. Requires ggplot2 attached.
+#' @noRd
+reg_qq_gg <- function(model) {
+  d <- data.frame(sample = stats::rstandard(model))
+  note <- thin_note(nrow(d)); d <- thin_rows(d)
+  ggplot(d, aes(sample = .data[["sample"]])) +
+    stat_qq(color = UF_BLUE, size = 2, alpha = 0.7) +
+    stat_qq_line(color = UF_ORANGE, linetype = "dashed", linewidth = 1) +
+    labs(title = "Normal Q-Q", subtitle = note,
+         x = "Theoretical quantiles", y = "Standardized residuals") +
+    .reg_diag_theme()
+}
+
+#' Scale-location plot: sqrt(|standardized residuals|) vs fitted -- a flat cloud
+#' means constant variance. Requires ggplot2 attached.
+#' @noRd
+reg_scale_loc_gg <- function(model) {
+  d <- data.frame(fitted = stats::fitted(model),
+                  sl = sqrt(abs(stats::rstandard(model))))
+  note <- thin_note(nrow(d)); d <- thin_rows(d)
+  ggplot(d, aes(x = .data[["fitted"]], y = .data[["sl"]])) +
+    geom_point(color = UF_BLUE, size = 2, alpha = 0.7) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE,
+                color = UF_ORANGE, linewidth = 1) +
+    labs(title = "Scale-Location", subtitle = note, x = "Fitted values",
+         y = "sqrt(|Std. residuals|)") +
+    .reg_diag_theme()
+}
+
+#' Cook's distance per observation, with the 4/n rule-of-thumb line. Not thinned
+#' -- the whole point is the influential points. Requires ggplot2 attached.
+#' @noRd
+reg_cooks_gg <- function(model) {
+  ck  <- stats::cooks.distance(model)
+  d   <- data.frame(obs = seq_along(ck), cooks = unname(ck))
+  thr <- 4 / length(ck)
+  ggplot(d, aes(x = .data[["obs"]], y = .data[["cooks"]])) +
+    geom_segment(aes(xend = .data[["obs"]], yend = 0), color = UF_BLUE) +
+    geom_hline(yintercept = thr, color = UF_ORANGE, linetype = "dashed",
+               linewidth = 1) +
+    labs(title = "Cook's distance",
+         subtitle = sprintf("Points above %.3g (4/n) are influential", thr),
+         x = "Observation", y = "Cook's distance") +
+    .reg_diag_theme()
+}
+
+# --- assumptions + multicollinearity ----------------------------------------
+
+#' Assumption checks for a linear model.
+#'
+#' A verdict table like mod_compare's: normality of residuals (Shapiro-Wilk),
+#' constant variance (Breusch-Pagan against the fitted values), linearity (a
+#' RESET-style test for leftover curvature -- residuals carry a quadratic-of-
+#' fitted term only if the mean structure is misspecified), and independence
+#' (Durbin-Watson; ORDER-DEPENDENT, only meaningful if the rows are in time
+#' order). All hand-rolled, base/stats only.
+#'
+#' @param model An lm object.
+#' @return A data frame [Assumption, Test, Statistic, p_value, OK], or NULL.
+#'   OK is TRUE (met), FALSE (violated) or NA (not assessable). Independence
+#'   carries an order-dependent caveat in `attr(x, "independence_note")`.
+#' @noRd
+reg_assumptions <- function(model) {
+  if (is.null(model) || !inherits(model, "lm")) return(NULL)
+  r <- stats::residuals(model); f <- stats::fitted(model); n <- length(r)
+  row <- function(a, t, s, p, ok)
+    data.frame(Assumption = a, Test = t, Statistic = s, p_value = p, OK = ok,
+               stringsAsFactors = FALSE)
+  na_row <- function(a, t) row(a, t, NA_real_, NA_real_, NA)
+
+  # Normality of residuals
+  norm_row <- if (n >= 3L && n <= 5000L && stats::sd(r) > 0) {
+    sw <- stats::shapiro.test(r)
+    row("Normality of residuals", "Shapiro-Wilk",
+        round(unname(sw$statistic), 4), sw$p.value, sw$p.value >= 0.05)
+  } else na_row("Normality of residuals", "Shapiro-Wilk")
+
+  # Constant variance: Breusch-Pagan against fitted (LM = n * R^2 ~ chisq_1)
+  var_row <- tryCatch({
+    stat <- n * summary(stats::lm(I(r^2) ~ f))$r.squared
+    p    <- stats::pchisq(stat, df = 1, lower.tail = FALSE)
+    row("Constant variance", "Breusch-Pagan", round(stat, 4), p, p >= 0.05)
+  }, error = function(e) na_row("Constant variance", "Breusch-Pagan"))
+
+  # Linearity: a quadratic-of-fitted term in the residuals signals curvature.
+  lin_row <- tryCatch({
+    cf <- stats::coef(summary(stats::lm(r ~ f + I(f^2))))
+    p  <- cf["I(f^2)", 4]
+    row("Linearity", "Quadratic residual test", round(cf["I(f^2)", 3], 4),
+        p, p >= 0.05)
+  }, error = function(e) na_row("Linearity", "Quadratic residual test"))
+
+  # Independence: Durbin-Watson (~2 = no serial correlation). No exact p here;
+  # flag on distance from 2. Only meaningful if rows are ordered in time.
+  dw <- sum(diff(r)^2) / sum(r^2)
+  ind_row <- row("Independence (row order)", "Durbin-Watson",
+                 round(dw, 4), NA_real_, abs(dw - 2) < 1)
+
+  res <- rbind(norm_row, var_row, lin_row, ind_row)
+  attr(res, "independence_note") <- paste(
+    "Durbin-Watson only detects serial correlation if the rows are in time",
+    "order; otherwise ignore it.")
+  res
+}
+
+#' Variance inflation factors (multicollinearity).
+#'
+#' Hand-rolled 1/(1 - R^2_j) by regressing each model-matrix column on the
+#' others -- identical to car::vif for numeric predictors, and no `car`
+#' dependency. For factor / interaction terms these are per-dummy VIFs (car's
+#' GVIF would pool them); still a useful collinearity signal. NULL with < 2
+#' predictor columns (VIF is undefined).
+#'
+#' @param model An lm object.
+#' @return A data frame [Term, VIF, Concern] (low/moderate/high at 5/10), or NULL.
+#' @noRd
+reg_vif <- function(model) {
+  if (is.null(model) || !inherits(model, "lm")) return(NULL)
+  X <- stats::model.matrix(model)
+  X <- X[, colnames(X) != "(Intercept)", drop = FALSE]
+  if (ncol(X) < 2L) return(NULL)
+  vif <- vapply(seq_len(ncol(X)), function(j) {
+    r2 <- tryCatch(summary(stats::lm(X[, j] ~ X[, -j, drop = FALSE]))$r.squared,
+                   error = function(e) NA_real_)
+    if (is.na(r2) || r2 >= 1) NA_real_ else 1 / (1 - r2)
+  }, numeric(1))
+  data.frame(Term = colnames(X), VIF = round(vif, 3),
+             Concern = ifelse(is.na(vif), "n/a",
+                       ifelse(vif > 10, "high",
+                       ifelse(vif > 5, "moderate", "low"))),
+             stringsAsFactors = FALSE)
+}
