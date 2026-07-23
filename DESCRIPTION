@@ -1,8 +1,10 @@
 Package: foxplots
 Title: Point-and-Click Data Exploration and Reshaping Toolkit
-Version: 0.7.0
+Version: 0.8.0
 Authors@R:
     person("Michael", "Fox", , "michaelfox0418@gmail.com", role = c("aut", "cre"))
+URL: https://github.com/UFSDACU/FoxPlots
+BugReports: https://github.com/UFSDACU/FoxPlots/issues
 Description: A point-and-click toolkit, built on 'shiny', for importing,
     cleaning, reshaping, summarizing, visualizing, comparing, modeling, and
     exporting tabular data without writing R code. It bundles reusable Shiny
@@ -58,6 +60,7 @@ Suggests:
     officer,
     pbkrtest,
     performance,
+    png,
     testthat (>= 3.0.0),
     webshot2,
     withr

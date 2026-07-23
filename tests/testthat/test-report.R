@@ -64,7 +64,8 @@ test_that("compare_code emits the right call per test branch", {
   # non-parametric routing
   rk <- compare_groups_numeric(mtcars, "mpg", "cyl", parametric = FALSE)
   expect_true(grepl("kruskal.test", compare_code(rk), fixed = TRUE))
-  rw <- compare_groups_numeric(mtcars, "mpg", "am", parametric = FALSE)
+  rw <- suppressWarnings(   # mtcars mpg has ties -> expected exact-p warning
+    compare_groups_numeric(mtcars, "mpg", "am", parametric = FALSE))
   expect_true(grepl("wilcox.test", compare_code(rw), fixed = TRUE))
   # categorical
   rc <- compare_categorical(mtcars, "cyl", "gear"); rc$mode <- "cat"

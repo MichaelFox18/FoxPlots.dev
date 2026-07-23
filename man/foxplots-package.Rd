@@ -8,6 +8,14 @@
 \description{
 A point-and-click toolkit, built on 'shiny', for importing, cleaning, reshaping, summarizing, visualizing, comparing, modeling, and exporting tabular data without writing R code. It bundles reusable Shiny modules on a shared, unit-tested helper foundation and ships eight ready-to-run apps: a full Data Explorer plus focused Reshape, Combine, Compare Groups, Mixed Model Review, GLMM Review, Map, and Regression tools.
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/UFSDACU/FoxPlots}
+  \item Report bugs at \url{https://github.com/UFSDACU/FoxPlots/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Michael Fox \email{michaelfox0418@gmail.com}
 

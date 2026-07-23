@@ -1,3 +1,11 @@
+# foxplots 0.8.0 (development)
+
+Polish pass + CRAN-readiness groundwork. Highlights land here as the work
+progresses.
+
+- Package metadata: `URL`/`BugReports` now point at the public repository;
+  `png` declared in Suggests (it was used undeclared in tests).
+
 # foxplots 0.7.0
 
 ## An eighth app: GLMM Review (`run_glmm_review()`)

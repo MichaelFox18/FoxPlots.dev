@@ -12,6 +12,10 @@ label_or(custom, default)
 
 \item{default}{The fallback label.}
 }
+\value{
+A single string: `custom` when it is non-NULL and non-blank after
+  trimming, otherwise `default`.
+}
 \description{
 Custom label if the user typed one, else a default -- used wherever an
 optional text input overrides an auto-generated label (axis titles, etc.).

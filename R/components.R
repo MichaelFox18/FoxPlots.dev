@@ -52,7 +52,10 @@ uf_theme <- function() {
 uf_logo_uri <- function() {
   cands <- c(
     system.file("www", "IFAS-White.png", package = "foxplots"),
-    tryCatch(here::here("inst", "www", "IFAS-White.png"), error = function(e) NA_character_),
+    if (requireNamespace("here", quietly = TRUE))
+      tryCatch(here::here("inst", "www", "IFAS-White.png"),
+               error = function(e) NA_character_)
+    else NA_character_,
     "inst/www/IFAS-White.png"
   )
   cands <- cands[!is.na(cands) & nzchar(cands)]
@@ -79,6 +82,8 @@ uf_title <- function(text, logo = uf_logo_uri()) {
 #' optional text input overrides an auto-generated label (axis titles, etc.).
 #' @param custom The user-entered string (may be NULL/blank).
 #' @param default The fallback label.
+#' @return A single string: `custom` when it is non-NULL and non-blank after
+#'   trimming, otherwise `default`.
 #' @export
 label_or <- function(custom, default) {
   if (!is.null(custom) && nzchar(trimws(custom))) custom else default
