@@ -422,6 +422,10 @@ map_hint <- function(df, p) {
         "'%s' doesn't have enough distinct values for quantile sizing %s using a linear scale.",
         sv, SYM_MDASH))
   }
+  if (!isTRUE(p$show_points %||% TRUE) && !isTRUE(p$heatmap))
+    hints <- c(hints, paste0(
+      "Point markers are hidden and the density heatmap is off ", SYM_MDASH,
+      " the map shows only the basemap. Turn one of them back on."))
   if (identical(p$cluster %||% "auto", "off") && nrow(cc$data) > MAP_BIG_ROWS)
     hints <- c(hints, sprintf(
       "%s points without clustering can be slow %s consider setting Cluster to Auto.",
@@ -707,7 +711,12 @@ build_leaflet_map <- function(df, p) {
       radius = p$heat_radius %||% MAP_HEAT_RADIUS, blur = 15, max = hw$max)
   }
 
-  if (is.null(gv)) {
+  # Markers can be hidden outright (e.g. heatmap-only view); the legends
+  # below are marker keys, so they hide with them.
+  show_pts <- isTRUE(p$show_points %||% TRUE)
+  if (!show_pts) {
+    # no marker layers, no layers control
+  } else if (is.null(gv)) {
     m <- leaflet::addCircleMarkers(
       m, lng = d[[lon]], lat = d[[lat]],
       radius      = radius,
@@ -741,7 +750,8 @@ build_leaflet_map <- function(df, p) {
       position = "topleft")
   }
 
-  show_legend <- !is.null(pal_info) && isTRUE(p$legend %||% TRUE) &&
+  show_legend <- show_pts && !is.null(pal_info) &&
+    isTRUE(p$legend %||% TRUE) &&
     (pal_info$kind == "numeric" || pal_info$n <= MAP_LEGEND_MAX)
   if (show_legend) {
     # Log scale colors run over log10(values); relabel the legend back to the
@@ -757,7 +767,7 @@ build_leaflet_map <- function(df, p) {
   # Size key. Without one, graduated circles are decoration -- there is no way
   # to read a value off a bubble. Sits bottom-LEFT so it never collides with
   # the color legend above.
-  if (!is.null(sizev) && isTRUE(p$size_legend %||% TRUE)) {
+  if (show_pts && !is.null(sizev) && isTRUE(p$size_legend %||% TRUE)) {
     leg_html <- size_legend_html(
       size_legend_breaks(d[[sizev]], size_scale, MAP_RADIUS_RANGE),
       title = sizev,
@@ -905,6 +915,15 @@ generate_map_code <- function(df, p) {
 
   cc <- clean_coords(df, lon, lat)
   d0 <- cc$data   # guards evaluate on the CLEANED rows, matching the builder
+  # Hidden markers: the emitted script drops the marker layer and everything
+  # that only describes markers (grouping, color/size palettes, legends,
+  # popups/labels) but keeps the heatmap, scale bar, and title.
+  show_pts <- isTRUE(p$show_points %||% TRUE)
+  if (!show_pts) {
+    p$group_by <- "__none__"; p$color <- "__none__"; p$size_by <- "__none__"
+    p$legend <- FALSE; p$size_legend <- FALSE
+    p$label_col <- "__none__"; p$popup_cols <- character(0)
+  }
   gv <- map_col(p$group_by)
   if (!is.null(gv) && (!gv %in% names(d0) || all(is.na(d0[[gv]])) ||
                        dplyr::n_distinct(map_group_vals(d0[[gv]])) > MAP_GROUP_MAX))
@@ -1062,7 +1081,7 @@ generate_map_code <- function(df, p) {
     lines <- c(
       "leaflet(df)",
       sprintf('addProviderTiles("%s")', basemap),
-      sprintf("addCircleMarkers(%s)",
+      if (show_pts) sprintf("addCircleMarkers(%s)",
               paste(marker_args, collapse = ",\n                   ")))
     if (!is.null(heat_args))
       lines <- c(lines, sprintf("leaflet.extras::addHeatmap(%s)", heat_args))

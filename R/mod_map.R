@@ -93,6 +93,12 @@ mapUI <- function(id) {
                   step = 0.05),
       conditionalPanel(
         sprintf("input['%s'] == 'points'", ns("map_type")),
+        checkboxInput(ns("show_points"),
+          tagList("Show point markers", info_tip(
+            "Untick to hide the markers entirely - e.g. to view the density ",
+            "heatmap on its own. The HTML/PNG downloads and the generated ",
+            "code follow suit.")),
+          value = TRUE),
         radioButtons(ns("cluster"),
                      tagList("Cluster nearby points", info_tip(
                        "Groups close-together markers into expandable bubbles. ",
@@ -386,6 +392,7 @@ mapServer <- function(id, data_in) {
         alpha      = input$alpha %||% 0.8,
         popup_cols = input$popup_cols,
         label_col  = input$label_col %||% "__none__",
+        show_points = isTRUE(input$show_points %||% TRUE),
         cluster    = input$cluster %||% "auto",
         legend     = isTRUE(input$legend %||% TRUE),
         color_scale = input$color_scale %||% "linear",
@@ -410,6 +417,7 @@ mapServer <- function(id, data_in) {
         palette      = input$choro_palette %||% "auto",
         color_scale  = input$choro_scale %||% "linear",
         legend       = isTRUE(input$choro_legend %||% TRUE),
+        show_points  = TRUE,   # regions replace markers; the toggle is points-mode only
         heatmap      = FALSE))
     }
     # Debounced so slider drags rebuild the widget once, not per tick.

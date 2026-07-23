@@ -766,3 +766,55 @@ test_that("choropleth code-gen honours scalebar/legend flags and quantile fallba
   expect_false(grepl("colorQuantile", c2))
   expect_error(parse(text = c2), NA)
 })
+
+# ---- show_points: heatmap-only view (0.8.0) -------------------------------
+
+test_that("show_points = FALSE drops markers, layers control, and legends", {
+  d <- make_map_example_data()
+  p <- list(lon = "lon", lat = "lat", color = "yield", size_by = "acres",
+            group_by = "county", show_points = FALSE, heatmap = FALSE)
+  m <- build_leaflet_map(d, p)
+  calls <- vapply(m$x$calls, function(cl) cl$method, character(1))
+  expect_false("addCircleMarkers" %in% calls)
+  expect_false("addLayersControl" %in% calls)
+  expect_false("addLegend" %in% calls)
+  # default / TRUE keeps markers exactly as before
+  p$show_points <- TRUE
+  calls2 <- vapply(build_leaflet_map(d, p)$x$calls,
+                   function(cl) cl$method, character(1))
+  expect_true("addCircleMarkers" %in% calls2)
+  p$show_points <- NULL
+  calls3 <- vapply(build_leaflet_map(d, p)$x$calls,
+                   function(cl) cl$method, character(1))
+  expect_true("addCircleMarkers" %in% calls3)
+})
+
+test_that("show_points = FALSE keeps the heatmap layer (heatmap-only view)", {
+  skip_if_not_installed("leaflet.extras")
+  d <- make_map_example_data()
+  p <- list(lon = "lon", lat = "lat", show_points = FALSE, heatmap = TRUE)
+  calls <- vapply(build_leaflet_map(d, p)$x$calls,
+                  function(cl) cl$method, character(1))
+  expect_true("addHeatmap" %in% calls)
+  expect_false("addCircleMarkers" %in% calls)
+})
+
+test_that("generated code mirrors the hidden-markers map and stays parseable", {
+  d <- make_map_example_data()
+  p <- list(lon = "lon", lat = "lat", color = "yield", group_by = "county",
+            show_points = FALSE, heatmap = TRUE, heat_radius = 18)
+  code <- generate_map_code(d, p)
+  expect_no_match(code, "addCircleMarkers", fixed = TRUE)
+  expect_match(code, "addHeatmap", fixed = TRUE)
+  expect_no_match(code, "addLegend", fixed = TRUE)
+  expect_silent(parse(text = code))
+})
+
+test_that("map_hint warns when points are hidden and no heatmap is on", {
+  d <- make_map_example_data()
+  p <- list(lon = "lon", lat = "lat", show_points = FALSE, heatmap = FALSE)
+  expect_match(map_hint(d, p), "only the basemap")
+  p$heatmap <- TRUE
+  hint <- map_hint(d, p)
+  expect_true(is.null(hint) || !grepl("only the basemap", hint))
+})
