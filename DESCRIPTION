@@ -20,9 +20,11 @@ Imports:
     bslib,
     colourpicker,
     datasets,
+    DHARMa,
     dplyr,
     DT,
     emmeans,
+    glmmTMB,
     ggplot2,
     graphics,
     grDevices,
@@ -45,6 +47,7 @@ Imports:
     utils,
     writexl
 Suggests:
+    car,
     chromote,
     here,
     hexbin,
