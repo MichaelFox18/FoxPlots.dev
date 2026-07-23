@@ -297,3 +297,59 @@ test_that("glmm_emm_code parameterizes spec, adjust, and level", {
   expect_silent(parse(text = code))
   expect_equal(glmm_emm_code(character(0)), "")
 })
+
+# ---- module smoke test (testServer works on the macOS dev box) ------------
+
+test_that("glmmServer fits on example data and returns the augmented frame", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  shiny::testServer(glmmServer, args = list(data_in = shiny::reactive(d),
+                                            binary = FALSE), {
+    session$setInputs(response = "insect_count", family = "nbinom2_log",
+                      fixed = "Treatment", random = "Site",
+                      interactions = FALSE, zi_on = FALSE,
+                      adjust = "tukey", conf = 0.95, emm_by = "",
+                      run = 1)
+    expect_true(rv$fit$ok)
+    expect_match(rv$fit$fml_str, "insect_count")
+    expect_equal(nrow(session$returned()), nrow(d))
+    # combined-variable builder augments the returned frame
+    session$setInputs(combo_vars = c("Treatment", "Season"), combo_sep = ".",
+                      combo_add = 1)
+    expect_true("Treatment.Season" %in% names(session$returned()))
+  })
+})
+
+test_that("glmmServer binary instance recodes and fits a 0/1 model", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  shiny::testServer(glmmServer, args = list(data_in = shiny::reactive(d),
+                                            binary = TRUE), {
+    session$setInputs(response = "present", link = "logit",
+                      fixed = "Treatment", random = "Site",
+                      interactions = FALSE, zi_on = FALSE,
+                      adjust = "tukey", conf = 0.95, emm_by = "",
+                      run = 1)
+    expect_true(rv$fit$ok)
+    expect_true(rv$fit$binary)
+  })
+})
+
+test_that("lmer_emm_plot handles binomial (prob) and count (response) scales", {
+  skip_if_not_installed("glmmTMB")
+  skip_if_not_installed("emmeans")
+  skip_if_not_installed("multcomp")
+  skip_if_not_installed("multcompView")
+  d <- make_glmm_example_data()
+  fit_b <- glmm_fit(d, list(response = "present", fixed = "Treatment",
+                            random = "Site", binary = TRUE, link = "logit"))
+  em_b <- glmm_emmeans(fit_b, "Treatment")
+  expect_true("prob" %in% names(em_b$cld))         # binomial names it prob
+  p <- lmer_emm_plot(em_b, "present", "none")
+  expect_s3_class(p, "ggplot")
+  fit_p <- glmm_fit(d, list(response = "insect_count", fixed = "Treatment",
+                            random = "Site", family_key = "poisson_log"))
+  em_p <- glmm_emmeans(fit_p, "Treatment")
+  p2 <- lmer_emm_plot(em_p, "insect_count", "none")
+  expect_s3_class(p2, "ggplot")
+})

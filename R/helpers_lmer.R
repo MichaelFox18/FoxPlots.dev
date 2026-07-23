@@ -786,7 +786,10 @@ draw_resid_plots <- function(mod) {
 lmer_emm_plot <- function(er, response, transform) {
   cldf  <- er$cld
   roles <- er$roles
-  valcol <- if ("response" %in% names(cldf)) "response" else "emmean"
+  # emmeans names the response-scale estimate by family: "response" for most,
+  # "prob" for binomial, "rate" for Poisson/negative-binomial; "emmean" on
+  # the link/identity scale. Take the first present.
+  valcol <- intersect(c("response", "prob", "rate", "emmean"), names(cldf))[1]
   lcol <- intersect(c("lower.CL", "asymp.LCL", "LCL"), names(cldf))[1]
   ucol <- intersect(c("upper.CL", "asymp.UCL", "UCL"), names(cldf))[1]
   grpcol <- if (".group" %in% names(cldf)) ".group" else NA

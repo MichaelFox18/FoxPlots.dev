@@ -1,3 +1,39 @@
+# foxplots 0.7.0
+
+## An eighth app: GLMM Review (`run_glmm_review()`)
+
+- **Generalized linear mixed models via `glmmTMB`**, contributed as a
+  standalone app and absorbed into the kit's module pattern: import a table,
+  pick a response, a distribution family, fixed and random effects from
+  drop-downs, and fit -- no `glmmTMB()` calls to write.
+- **Eight families** on the General GLMM tab (Gaussian identity/log, Gamma,
+  Poisson, negative binomial nbinom1/nbinom2, Tweedie, Beta), each with a
+  live plain-language note on what response values are valid -- and an
+  automatic check of your actual response against that range **before** you
+  fit.
+- **Zero-inflation (`ziformula`) and dispersion (`dispformula`) side
+  models**, point-and-click: toggle zero-inflation on (intercept-only or
+  with predictors), and let residual dispersion vary with up to two
+  predictors -- including user-created combined variables.
+- **Binary (0/1) outcomes get their own tab** with a link-function picker
+  (logit / probit / cloglog / cauchit) and Bernoulli-specific guardrails --
+  no dispersion model is offered (0/1 data has no free dispersion
+  parameter), and two-level factors are recoded with the second level as
+  "success", stated on screen.
+- **DHARMa simulation-based residual diagnostics** -- the right tool for
+  glmmTMB, replacing the classic residual panel: QQ + residual plot,
+  overdispersion, zero-inflation, and outlier tests, plus a classic Pearson
+  chi-square / df cross-check.
+- **Type III Wald ANOVA** (`car::Anova`), **EMMeans on the response scale**
+  with pairwise comparisons and compact-letter display, an EMMeans plot,
+  CSV/PNG downloads, and copy-pasteable R code reproducing the whole
+  analysis.
+- A seeded **field example dataset** (`make_glmm_example_data()`) with an
+  overdispersed count, a zero-heavy count, a proportion, and a 0/1 response
+  -- one column per family worth demonstrating.
+- New dependencies: `glmmTMB` and `DHARMa` (Imports); `car` (Suggests,
+  gracefully absent).
+
 # foxplots 0.6.0
 
 ## Map: shaded regions (choropleth), density heatmap, and a scale bar
