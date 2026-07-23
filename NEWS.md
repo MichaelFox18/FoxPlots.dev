@@ -1,10 +1,66 @@
-# foxplots 0.8.0 (development)
+# foxplots 0.8.0
 
-Polish pass + CRAN-readiness groundwork. Highlights land here as the work
-progresses.
+A polish release: every item from the 0.6.0/0.7.0 field-testing punch list,
+plus CRAN-readiness groundwork.
 
-- Package metadata: `URL`/`BugReports` now point at the public repository;
-  `png` declared in Suggests (it was used undeclared in tests).
+## Compare Groups
+
+- **"Split by" can return to "(none)"** -- the placeholder trapped you
+  before (the empty-valued option was never clickable once a variable was
+  chosen). The dropdown now works both ways.
+- **A live plan line under the pickers** says exactly what will run --
+  "3 outcomes x 2 groups = 6 tests will run." -- growing an "x N levels of
+  am" factor when split, and warning before you hit the limit. A companion
+  line previews what a chosen split will do (levels, cap truncation, rows
+  with missing split values) *before* anything computes.
+- **The combination limit is now 24** (was 12), matching the pickers' own
+  6-outcome x 4-group maximum; a full 6x4 grid runs with family-wide BH
+  correction.
+- **Connecting letters now show standard errors**: Group / Mean / SE / N /
+  Letters (pooled SE on the ANOVA path, per-group on the rank path), in
+  the app, both report formats, and the text export.
+
+## Regression
+
+- **The Estimated-means tab no longer clips its controls** in the Data
+  Explorer (the panel stopped competing for viewport height; long tabs
+  scroll like the standalone tool).
+- **Model comparison explains itself**: a framing question, numbered
+  steps, a worked example, and a live status line that walks you from
+  "nothing fitted yet" to "Comparing A vs B" with both formulas shown.
+
+## Reports
+
+- **Wide tables are readable.** Every table sits in a scroll-in-place
+  wrapper; tables past 8 columns get a compact face that fits the page.
+  In Word -- which cannot scroll sideways -- wide tables are split into
+  chunks that each repeat the label column and announce their column
+  range.
+
+## Map
+
+- **Hide the point markers** (new checkbox) to view the density heatmap on
+  its own; downloads and generated code follow suit, and a hint warns when
+  the map would be basemap-only.
+- **Combine points by area**: pick a county/region/zip-style column and
+  the map draws ONE bubble per area at the centroid of its points, sized
+  by how many it combines and shaded by the area average of your color
+  column. The generated R script reproduces the aggregation. Columns with
+  up to 100 areas qualify; the sidebar explains anything it refuses.
+- The row-count footer now says when **Auto clustering** has actually
+  switched on.
+
+## One "Export & Report" tab
+
+- The Export and Report tabs merged into a single navbar entry with two
+  sub-tabs ("Data & downloads" / "Full report") in the Data Explorer,
+  Compare Groups, and Regression tools.
+
+## CRAN readiness
+
+- `URL`/`BugReports` point at the public repository; `png` declared in
+  Suggests; every exported function documents its return value;
+  `R CMD check --as-cran` is clean apart from environment-specific NOTEs.
 
 # foxplots 0.7.0
 

@@ -917,3 +917,46 @@ test_that("map_hint explains an unusable combine column", {
   expect_match(map_hint(d, list(lon = "lon", lat = "lat", cluster_by = "one")),
                "only one area")
 })
+
+# ---- release-review regression tests (0.8.0 B8) ---------------------------
+
+test_that("a user column literally named Points survives admin combine", {
+  d <- make_map_example_data()
+  d$Points <- d$yield * 2
+  ac <- admin_cluster_params(d, list(cluster_by = "county", color = "Points"),
+                             "lon", "lat")
+  expect_true(ac$active)
+  ref <- tapply(d$Points, d$county, mean)
+  expect_equal(ac$d$Points[ac$d$county == names(ref)[1]],
+               unname(ref[1]))                       # user data intact
+  expect_true(".n_points" %in% ac$p$popup_cols)      # count shown via internal
+})
+
+test_that("map_lon_mean handles the antimeridian; codegen twin matches", {
+  expect_equal(map_lon_mean(c(-81, -83)), -82)       # ordinary case = mean
+  m <- map_lon_mean(c(179, -179))
+  expect_true(abs(m) == 180)                         # near the line, not 0
+  d <- data.frame(a = c("x", "x", "y", "y"), lat = c(10, 11, 12, 13),
+                  lon = c(179, -179, 30, 32))
+  out <- aggregate_by_admin(d, "a", "lon", "lat")
+  expect_true(abs(out$lon[out$a == "x"]) == 180)
+  expect_equal(out$lon[out$a == "y"], 31)            # ordinary area untouched
+  code <- generate_map_code(d, list(lon = "lon", lat = "lat",
+                                    cluster_by = "a"))
+  expect_match(code, "lonmean", fixed = TRUE)
+})
+
+test_that("admin-mode generated code titles the size legend Points", {
+  d <- make_map_example_data()
+  code <- generate_map_code(d, list(lon = "lon", lat = "lat",
+                                    cluster_by = "county"))
+  expect_match(code, "Points", fixed = TRUE)
+  expect_no_match(code, ">\\.n_points<")             # no internal name in HTML
+})
+
+test_that("basemap-only hint fires despite a stale heatmap tick in admin mode", {
+  d <- make_map_example_data()
+  p <- list(lon = "lon", lat = "lat", cluster_by = "county",
+            show_points = FALSE, heatmap = TRUE)     # stale hidden tick
+  expect_match(map_hint(d, p), "only the basemap")
+})

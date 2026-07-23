@@ -214,6 +214,10 @@ compareServer <- function(id, data_in) {
     output$split_info <- renderUI({
       split <- active_split(); req(split)
       sp <- split_preview(data_in()[[split]])
+      if (sp$n_used == 0L)
+        return(helpText(class = "text-warning", sprintf(
+          "%s has no non-missing values - the split cannot run. Pick another variable or (none).",
+          split)))
       msg <- sprintf("%s: %d level%s -> each test runs once per level.",
                      split, sp$n_used, if (sp$n_used == 1L) "" else "s")
       extra <- character(0)
@@ -232,9 +236,14 @@ compareServer <- function(id, data_in) {
       grps <- (input$group   %||% character(0)); grps <- grps[nzchar(grps)]
       split <- active_split()
       n_strata <- if (!is.null(split)) split_preview(df[[split]])$n_used else 1L
-      txt <- compare_plan_text(length(outs), length(grps), n_strata, split)
+      # A dead split (no non-missing values) gets its own warning from
+      # split_info; promising any test count here would be false.
+      if (!is.null(split) && n_strata == 0L) return(NULL)
+      n_self <- length(intersect(outs, grps))
+      txt <- compare_plan_text(length(outs), length(grps), n_strata, split,
+                               n_skip = n_self)
       if (is.null(txt)) return(NULL)
-      over <- length(outs) * length(grps) * max(1L, n_strata) >
+      over <- (length(outs) * length(grps) - n_self) * max(1L, n_strata) >
         COMPARE_MAX_COMBOS
       helpText(class = if (over) "text-warning", txt)
     })
@@ -277,6 +286,21 @@ compareServer <- function(id, data_in) {
         validate(need(is.null(split) || !(split %in% c(outs, grps)), paste(
           "The split variable is also selected as an outcome or group. Pick a",
           "different split, or remove it there.")))
+        # Cheap pre-gate BEFORE the grid computes: an over-limit stratified
+        # grid used to run every analysis (up to 24 x 6 = 144 fits) only to
+        # be discarded by the post-gate below. The bound is deterministic
+        # (picks x usable strata, minus outcome-equals-group skips), so the
+        # user-facing rule stays predictable; the post-gate remains as the
+        # backstop for anything this bound cannot see.
+        if (!is.null(split)) {
+          n_used <- split_preview(df[[split]])$n_used
+          bound  <- (n_combo - length(intersect(outs, grps))) *
+            max(1L, n_used)
+          validate(need(bound <= COMPARE_MAX_COMBOS, sprintf(
+            paste("That is %d tests once the split is applied (the limit",
+                  "is %d). Pick fewer outcomes/groups or a split variable",
+                  "with fewer levels."), bound, COMPARE_MAX_COMBOS)))
+        }
         # A split makes even one outcome x group a family (one test per stratum),
         # so route through the grid whenever a split is set OR n_combo > 1.
         if (n_combo == 1L && is.null(split)) {

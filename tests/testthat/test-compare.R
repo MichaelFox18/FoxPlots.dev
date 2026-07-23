@@ -504,3 +504,23 @@ test_that("the combination cap is 24 and a full 6x4 grid computes under it", {
   expect_equal(gr$summary$p_adj,
                stats::p.adjust(gr$summary$p_value, "BH"), tolerance = 1e-3)
 })
+
+# ---- release-review regression tests (0.8.0 B8) ---------------------------
+
+test_that("plan text subtracts outcome-equals-group pairs", {
+  expect_equal(compare_plan_text(2, 2, n_skip = 1),
+               "2 outcomes x 2 groups = 3 tests will run (1 pair where outcome = group is skipped).")
+  expect_equal(compare_plan_text(2, 2), "2 outcomes x 2 groups = 4 tests will run.")
+  d <- transform(mtcars, cyl = cyl)
+  gr <- suppressWarnings(compare_grid(d, c("mpg", "cyl"), c("cyl", "gear")))
+  expect_equal(length(gr$keys), 3L)          # the promise now matches reality
+})
+
+test_that("compare_grid counts NaN split values as missing", {
+  d <- mtcars
+  d$s <- d$am
+  d$s[1:3] <- NaN
+  gr <- suppressWarnings(compare_grid(d, "mpg", "cyl", split_by = "s"))
+  expect_equal(gr$n_split_na, 3L)
+  expect_equal(split_preview(d$s)$n_na, 3L)  # preview and grid now agree
+})

@@ -84,6 +84,20 @@ map_group_vals <- function(x) {
 # "(missing)" area via map_group_vals(), exactly like layer grouping. Rows
 # come back sorted by area label so marker order, palette domains, and the
 # emitted tapply() script all agree.
+# Longitude mean that survives the antimeridian: an area whose points span
+# +179/-179 has an arithmetic mean near 0 (the wrong side of the planet), so
+# when the spread exceeds 180 degrees the negative half is shifted +360, the
+# mean taken, and the result wrapped back. Ordinary areas hit the plain-mean
+# branch, so builder results stay byte-identical to the emitted script's
+# lonmean() twin.
+map_lon_mean <- function(x) {
+  if (diff(range(x)) > 180) {
+    x <- ifelse(x < 0, x + 360, x)
+    m <- mean(x)
+    if (m > 180) m - 360 else m
+  } else mean(x)
+}
+
 aggregate_by_admin <- function(d, admin_col, lon, lat,
                                agg_cols = character(0)) {
   av <- map_group_vals(d[[admin_col]])
@@ -91,7 +105,7 @@ aggregate_by_admin <- function(d, admin_col, lon, lat,
   out <- data.frame(names(n), stringsAsFactors = FALSE, check.names = FALSE)
   names(out) <- admin_col
   out[[lat]] <- as.vector(tapply(d[[lat]], av, mean))
-  out[[lon]] <- as.vector(tapply(d[[lon]], av, mean))
+  out[[lon]] <- as.vector(tapply(d[[lon]], av, map_lon_mean))
   out$.n_points <- as.integer(n)
   for (col in setdiff(agg_cols, c(admin_col, lon, lat))) {
     if (!col %in% names(d) || !is.numeric(d[[col]])) next
@@ -127,7 +141,11 @@ admin_cluster_params <- function(d, p, lon, lat) {
     !cv %in% c(av, lon, lat)
   agg <- aggregate_by_admin(d, av, lon, lat,
                             agg_cols = if (keep_cv) cv else character(0))
-  agg$Points <- agg$.n_points        # popup-friendly alias for the count
+  # Popup-friendly alias for the count -- but never clobber a real user
+  # column named "Points" (it may be the aggregated color column); the
+  # popup then shows the dot-prefixed internal name instead.
+  count_col <- if ("Points" %in% names(agg)) ".n_points" else "Points"
+  if (identical(count_col, "Points")) agg$Points <- agg$.n_points
   p2 <- utils::modifyList(p, list(
     color      = if (keep_cv) cv else "__none__",
     size_by    = ".n_points",
@@ -136,7 +154,7 @@ admin_cluster_params <- function(d, p, lon, lat) {
     cluster    = "off",
     heatmap    = FALSE,
     label_col  = av,
-    popup_cols = c(av, "Points", if (keep_cv) cv)))
+    popup_cols = c(av, count_col, if (keep_cv) cv)))
   list(d = agg, p = p2, active = TRUE)
 }
 
@@ -488,7 +506,18 @@ map_hint <- function(df, p) {
         "'%s' doesn't have enough distinct values for quantile sizing %s using a linear scale.",
         sv, SYM_MDASH))
   }
-  if (!isTRUE(p$show_points %||% TRUE) && !isTRUE(p$heatmap))
+  # The heatmap is force-disabled while combining by area, so a stale
+  # (hidden) heatmap tick must not suppress the basemap-only warning --
+  # mirror admin_cluster_params' activity gate here.
+  av0 <- map_col(p$cluster_by)
+  admin_on <- !is.null(av0) && av0 %in% names(df) &&
+    !av0 %in% c(map_col(p$lon), map_col(p$lat)) &&
+    {
+      n_a <- dplyr::n_distinct(map_group_vals(cc$data[[av0]]))
+      n_a >= 2L && n_a <= MAP_ADMIN_MAX
+    }
+  eff_heat <- isTRUE(p$heatmap) && !admin_on
+  if (!isTRUE(p$show_points %||% TRUE) && !eff_heat)
     hints <- c(hints, paste0(
       "Point markers are hidden and the density heatmap is off ", SYM_MDASH,
       " the map shows only the basemap. Turn one of them back on."))
@@ -1050,6 +1079,13 @@ generate_map_code <- function(df, p) {
     pre <- c(pre, "",
       sprintf("# One bubble per %s: centroid of its points + how many it combines",
               av),
+      "# (lonmean handles the rare area whose points span the antimeridian)",
+      "lonmean <- function(x) {",
+      "  if (diff(range(x)) > 180) {",
+      "    x <- ifelse(x < 0, x + 360, x)",
+      "    m <- mean(x); if (m > 180) m - 360 else m",
+      "  } else mean(x)",
+      "}",
       sprintf("%s <- as.character(%s)", dollar(av), dollar(av)),
       sprintf('%s[is.na(%s)] <- "(missing)"', dollar(av), dollar(av)),
       sprintf("n <- tapply(%s, %s, length)", dollar(lat), dollar(av)),
@@ -1057,14 +1093,15 @@ generate_map_code <- function(df, p) {
       sprintf("  %s = names(n),", bq(av)),
       sprintf("  %s = as.vector(tapply(%s, %s, mean)),",
               bq(lat), dollar(lat), dollar(av)),
-      sprintf("  %s = as.vector(tapply(%s, %s, mean)),",
+      sprintf("  %s = as.vector(tapply(%s, %s, lonmean)),",
               bq(lon), dollar(lon), dollar(av)),
       paste0("  `.n_points` = as.integer(n)",
              if (is.null(vc)) ")" else ","),
       if (!is.null(vc)) sprintf(
         "  %s = as.vector(tapply(%s, %s, function(x) mean(x, na.rm = TRUE))))",
         bq(vc), dollar(vc), dollar(av)),
-      "df$Points <- df$`.n_points`")
+      if ("Points" %in% (p$popup_cols %||% character(0)))
+        "df$Points <- df$`.n_points`")
   }
 
   show_legend <- FALSE
@@ -1155,7 +1192,9 @@ generate_map_code <- function(df, p) {
     # to be readable. Regenerate from the app if the data changes.
     if (isTRUE(p$size_legend %||% TRUE)) {
       lh <- size_legend_html(
-        size_legend_breaks(d0[[sizev]], ssc, MAP_RADIUS_RANGE), title = sizev,
+        size_legend_breaks(d0[[sizev]], ssc, MAP_RADIUS_RANGE),
+        # same title the builder uses: never leak ".n_points" into a script
+        title = if (isTRUE(ac$active)) "Points" else sizev,
         fill = if (is.null(cv)) (p$color_hex %||% UF_BLUE) else UF_BLUE)
       if (!is.null(lh)) size_leg_args <- sprintf(
         'position = "bottomleft", html = %s', qq(lh))

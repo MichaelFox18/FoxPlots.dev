@@ -508,22 +508,29 @@ split_preview <- function(x, cap = COMPARE_SPLIT_MAX) {
 # factor when split, and an over-the-limit variant past `cap`. NULL until at
 # least one outcome and one group are picked.
 compare_plan_text <- function(n_outcomes, n_groups, n_strata = 1L,
-                              split_var = NULL, cap = COMPARE_MAX_COMBOS) {
+                              split_var = NULL, cap = COMPARE_MAX_COMBOS,
+                              n_skip = 0L) {
   n_outcomes <- as.integer(n_outcomes %||% 0L)
   n_groups   <- as.integer(n_groups   %||% 0L)
   if (is.na(n_outcomes) || is.na(n_groups) ||
       n_outcomes < 1L || n_groups < 1L) return(NULL)
   n_strata <- max(1L, as.integer(n_strata %||% 1L))
-  total <- n_outcomes * n_groups * n_strata
+  n_skip   <- max(0L, as.integer(n_skip %||% 0L))
+  # A column picked as BOTH an outcome and a group tests nothing against
+  # itself; the grid skips those pairs, so the promise must too.
+  total <- (n_outcomes * n_groups - n_skip) * n_strata
   pl <- function(n, noun) paste0(n, " ", noun, if (n == 1L) "" else "s")
   parts <- paste(pl(n_outcomes, "outcome"), "x", pl(n_groups, "group"))
   if (!is.null(split_var) && nzchar(split_var) && n_strata > 1L)
     parts <- sprintf("%s x %d levels of %s", parts, n_strata, split_var)
+  skip_note <- if (n_skip > 0L) sprintf(
+    " (%s where outcome = group %s skipped)",
+    pl(n_skip, "pair"), if (n_skip == 1L) "is" else "are") else ""
   if (total > cap) {
-    sprintf("%s = %d tests - over the limit of %d. Remove some picks.",
-            parts, total, cap)
+    sprintf("%s = %d tests%s - over the limit of %d. Remove some picks.",
+            parts, total, skip_note, cap)
   } else {
-    sprintf("%s = %s will run.", parts, pl(total, "test"))
+    sprintf("%s = %s will run%s.", parts, pl(total, "test"), skip_note)
   }
 }
 
@@ -548,6 +555,10 @@ compare_grid <- function(df, outcomes, groups, parametric = TRUE,
   } else {
     svr <- df[[split_by]]
     sv  <- as.character(svr)
+    # as.character(NaN) is the string "NaN", which would neither match any
+    # level nor count as missing -- recode from the RAW vector so NaN rows
+    # are counted (and warned about) like every other unusable split value.
+    sv[is.na(svr)] <- NA_character_
     n_split_na <- sum(is.na(sv))
     # Level ORDER matters for which strata survive the cap: honour factor
     # levels, sort numerics numerically (character-sorting a coded-numeric

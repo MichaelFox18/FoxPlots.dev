@@ -403,3 +403,16 @@ test_that("every app object still builds with the merged tab", {
                    regression_tool_app(), reshape_tool_app()))
     expect_s3_class(app, "shiny.appobj")
 })
+
+test_that("docx chunking keeps ALL leading identifier columns", {
+  skip_if_not_installed("officer")
+  gs <- grouped_summary(mtcars, c("mpg", "hp"), "cyl")   # 11 cols, keys cyl+Variable
+  doc <- officer::read_docx()
+  doc <- .docx_add_table(doc, gs, caption = "keyed")
+  f <- withr::local_tempfile(fileext = ".docx")
+  print(doc, target = f)
+  cells <- officer::docx_summary(officer::read_docx(f))
+  cells <- cells[cells$content_type == "table cell", "text"]
+  expect_equal(sum(cells == "Variable"), 2L)   # key header in BOTH chunks
+  expect_equal(sum(cells == "cyl"), 2L)
+})

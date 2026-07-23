@@ -77,11 +77,11 @@ data_explorer_app <- function() {
                     "assumption checks and effect sizes."),
             tags$li(tags$b("Regression"), " \u2014 fit linear, multiple, or polynomial ",
                     "models with diagnostics and a plain-English interpretation."),
-            tags$li(tags$b("Export"), " \u2014 download the data, the charts, the summary, ",
-                    "and the model results."),
-            tags$li(tags$b("Report"), " \u2014 one click bundles everything you made into ",
-                    "a report: a self-contained HTML file or an editable Word ",
-                    "document (with an optional \u201cshow the R code\u201d toggle).")
+            tags$li(tags$b("Export & Report"), " \u2014 download the data, charts, ",
+                    "summary, and model results on one sub-tab; on the other, ",
+                    "one click bundles everything you made into a report: a ",
+                    "self-contained HTML file or an editable Word document ",
+                    "(with an optional \u201cshow the R code\u201d toggle).")
           )
         )
       ),

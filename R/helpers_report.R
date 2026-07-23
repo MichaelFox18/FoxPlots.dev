@@ -54,11 +54,6 @@ html_escape <- function(x) {
   if (p < 0.001) "< 0.001" else as.character(round(p, 4))
 }
 
-#' Render a data frame as an HTML <table>. Pure (base R string building).
-#' @param df A data frame.
-#' @param caption Optional caption shown above the table.
-#' @param max_rows Truncate to this many rows (a note is appended if cut).
-#' @noRd
 # Tables wider than this many columns get the "wide" treatment: a smaller
 # font + nowrap cells in HTML, and column-chunking in Word. 8 keeps the
 # regression/means tables (<= 8 cols) full-size while catching the compare
@@ -66,6 +61,11 @@ html_escape <- function(x) {
 # profile, and EMMeans/pairwise frames.
 REPORT_WIDE_COLS <- 8L
 
+#' Render a data frame as an HTML <table>. Pure (base R string building).
+#' @param df A data frame.
+#' @param caption Optional caption shown above the table.
+#' @param max_rows Truncate to this many rows (a note is appended if cut).
+#' @noRd
 df_to_html <- function(df, caption = NULL, max_rows = 500L) {
   if (is.null(df) || !is.data.frame(df) || !nrow(df))
     return("<p class=\"note\">(nothing to show)</p>")
@@ -595,13 +595,21 @@ split_wide_df <- function(df, max_cols = 10L, keep = 1L) {
     doc <- officer::body_add_par(doc, caption, style = "heading 3")
   # Autofit at full page width beats Word's default fixed layout for the
   # kit's mixed-width tables; genuinely wide frames are chunked so no chunk
-  # exceeds 10 columns (the label column repeats in every chunk).
+  # exceeds 10 columns, with the row-identifying columns repeated in EVERY
+  # chunk. Identity spans the LEADING RUN of columns up to the last
+  # non-numeric one among the first four (grouped summaries are keyed by
+  # group(s) + Variable, the stratified compare grid by Outcome + Group +
+  # Stratum, matrices by their promoted rowname) -- keep = 1 alone left
+  # second chunks whose rows could not be told apart.
   props <- officer::prop_table(
     style  = "table_template",
     layout = officer::table_layout(type = "autofit"),
     width  = officer::table_width(width = 1, unit = "pct"),
     tcf    = officer::table_conditional_formatting(first_row = TRUE))
-  chunks <- split_wide_df(df)
+  lead    <- seq_len(min(4L, ncol(df)))
+  nonnum  <- lead[!vapply(df[lead], is.numeric, logical(1))]
+  keep_n  <- if (length(nonnum)) max(nonnum) else 1L
+  chunks <- split_wide_df(df, keep = keep_n)
   for (chunk in chunks) {
     rng <- attr(chunk, "col_range")
     if (!is.null(rng))
