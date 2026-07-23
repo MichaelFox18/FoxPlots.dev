@@ -481,6 +481,44 @@ compare_groups_numeric <- function(df, outcome, group,
 # explode it. Matches the spirit of the module's combination cap.
 COMPARE_SPLIT_MAX <- 6L
 
+# Pre-run preview of what a split variable will do: how many observed levels
+# it has, how many will actually run under the cap, and how many rows fall in
+# no stratum because the split value is missing. Mirrors compare_grid()'s
+# stratification counting (observed non-NA uniques, capped) so the sidebar
+# can warn BEFORE the grid computes.
+split_preview <- function(x, cap = COMPARE_SPLIT_MAX) {
+  n_na     <- sum(is.na(x))
+  n_levels <- length(unique(x[!is.na(x)]))
+  list(n_levels = n_levels,
+       n_used   = min(n_levels, cap),
+       capped   = n_levels > cap,
+       n_na     = n_na)
+}
+
+# One plain-language line stating how many tests the current picks will fire:
+# "3 outcomes x 2 groups = 6 tests will run.", with an "x N levels of am"
+# factor when split, and an over-the-limit variant past `cap`. NULL until at
+# least one outcome and one group are picked.
+compare_plan_text <- function(n_outcomes, n_groups, n_strata = 1L,
+                              split_var = NULL, cap = COMPARE_MAX_COMBOS) {
+  n_outcomes <- as.integer(n_outcomes %||% 0L)
+  n_groups   <- as.integer(n_groups   %||% 0L)
+  if (is.na(n_outcomes) || is.na(n_groups) ||
+      n_outcomes < 1L || n_groups < 1L) return(NULL)
+  n_strata <- max(1L, as.integer(n_strata %||% 1L))
+  total <- n_outcomes * n_groups * n_strata
+  pl <- function(n, noun) paste0(n, " ", noun, if (n == 1L) "" else "s")
+  parts <- paste(pl(n_outcomes, "outcome"), "x", pl(n_groups, "group"))
+  if (!is.null(split_var) && nzchar(split_var) && n_strata > 1L)
+    parts <- sprintf("%s x %d levels of %s", parts, n_strata, split_var)
+  if (total > cap) {
+    sprintf("%s = %d tests - over the limit of %d. Remove some picks.",
+            parts, total, cap)
+  } else {
+    sprintf("%s = %s will run.", parts, pl(total, "test"))
+  }
+}
+
 compare_grid <- function(df, outcomes, groups, parametric = TRUE,
                          var_equal = FALSE, posthoc = c("dunn", "steel"),
                          p_adjust = "BH", split_by = NULL) {

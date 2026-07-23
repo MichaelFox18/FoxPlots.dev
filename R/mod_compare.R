@@ -85,8 +85,9 @@ compareUI <- function(id) {
         sprintf("input['%s'] == 'num'", ns("mode")),
         selectizeInput(ns("outcome"),
           tagList("Outcome(s) (numeric)", info_tip(
-            "The numeric measurement(s) to compare - e.g. mpg. Pick more than ",
-            "one to test several outcomes at once.")),
+            "The numeric measurement(s) to compare - e.g. mpg. EVERY outcome ",
+            "is tested against every group: 3 outcomes x 2 groups runs 6 ",
+            "separate tests.")),
           choices = NULL, multiple = TRUE,
           options = list(maxItems = COMPARE_MAX_OUTCOMES,
                          placeholder = "Choose one or more...")),
@@ -94,7 +95,7 @@ compareUI <- function(id) {
           tagList("Group(s) (category)", info_tip(
             "The categorical variable(s) whose levels define the groups - e.g. ",
             "cyl or transmission. Two levels -> t-test; three or more -> ANOVA. ",
-            "Pick more than one to test against each grouping in turn.")),
+            "Pick more than one to test every outcome against each of them.")),
           choices = NULL, multiple = TRUE,
           options = list(maxItems = COMPARE_MAX_GROUPS,
                          placeholder = "Choose one or more...")),
@@ -102,9 +103,12 @@ compareUI <- function(id) {
           tagList("Split by (optional)", info_tip(
             "Run the whole analysis separately within each level of a third ",
             "variable - e.g. mpg by cyl, split by am, gives one analysis for ",
-            sprintf("am=0 and another for am=1. Up to %d levels.",
-                    COMPARE_SPLIT_MAX))),
+            sprintf("am=0 and another for am=1. Up to %d levels. ",
+                    COMPARE_SPLIT_MAX),
+            "Choose (none) to turn the split off.")),
           choices = NULL),
+        uiOutput(ns("split_info")),
+        uiOutput(ns("plan_line")),
         radioButtons(ns("method"), "Test family",
           choices = c("Parametric (t-test / ANOVA)"          = "param",
                       "Non-parametric (Wilcoxon / Kruskal)"  = "nonparam"),
@@ -131,7 +135,7 @@ compareUI <- function(id) {
         conditionalPanel(
           sprintf(paste("(input['%s'] && input['%s'] &&",
                         "input['%s'].length * input['%s'].length > 1) ||",
-                        "(input['%s'] && input['%s'])"),
+                        "(input['%s'] && input['%s'] != '__none__')"),
                   ns("outcome"), ns("group"), ns("outcome"), ns("group"),
                   ns("split_by"), ns("split_by")),
           selectInput(ns("p_adjust"),
@@ -182,9 +186,12 @@ compareServer <- function(id, data_in) {
                            selected = character(0))
       updateSelectizeInput(session, "group", choices = groupable_cols(df),
                            selected = character(0))
+      # "(none)" carries the house __none__ sentinel, NOT "": selectize treats
+      # an empty-string option as its placeholder and never renders it as a
+      # clickable row, so with "" the user could never return to no-split.
       updateSelectInput(session, "split_by",
-                        choices = c("(none)" = "", groupable_cols(df)),
-                        selected = "")
+                        choices = c("(none)" = "__none__", groupable_cols(df)),
+                        selected = "__none__")
       updateSelectInput(session, "cat1", choices = c("Choose a variable..." = "",
                                                      groupable_cols(df)),
                         selected = "")
@@ -192,6 +199,44 @@ compareServer <- function(id, data_in) {
                                                      groupable_cols(df)),
                         selected = "")
     }, ignoreNULL = TRUE)
+
+    # Live pre-run feedback under the pickers: what the chosen split will do,
+    # and how many tests the current selection fires -- BEFORE result() runs,
+    # so the Cartesian outcome-x-group behavior is never a surprise.
+    active_split <- reactive({
+      df <- data_in()
+      split <- input$split_by %||% "__none__"
+      if (!is.data.frame(df) || identical(split, "__none__") ||
+          !nzchar(split) || !split %in% names(df)) NULL else split
+    })
+
+    output$split_info <- renderUI({
+      split <- active_split(); req(split)
+      sp <- split_preview(data_in()[[split]])
+      msg <- sprintf("%s: %d level%s -> each test runs once per level.",
+                     split, sp$n_used, if (sp$n_used == 1L) "" else "s")
+      extra <- character(0)
+      if (sp$capped) extra <- c(extra, sprintf(
+        "Only the first %d of %d levels will run.", sp$n_used, sp$n_levels))
+      if (sp$n_na > 0) extra <- c(extra, sprintf(
+        "%d row%s with missing %s fall in no stratum.",
+        sp$n_na, if (sp$n_na == 1L) "" else "s", split))
+      helpText(class = if (length(extra)) "text-warning",
+               paste(c(msg, extra), collapse = " "))
+    })
+
+    output$plan_line <- renderUI({
+      df <- data_in(); req(is.data.frame(df))
+      outs <- (input$outcome %||% character(0)); outs <- outs[nzchar(outs)]
+      grps <- (input$group   %||% character(0)); grps <- grps[nzchar(grps)]
+      split <- active_split()
+      n_strata <- if (!is.null(split)) split_preview(df[[split]])$n_used else 1L
+      txt <- compare_plan_text(length(outs), length(grps), n_strata, split)
+      if (is.null(txt)) return(NULL)
+      over <- length(outs) * length(grps) * max(1L, n_strata) >
+        COMPARE_MAX_COMBOS
+      helpText(class = if (over) "text-warning", txt)
+    })
 
     # The current result: a single comparison ($mode "num"/"cat") or a grid
     # ($mode "num_multi"). Warnings from the rank tests / chi-square on small
@@ -223,13 +268,14 @@ compareServer <- function(id, data_in) {
           n_combo, length(outs), length(grps), COMPARE_MAX_COMBOS)))
         para  <- identical(input$method, "param")
         ph    <- input$posthoc %||% "dunn"
-        split <- input$split_by %||% ""
+        # Map the "(none)" sentinel (and, defensively, a lingering "") to NULL.
+        split <- input$split_by %||% "__none__"
+        if (identical(split, "__none__") || !nzchar(split)) split <- NULL
         # A split that is also an outcome/group makes no sense; say so rather
         # than silently running unsplit (the chip would still show a split).
-        validate(need(!(nzchar(split) && split %in% c(outs, grps)), paste(
+        validate(need(is.null(split) || !(split %in% c(outs, grps)), paste(
           "The split variable is also selected as an outcome or group. Pick a",
           "different split, or remove it there.")))
-        split <- if (nzchar(split)) split else NULL
         # A split makes even one outcome x group a family (one test per stratum),
         # so route through the grid whenever a split is set OR n_combo > 1.
         if (n_combo == 1L && is.null(split)) {
@@ -563,8 +609,9 @@ compareServer <- function(id, data_in) {
           nrow(r$grid$summary))) else NULL
       smry <- card(
         card_header(icon("table-list"), " All combinations"),
-        helpText(sprintf(paste("One test per outcome x group%s. p_adj corrects",
-                               "across all %d combinations (%s)."),
+        helpText(sprintf(paste("One test per outcome x group combination%s.",
+                               "p_adj corrects across all %d combinations",
+                               "(%s)."),
                          split_lab, nrow(r$grid$summary), adj_lab %||% r$p_adjust)),
         cap_note, na_note, dropped_note,
         DT::DTOutput(ns("grid_tbl")))

@@ -428,3 +428,50 @@ test_that("compare_grid reports NA-split rows and dropped strata", {
   gr2 <- compare_grid(d2, "mpg", "gg", split_by = "s")
   expect_true("only4" %in% gr2$dropped_strata)
 })
+
+# ---- split-by sidebar helpers (0.8.0 UX pass) -----------------------------
+
+test_that("split_preview counts levels, cap, and NA rows like compare_grid", {
+  expect_equal(split_preview(factor(c("a", "b", "a"))),
+               list(n_levels = 2L, n_used = 2L, capped = FALSE, n_na = 0L))
+  sp <- split_preview(c(1:8, NA, NA))
+  expect_equal(sp$n_levels, 8L)
+  expect_equal(sp$n_used, COMPARE_SPLIT_MAX)
+  expect_true(sp$capped)
+  expect_equal(sp$n_na, 2L)
+  expect_equal(split_preview(rep(NA_character_, 4)),
+               list(n_levels = 0L, n_used = 0L, capped = FALSE, n_na = 4L))
+  expect_equal(split_preview(letters[1:3], cap = 2L)$n_used, 2L)
+})
+
+test_that("compare_plan_text covers plain / split / over-cap / singular", {
+  expect_null(compare_plan_text(0, 2))
+  expect_null(compare_plan_text(1, 0))
+  expect_equal(compare_plan_text(1, 1),
+               "1 outcome x 1 group = 1 test will run.")
+  expect_equal(compare_plan_text(3, 2),
+               "3 outcomes x 2 groups = 6 tests will run.")
+  expect_equal(compare_plan_text(3, 2, n_strata = 2, split_var = "am"),
+               "3 outcomes x 2 groups x 2 levels of am = 12 tests will run.")
+  over <- compare_plan_text(6, 4, n_strata = 2, split_var = "am")
+  expect_match(over, "48 tests - over the limit")
+  # a 1-level split adds no "x levels" factor
+  expect_equal(compare_plan_text(2, 2, n_strata = 1, split_var = "am"),
+               "2 outcomes x 2 groups = 4 tests will run.")
+})
+
+test_that("compareServer maps the __none__ sentinel to an unsplit analysis", {
+  shiny::testServer(compareServer,
+                    args = list(data_in = shiny::reactive(mtcars)), {
+    session$setInputs(mode = "num", outcome = "mpg", group = "cyl",
+                      method = "param", var_equal = FALSE,
+                      split_by = "__none__", p_adjust = "BH")
+    expect_equal(session$returned()()$mode, "num")      # no grid, no split
+    session$setInputs(split_by = "am")
+    r <- session$returned()()
+    expect_equal(r$mode, "num_multi")                   # split -> grid
+    expect_equal(r$grid$split_by, "am")
+    session$setInputs(split_by = "__none__")            # back to (none)
+    expect_equal(session$returned()()$mode, "num")
+  })
+})
