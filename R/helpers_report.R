@@ -59,6 +59,13 @@ html_escape <- function(x) {
 #' @param caption Optional caption shown above the table.
 #' @param max_rows Truncate to this many rows (a note is appended if cut).
 #' @noRd
+# Tables wider than this many columns get the "wide" treatment: a smaller
+# font + nowrap cells in HTML, and column-chunking in Word. 8 keeps the
+# regression/means tables (<= 8 cols) full-size while catching the compare
+# grid summary (~13), chi-square matrices (a column per level), the column
+# profile, and EMMeans/pairwise frames.
+REPORT_WIDE_COLS <- 8L
+
 df_to_html <- function(df, caption = NULL, max_rows = 500L) {
   if (is.null(df) || !is.data.frame(df) || !nrow(df))
     return("<p class=\"note\">(nothing to show)</p>")
@@ -74,8 +81,14 @@ df_to_html <- function(df, caption = NULL, max_rows = 500L) {
   more <- if (n_all > max_rows)
     sprintf("<p class=\"note\">Showing first %s of %s rows.</p>",
             format(max_rows, big.mark = ","), format(n_all, big.mark = ",")) else ""
-  paste0(cap, "<table><thead><tr>", head_html, "</tr></thead><tbody>",
-         paste0(rows_html, collapse = ""), "</tbody></table>", more)
+  # Every table sits in a horizontal-scroll wrapper so a wide one scrolls in
+  # place instead of overflowing the fixed-width page; past REPORT_WIDE_COLS
+  # it also drops to a smaller nowrap face (see .report_css).
+  tab_open <- if (ncol(df) > REPORT_WIDE_COLS) "<table class=\"wide\">"
+              else "<table>"
+  paste0(cap, "<div class=\"tbl-wrap\">", tab_open, "<thead><tr>", head_html,
+         "</tr></thead><tbody>", paste0(rows_html, collapse = ""),
+         "</tbody></table></div>", more)
 }
 
 #' A static, non-executed R code block.
@@ -283,6 +296,10 @@ table{border-collapse:collapse;width:100%;margin:12px 0;font-size:.91em;}
 th{background:#003087;color:#fff;text-align:left;padding:6px 9px;font-weight:600;}
 td{border-bottom:1px solid #eee;padding:5px 9px;}
 tr:nth-child(even) td{background:#f5f7fb;}
+.tbl-wrap{overflow-x:auto;margin:12px 0;}
+.tbl-wrap table{margin:0;}
+table.wide{font-size:.8em;}
+table.wide th,table.wide td{padding:4px 6px;white-space:nowrap;}
 .meta{color:#7a7a7a;font-size:.9em;margin:.2em 0;}
 .kpis{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0;}
 .kpi{background:#eef2fa;border-left:4px solid #003087;padding:9px 16px;border-radius:3px;min-width:96px;}
@@ -547,13 +564,55 @@ build_report_html <- function(spec, plot_uris = character(0),
   )
 }
 
+# Split a wide frame into readable chunks: each keeps the first `keep`
+# label column(s) plus up to (max_cols - keep) further columns, so every
+# chunk stands alone. Word can't scroll sideways, and its autofit crams a
+# 13-column table into unreadable slivers -- chunking beats transposing
+# because the widest offenders (chi-square matrices) are level x level, so
+# a transpose just moves the problem to the other axis. Returns a list of
+# frames; each carries attr "col_range" (first/last original column index)
+# when a split actually happened.
+split_wide_df <- function(df, max_cols = 10L, keep = 1L) {
+  nc <- ncol(df)
+  if (nc <= max_cols) return(list(df))
+  keep <- max(0L, min(keep, nc - 1L))
+  lead <- seq_len(keep)
+  rest <- setdiff(seq_len(nc), lead)
+  per  <- max(1L, max_cols - keep)
+  starts <- seq(1L, length(rest), by = per)
+  lapply(starts, function(s) {
+    idx <- rest[s:min(s + per - 1L, length(rest))]
+    chunk <- df[, c(lead, idx), drop = FALSE]
+    attr(chunk, "col_range") <- c(idx[1], idx[length(idx)])
+    chunk
+  })
+}
+
 .docx_add_table <- function(doc, df, caption = NULL) {
   if (is.null(df) || !is.data.frame(df) || !nrow(df))
     return(officer::body_add_par(doc, "(nothing to show)", style = "Normal"))
   if (!is.null(caption))
     doc <- officer::body_add_par(doc, caption, style = "heading 3")
-  officer::body_add_table(doc, .display_df(df), style = "table_template",
-                          first_row = TRUE)
+  # Autofit at full page width beats Word's default fixed layout for the
+  # kit's mixed-width tables; genuinely wide frames are chunked so no chunk
+  # exceeds 10 columns (the label column repeats in every chunk).
+  props <- officer::prop_table(
+    style  = "table_template",
+    layout = officer::table_layout(type = "autofit"),
+    width  = officer::table_width(width = 1, unit = "pct"),
+    tcf    = officer::table_conditional_formatting(first_row = TRUE))
+  chunks <- split_wide_df(df)
+  for (chunk in chunks) {
+    rng <- attr(chunk, "col_range")
+    if (!is.null(rng))
+      doc <- officer::body_add_par(
+        doc, sprintf("(columns %d-%d of %d)", rng[1], rng[2], ncol(df)),
+        style = "Normal")
+    doc <- officer::body_add_blocks(doc, officer::block_list(
+      officer::block_table(.display_df(chunk), header = TRUE,
+                           properties = props)))
+  }
+  doc
 }
 
 # Add a (possibly multi-line) R code block as monospace paragraphs.

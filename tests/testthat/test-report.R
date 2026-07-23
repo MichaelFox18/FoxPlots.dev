@@ -344,3 +344,46 @@ test_that("compare_code reproduces the stratified analysis", {
   out <- eval(parse(text = code), envir = env)
   expect_equal(nrow(out), nrow(gr$summary))
 })
+
+# ---- wide-table treatment (0.8.0 report formatting) -----------------------
+
+test_that("df_to_html wraps every table and marks wide ones", {
+  narrow <- df_to_html(data.frame(a = 1, b = 2, c = 3))
+  expect_match(narrow, "<div class=\"tbl-wrap\">", fixed = TRUE)
+  expect_match(narrow, "<table><thead>", fixed = TRUE)     # classless
+  expect_no_match(narrow, "class=\"wide\"", fixed = TRUE)
+  wide13 <- as.data.frame(setNames(as.list(1:13), paste0("c", 1:13)))
+  wide <- df_to_html(wide13)
+  expect_match(wide, "<table class=\"wide\">", fixed = TRUE)
+  expect_match(wide, "</table></div>", fixed = TRUE)
+  expect_match(.report_css, "overflow-x:auto", fixed = TRUE)
+  expect_match(.report_css, "table.wide", fixed = TRUE)
+})
+
+test_that("split_wide_df chunks with a repeated label column and no loss", {
+  wide <- as.data.frame(setNames(as.list(seq_len(13)), paste0("c", 1:13)))
+  chunks <- split_wide_df(wide, max_cols = 10L, keep = 1L)
+  expect_length(chunks, 2L)
+  expect_true(all(vapply(chunks, ncol, integer(1)) <= 10L))
+  expect_true(all(vapply(chunks, function(ch) names(ch)[1] == "c1",
+                         logical(1))))                    # label repeats
+  spread <- unlist(lapply(chunks, function(ch) setdiff(names(ch), "c1")))
+  expect_setequal(spread, paste0("c", 2:13))              # partition exact
+  expect_equal(anyDuplicated(spread), 0L)
+  expect_equal(attr(chunks[[2]], "col_range"), c(11L, 13L))
+  expect_length(split_wide_df(data.frame(a = 1, b = 2)), 1L)  # narrow: as-is
+})
+
+test_that("docx tables chunk wide frames with the label column repeated", {
+  skip_if_not_installed("officer")
+  wide <- as.data.frame(setNames(as.list(seq_len(13)), paste0("c", 1:13)))
+  doc <- officer::read_docx()
+  doc <- .docx_add_table(doc, wide, caption = "wide test")
+  f <- withr::local_tempfile(fileext = ".docx")
+  print(doc, target = f)
+  smry <- officer::docx_summary(officer::read_docx(f))
+  cells <- smry[smry$content_type == "table cell", ]
+  expect_equal(sum(cells$text == "c1"), 2L)     # label header in BOTH chunks
+  expect_true(any(grepl("columns 2-10 of 13", smry$text)))
+  expect_true(any(grepl("columns 11-13 of 13", smry$text)))
+})
