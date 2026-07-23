@@ -57,10 +57,10 @@ compare_groups_app <- function() {
               importUI("imp", ex_choices)),
     nav_panel(tagList(icon("flask-vial"),    " Compare Groups"), value = "compare",
               compareUI("cmp")),
-    nav_panel(tagList(icon("file-export"),   " Export"),         value = "export",
-              exportUI("ex")),
-    nav_panel(tagList(icon("file-lines"),    " Report"),         value = "report",
-              reportUI("rep", default_title = "Compare Groups Report"))
+    nav_panel(tagList(icon("file-export"),   " Export & Report"),
+              value = "export",
+              exportReportUI("ex", "rep",
+                             default_title = "Compare Groups Report"))
   )
 
   server <- function(input, output, session) {

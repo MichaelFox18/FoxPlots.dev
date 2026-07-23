@@ -131,10 +131,9 @@ data_explorer_app <- function() {
               compareUI("cmp")),
     nav_panel(tagList(icon("chart-simple"),  " Regression"), value = "regression",
               regressionUI("reg")),
-    nav_panel(tagList(icon("file-export"),   " Export"),     value = "export",
-              exportUI("ex")),
-    nav_panel(tagList(icon("file-lines"),    " Report"),     value = "report",
-              reportUI("rep"))
+    nav_panel(tagList(icon("file-export"),   " Export & Report"),
+              value = "export",
+              exportReportUI("ex", "rep"))
   )
 
   server <- function(input, output, session) {

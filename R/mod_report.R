@@ -180,3 +180,24 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
     invisible(NULL)
   })
 }
+
+# ============================================================
+# Export & Report -- one nav tab, two sub-tabs
+# ============================================================
+# Composes the two terminal stages into a single navbar entry: "Data &
+# downloads" (today's Export UI) and "Full report" (today's Report UI).
+# Servers are untouched -- the launcher still calls exportServer() and
+# reportServer() with the same ids -- so Pattern A wiring is preserved and
+# the four export-only apps keep plain exportUI() with no navset shell.
+# Neither panel sits in any launcher's fillable set, so the sub-tabs scroll
+# naturally.
+exportReportUI <- function(id_export, id_report = NULL, preview = TRUE,
+                           default_title = "Data Explorer Report") {
+  panels <- list(
+    nav_panel(tagList(icon("file-export"), " Data & downloads"),
+              exportUI(id_export, preview = preview)),
+    if (!is.null(id_report))
+      nav_panel(tagList(icon("file-lines"), " Full report"),
+                reportUI(id_report, default_title = default_title)))
+  do.call(navset_card_tab, Filter(Negate(is.null), panels))
+}

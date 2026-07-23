@@ -64,10 +64,10 @@ regression_tool_app <- function() {
               importUI("imp", ex_choices)),
     nav_panel(tagList(icon("chart-simple"),   " Regression"), value = "regression",
               regressionUI("reg")),
-    nav_panel(tagList(icon("file-export"),    " Export"),     value = "export",
-              exportUI("ex")),
-    nav_panel(tagList(icon("file-lines"),     " Report"),     value = "report",
-              reportUI("rep", default_title = "Regression Report"))
+    nav_panel(tagList(icon("file-export"),    " Export & Report"),
+              value = "export",
+              exportReportUI("ex", "rep",
+                             default_title = "Regression Report"))
   )
 
   server <- function(input, output, session) {

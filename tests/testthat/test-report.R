@@ -387,3 +387,19 @@ test_that("docx tables chunk wide frames with the label column repeated", {
   expect_true(any(grepl("columns 2-10 of 13", smry$text)))
   expect_true(any(grepl("columns 11-13 of 13", smry$text)))
 })
+
+# ---- Export & Report merged tab (0.8.0, Option A) -------------------------
+
+test_that("exportReportUI composes both sub-tabs; export-only stays plain", {
+  both <- as.character(htmltools::renderTags(exportReportUI("ex", "rep"))$html)
+  expect_match(both, "Data &amp; downloads", fixed = TRUE)
+  expect_match(both, "Full report", fixed = TRUE)
+  solo <- as.character(htmltools::renderTags(exportReportUI("ex"))$html)
+  expect_no_match(solo, "Full report", fixed = TRUE)
+})
+
+test_that("every app object still builds with the merged tab", {
+  for (app in list(data_explorer_app(), compare_groups_app(),
+                   regression_tool_app(), reshape_tool_app()))
+    expect_s3_class(app, "shiny.appobj")
+})
