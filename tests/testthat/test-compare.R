@@ -176,9 +176,13 @@ test_that("cld_from_tukey assigns letters and survives hyphenated levels", {
   df <- data.frame(
     y = c(rep(c(9, 10, 11), 5), rep(c(9, 10, 11), 5), rep(c(19, 20, 21), 5)),
     g = factor(rep(c("A", "B", "C"), each = 15)))
-  cl <- compare_groups_numeric(df, "y", "g")$cld
-  expect_named(cl, c("Group", "Mean", "N", "Letters"))
+  r  <- compare_groups_numeric(df, "y", "g")
+  cl <- r$cld
+  expect_named(cl, c("Group", "Mean", "SE", "N", "Letters"))
   expect_equal(nrow(cl), 3L)
+  # SE surfaces straight from group_stats (pooled on the ANOVA path)
+  expect_equal(cl$SE,
+               r$group_stats$SE[match(cl$Group, r$group_stats$Group)])
   share <- function(x, y) any(strsplit(x, "")[[1]] %in% strsplit(y, "")[[1]])
   letA <- cl$Letters[cl$Group == "A"]; letB <- cl$Letters[cl$Group == "B"]
   letC <- cl$Letters[cl$Group == "C"]
@@ -277,9 +281,11 @@ test_that("posthoc arg switches the non-parametric all-pairs method", {
   expect_equal(rs$posthoc_name, "Steel-Dwass")
   expect_named(rd$posthoc, c("Comparison", "Z", "p_value", "p_adj"))
   expect_named(rs$posthoc, c("Comparison", "W", "Z", "p_value", "p_adj"))
-  # both post-hocs now carry connecting letters
+  # both post-hocs now carry connecting letters, with SE on the rank path too
   expect_s3_class(rd$cld, "data.frame")
   expect_s3_class(rs$cld, "data.frame")
+  expect_true("SE" %in% names(rd$cld))
+  expect_true("SE" %in% names(rs$cld))
 })
 
 test_that("posthoc_name identifies the method on every path", {
@@ -466,12 +472,35 @@ test_that("compareServer maps the __none__ sentinel to an unsplit analysis", {
     session$setInputs(mode = "num", outcome = "mpg", group = "cyl",
                       method = "param", var_equal = FALSE,
                       split_by = "__none__", p_adjust = "BH")
-    expect_equal(session$returned()()$mode, "num")      # no grid, no split
+    expect_equal(session$returned()$mode, "num")        # no grid, no split
     session$setInputs(split_by = "am")
-    r <- session$returned()()
+    r <- session$returned()
     expect_equal(r$mode, "num_multi")                   # split -> grid
     expect_equal(r$grid$split_by, "am")
     session$setInputs(split_by = "__none__")            # back to (none)
-    expect_equal(session$returned()()$mode, "num")
+    expect_equal(session$returned()$mode, "num")
   })
+})
+
+# ---- capacity: the 24-combination cap (0.8.0) -----------------------------
+
+test_that("the combination cap is 24 and a full 6x4 grid computes under it", {
+  expect_identical(COMPARE_MAX_COMBOS, 24L)   # tripwire: module gates assume it
+  set.seed(42)
+  n  <- 40
+  df <- data.frame(
+    o1 = rnorm(n), o2 = rnorm(n), o3 = rnorm(n),
+    o4 = rnorm(n), o5 = rnorm(n), o6 = rnorm(n),
+    g1 = factor(rep(c("a", "b"), n / 2)),
+    g2 = factor(rep(c("x", "y", "z", "w"), n / 4)),
+    g3 = factor(rep(c("p", "q"), each = n / 2)),
+    g4 = factor(rep(c("m", "n", "o", "r"), each = n / 4)))
+  gr <- suppressWarnings(compare_grid(
+    df, paste0("o", 1:6), paste0("g", 1:4), p_adjust = "BH"))
+  expect_equal(nrow(gr$summary), 24L)
+  expect_equal(length(gr$keys), 24L)
+  # p_adj is BH across the whole 24-test family (summary p_value is rounded
+  # for display, so allow that rounding in the reconstruction)
+  expect_equal(gr$summary$p_adj,
+               stats::p.adjust(gr$summary$p_value, "BH"), tolerance = 1e-3)
 })

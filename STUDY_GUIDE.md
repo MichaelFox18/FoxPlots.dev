@@ -40,7 +40,7 @@ the numbers."
 | **0.1 / 0.3 / 0.5** | Rank-biserial r and Cramér's V: small / medium / large |
 | **expected < 5** | Chi-square cells that trigger the Fisher's exact fallback |
 | **< 5 levels** | A random effect this small gets a "consider fixed" warning |
-| **12** | Max outcome × group combinations in grid testing |
+| **24** | Max outcome × group combinations in grid testing |
 | **1,000 rows** | Charts switch from interactive to static (speed) |
 | **3×IQR** | Data Health's "extreme outlier" flag (flags, never deletes) |
 | **±90 / −180..360** | Valid latitude / longitude; >500 points auto-cluster |
@@ -282,7 +282,7 @@ observations.
 
 ### Grid testing (the "many at once" mode)
 Pick several outcomes (max 6) and several grouping variables (max 4) — every
-combination is tested (cap: 12), summarized one-row-per-combination with a **`p_adj`
+combination is tested (cap: 24), summarized one-row-per-combination with a **`p_adj`
 column corrected across the entire grid** (BH default). Full write-ups live in closed
 accordion panels underneath. **Why the cap and the correction matter:** the grid *is*
 a family of tests; without correction, "test everything, report the survivors" is how
@@ -549,7 +549,7 @@ top 30 shown, rest lumped as "Other." Above 1,000 rows charts go static for spee
    both groups are equally noisy, costs almost nothing when they are, and is the safer
    default. Tick "Assume equal variances" if you specifically want Student's.
 2. **What does `p_adj` mean and why is it bigger than my p-value?** It's the same
-   p-value penalized for how many tests you ran at once; with 12 grid combinations, a
+   p-value penalized for how many tests you ran at once; with 24 grid combinations, a
    raw 0.03 may no longer be distinguishable from luck.
 3. **Why don't the letters match the raw p-values?** Letters are built from the
    *adjusted* pairwise p-values at 0.05 — the fair, corrected comparison.
@@ -576,7 +576,7 @@ top 30 shown, rest lumped as "Other." Above 1,000 rows charts go static for spee
     the correction reruns across all combinations every time the grid changes.
 11. **Can I test everything and report the survivors?** That's p-hacking. The grid
     allows the *search* but corrects the p-values so survivors are meaningful — and
-    caps you at 12 combinations.
+    caps you at 24 combinations.
 
 **Mixed Model**
 

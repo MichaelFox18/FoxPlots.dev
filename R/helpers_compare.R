@@ -15,9 +15,13 @@
 
 # --- descriptive + effect-size helpers --------------------------------------
 
-# The most tests any one grid run may fire (outcomes x groups). Keeps the
-# accordion readable and the multiple-testing family honest.
-COMPARE_MAX_COMBOS <- 12L
+# The most tests any one grid run may fire (outcomes x groups, times strata
+# when split). 24 = the module's selectize maxima product (6 outcomes x 4
+# groups), so the pickers themselves are the practical limit for unsplit
+# grids; the module's validate() gates stay as defense-in-depth for split
+# grids and any future picker changes. The per-combination renderers are
+# pre-registered up to this cap, so raising it raises server-init cost.
+COMPARE_MAX_COMBOS <- 24L
 
 # Display glyphs, built from code points so every source file that needs them
 # stays ASCII-clean (R CMD check portability -- see CLAUDE.md).
@@ -202,9 +206,12 @@ steel_dwass_test <- function(y, g) {
 #' are mapped back to the real group names afterwards.
 #'
 #' @param posthoc data.frame with columns Comparison and p_adj.
-#' @param means data.frame with columns Group, Mean, N (from oneway_means()).
+#' @param means data.frame with columns Group, Mean, SE, N (from oneway_means();
+#'   SE is pooled sqrt(mse/n_i) on the ANOVA path, per-group SD/sqrt(n) on the
+#'   rank path).
 #' @param threshold Significance cutoff. @param reversed Passed to multcompView.
-#' @return data.frame(Group, Mean, N, Letters) ordered by descending Mean, or NULL.
+#' @return data.frame(Group, Mean, SE, N, Letters) ordered by descending Mean,
+#'   or NULL.
 #' @noRd
 cld_from_tukey <- function(posthoc, means, threshold = 0.05, reversed = TRUE) {
   if (is.null(posthoc) || is.null(means) || !nrow(posthoc)) return(NULL)
@@ -237,9 +244,10 @@ cld_from_tukey <- function(posthoc, means, threshold = 0.05, reversed = TRUE) {
     Group   = unname(back[names(L)]),
     Letters = trimws(unname(L)),
     row.names = NULL, stringsAsFactors = FALSE)
-  out <- merge(out, means[, c("Group", "Mean", "N")], by = "Group", sort = FALSE)
+  out <- merge(out, means[, c("Group", "Mean", "SE", "N")],
+               by = "Group", sort = FALSE)
   out <- out[order(out$Mean, decreasing = TRUE),
-             c("Group", "Mean", "N", "Letters")]
+             c("Group", "Mean", "SE", "N", "Letters")]
   rownames(out) <- NULL
   # multcompView assigns symbols in the order it meets groups in the comparison
   # names, so the grouping is right but the labels can read scrambled (e.g.

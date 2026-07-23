@@ -65,7 +65,8 @@ compare_detail_cards <- function(ns, i, r) {
     cards <- c(cards, list(
       card(card_header(icon("font"), " Connecting letters"),
            helpText(sprintf(paste("Groups sharing a letter are not significantly",
-                                  "different (%s, alpha = 0.05)."), ph)),
+                                  "different (%s, alpha = 0.05). Means are",
+                                  "shown with their standard errors."), ph)),
            DT::DTOutput(nm("cld_tbl")))))
   cards
 }
