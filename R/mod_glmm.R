@@ -285,6 +285,7 @@ glmmServer <- function(id, data_in, binary = FALSE) {
       if (binary) {
         cand <- names(df)[vapply(df, function(x)
           (is.numeric(x) && all(x[is.finite(x)] %in% c(0, 1))) ||
+            is.logical(x) ||
             (is.factor(x) && nlevels(x) == 2), logical(1))]
         validate(need(length(cand) > 0, paste0(
           "No 0/1 or two-level factor column found for a binary response. ",
@@ -357,14 +358,17 @@ glmmServer <- function(id, data_in, binary = FALSE) {
 
     output$zi_vars_ui <- renderUI({
       if (!isTRUE(input$zi_on)) return(NULL)
-      df <- dataset(); req(df)
+      df <- dataset(); req(df); rv$reset
       selectizeInput(ns("zi_vars"),
                      "Zero-inflation predictors (blank = intercept only)",
                      choices = names(df), multiple = TRUE)
     })
 
+    # rv$reset dependency matters: without it, Reset leaves the old selection
+    # alive inside the collapsed Advanced panel and the next fit silently
+    # keeps the stale dispformula.
     output$disp_vars_ui <- renderUI({
-      df <- dataset(); req(df, !binary)
+      df <- dataset(); req(df, !binary); rv$reset
       selectizeInput(ns("disp_vars"),
                      "Dispersion predictors (0, 1, or 2)",
                      choices = names(df), multiple = TRUE,

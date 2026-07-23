@@ -363,3 +363,77 @@ test_that("lmer_emm_plot handles binomial (prob) and count (response) scales", {
   p2 <- lmer_emm_plot(em_p, "insect_count", "none")
   expect_s3_class(p2, "ggplot")
 })
+
+# ---- adversarial-review regression tests ----------------------------------
+
+test_that("Type III + interactions applies sum contrasts (and the code says so)", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  fit <- glmm_fit(d, list(response = "insect_count",
+                          fixed = c("Treatment", "Season"), random = "Site",
+                          family_key = "nbinom2_log", interactions = TRUE))
+  expect_true(fit$sum_contrasts)
+  expect_true(any(grepl("sum-to-zero", fit$notes)))
+  ref <- suppressWarnings(glmmTMB::glmmTMB(
+    insect_count ~ Treatment * Season + (1 | Site),
+    family = glmmTMB::nbinom2(link = "log"), data = d,
+    contrasts = list(Treatment = "contr.sum", Season = "contr.sum")))
+  expect_equal(stats::AIC(fit$mod), stats::AIC(ref), tolerance = 1e-6)
+  skip_if_not_installed("car")
+  a  <- glmm_anova(fit$mod)
+  ar <- as.data.frame(car::Anova(ref, type = 3))
+  expect_equal(a$table$Chisq[a$table$Term == "Season"],
+               round(ar["Season", "Chisq"], 4), tolerance = 1e-3)
+  # additive fits stay on default contrasts
+  add <- glmm_fit(d, list(response = "insect_count",
+                          fixed = c("Treatment", "Season"), random = "Site",
+                          family_key = "nbinom2_log", interactions = FALSE))
+  expect_false(add$sum_contrasts)
+  code <- glmm_code(fit)
+  expect_match(code, "contr.sum")
+  expect_silent(parse(text = code))
+  expect_no_match(glmm_code(add), "contr.sum")
+})
+
+test_that("a factor named rate/prob cannot shadow the emmeans estimate column", {
+  skip_if_not_installed("multcompView")
+  cldf <- data.frame(rate = factor(c("Low", "Med", "High")),
+                     emmean = c(11.14, 12.19, 12.99),
+                     SE = c(0.5, 0.5, 0.5), df = c(10, 10, 10),
+                     lower.CL = c(10, 11, 12), upper.CL = c(12.3, 13.4, 14.1),
+                     .group = c("a", "ab", "b"))
+  er <- list(cld = cldf,
+             roles = list(x = "rate", colour = NA_character_,
+                          facet = NA_character_, main = "rate",
+                          by = character(0)),
+             by_var = character(0), backtransformed = FALSE)
+  p <- lmer_emm_plot(er, "y", "none")
+  built <- ggplot2::ggplot_build(p)
+  expect_equal(sort(built$data[[1]]$y), sort(cldf$emmean))   # means, not 1:3
+})
+
+test_that("glmm_fit and the binary tab accept a logical response", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  d$present_l <- d$present == 1
+  fit <- glmm_fit(d, list(response = "present_l", fixed = "Treatment",
+                          random = "Site", binary = TRUE, link = "logit"))
+  expect_true(fit$ok)
+  expect_true(any(grepl("TRUE", fit$notes)))
+  expect_true(all(fit$data$present_l %in% c(0L, 1L)))
+  ref <- glmm_fit(d, list(response = "present", fixed = "Treatment",
+                          random = "Site", binary = TRUE, link = "logit"))
+  expect_equal(stats::AIC(fit$mod), stats::AIC(ref$mod), tolerance = 1e-6)
+  # the module offers the logical column as a binary response candidate
+  shiny::testServer(glmmServer, args = list(
+    data_in = shiny::reactive(d[c("Site", "Treatment", "present_l")]),
+    binary = TRUE), {
+    session$setInputs(response = "present_l", link = "logit",
+                      fixed = "Treatment", random = "Site",
+                      interactions = FALSE, zi_on = FALSE,
+                      adjust = "tukey", conf = 0.95, emm_by = "", run = 1)
+    expect_true(rv$fit$ok)
+    html <- as.character(output$response_ui$html)
+    expect_match(html, "present_l")
+  })
+})

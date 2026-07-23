@@ -788,8 +788,15 @@ lmer_emm_plot <- function(er, response, transform) {
   roles <- er$roles
   # emmeans names the response-scale estimate by family: "response" for most,
   # "prob" for binomial, "rate" for Poisson/negative-binomial; "emmean" on
-  # the link/identity scale. Take the first present.
-  valcol <- intersect(c("response", "prob", "rate", "emmean"), names(cldf))[1]
+  # the link/identity scale. The cld frame's LEADING columns are the EMMeans
+  # factors carrying user variable names, so a factor literally named "rate"
+  # or "prob" must not shadow the estimate: exclude the role columns and
+  # require the pick to be numeric before taking the first candidate.
+  est_names <- c("response", "prob", "rate", "emmean")
+  num_cols  <- names(cldf)[vapply(cldf, is.numeric, logical(1))]
+  valcol    <- intersect(setdiff(est_names, c(roles$main, roles$by)),
+                         num_cols)[1]
+  if (is.na(valcol)) valcol <- intersect(est_names, num_cols)[1]
   lcol <- intersect(c("lower.CL", "asymp.LCL", "LCL"), names(cldf))[1]
   ucol <- intersect(c("upper.CL", "asymp.UCL", "UCL"), names(cldf))[1]
   grpcol <- if (".group" %in% names(cldf)) ".group" else NA

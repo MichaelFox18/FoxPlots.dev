@@ -184,6 +184,11 @@ glmm_fit <- function(df, spec) {
   success_level <- NULL
   if (binary) {
     y <- model_df[[response]]
+    if (is.logical(y)) {
+      model_df[[response]] <- as.integer(y)
+      notes <- c(notes, sprintf("Modeling P(%s = TRUE).", response))
+      y <- model_df[[response]]
+    }
     if (is.factor(y) || is.character(y)) {
       y <- factor(y)
       if (nlevels(y) != 2)
@@ -226,6 +231,24 @@ glmm_fit <- function(df, spec) {
   fam <- if (binary) stats::binomial(link = spec$link %||% "logit")
          else glmm_family(spec$family_key %||% "gaussian_identity")
 
+  # The ANOVA tab runs car::Anova(type = 3) unconditionally, and Type III
+  # main-effect tests are only marginal under sum-to-zero coding when an
+  # interaction is present -- with default treatment contrasts they test the
+  # effect at the other factor's reference level instead. Same rule as
+  # lmer_fit(); the interaction row itself is contrast-invariant.
+  cat_fixed <- fixed[is_categorical(df, fixed)]
+  has_inter <- isTRUE(spec$interactions) && length(fixed) > 1
+  apply_sum <- has_inter && length(cat_fixed) > 0
+  contr_arg <- if (apply_sum)
+    stats::setNames(as.list(rep("contr.sum", length(cat_fixed))), cat_fixed)
+  else NULL
+  if (apply_sum)
+    notes <- c(notes, paste0(
+      "Type III ANOVA with interactions: sum-to-zero contrasts were applied ",
+      "to categorical fixed effects so the main-effect tests are ",
+      "interpretable. (This also re-codes the summary() coefficients as ",
+      "deviations from the grand mean.)"))
+
   fit_warnings <- character(0)
   mod <- tryCatch(
     withCallingHandlers(
@@ -233,6 +256,7 @@ glmm_fit <- function(df, spec) {
                        ziformula   = stats::as.formula(zi_str),
                        dispformula = stats::as.formula(disp_str),
                        family      = fam, data = model_df,
+                       contrasts   = contr_arg,
                        na.action   = stats::na.omit),
       warning = function(w) {
         fit_warnings <<- c(fit_warnings, conditionMessage(w))
@@ -267,7 +291,7 @@ glmm_fit <- function(df, spec) {
        binary = binary, success_level = success_level,
        response = response, fixed = fixed, random = random,
        slope = use_slope, slope_group = use_slope_group,
-       cat_fixed = fixed[is_categorical(df, fixed)],
+       cat_fixed = cat_fixed, sum_contrasts = apply_sum,
        spec = spec, data = model_df)
 }
 
@@ -460,9 +484,17 @@ glmm_emmeans <- function(fit, emmvars, by = NULL,
 #  Reproducible-code generators
 # ---------------------------------------------------------------------------
 
-# Standalone script reproducing the fitted model + its diagnostics.
+# Standalone script reproducing the fitted model + its diagnostics. When the
+# fit applied sum-to-zero contrasts (Type III + interactions), the emitted
+# call must carry them too or the reproduced ANOVA main effects differ.
 glmm_code <- function(fit) {
   if (is.null(fit) || !isTRUE(fit$ok)) return("")
+  contr_line <- if (isTRUE(fit$sum_contrasts))
+    paste0("  contrasts   = list(",
+           paste(sprintf("`%s` = \"contr.sum\"", fit$cat_fixed),
+                 collapse = ", "),
+           "),  # Type III + interactions need sum-to-zero coding\n")
+  else ""
   paste0(
     "library(glmmTMB); library(DHARMa); library(emmeans)\n\n",
     "mod <- glmmTMB(\n",
@@ -470,6 +502,7 @@ glmm_code <- function(fit) {
     "  ziformula   = ", fit$zi_str, ",\n",
     "  dispformula = ", fit$disp_str, ",\n",
     "  family      = ", glmm_family_text(fit), ",\n",
+    contr_line,
     "  data = your_data)\n\n",
     "summary(mod)\n\n",
     glmm_dharma_code(fit$binary),
