@@ -818,3 +818,102 @@ test_that("map_hint warns when points are hidden and no heatmap is on", {
   hint <- map_hint(d, p)
   expect_true(is.null(hint) || !grepl("only the basemap", hint))
 })
+
+# ---- combine points by area (admin clustering, 0.8.0) ---------------------
+
+test_that("aggregate_by_admin: centroids, counts, NA area, na.rm means", {
+  d <- data.frame(county = c("B", "A", "A", NA),
+                  lat = c(30, 28, 26, 25), lon = c(-82, -81, -83, -80),
+                  yield = c(10, 4, NA, 7),
+                  crop = c("corn", "soy", "soy", "corn"))
+  out <- aggregate_by_admin(d, "county", "lon", "lat",
+                            agg_cols = c("yield", "crop"))
+  expect_equal(out$county, c("(missing)", "A", "B"))    # sorted, NA has a row
+  expect_equal(out$.n_points, c(1L, 2L, 1L))
+  expect_equal(out$lat[out$county == "A"], 27)          # centroid = mean
+  expect_equal(out$yield[out$county == "A"], 4)         # na.rm mean
+  expect_false("crop" %in% names(out))                  # non-numeric dropped
+  allna <- aggregate_by_admin(
+    data.frame(g = c("x", "x"), lat = c(1, 2), lon = c(3, 4),
+               v = c(NA_real_, NA_real_)),
+    "g", "lon", "lat", agg_cols = "v")
+  expect_true(is.na(allna$v))                           # NA, never NaN
+})
+
+test_that("admin_cluster_params gates and rewrites like the design says", {
+  d <- make_map_example_data()
+  base <- list(lon = "lon", lat = "lat", cluster_by = "county",
+               color = "yield", group_by = "crop", cluster = "auto",
+               heatmap = TRUE, size_by = "acres")
+  ac <- admin_cluster_params(d, base, "lon", "lat")
+  expect_true(ac$active)
+  expect_equal(nrow(ac$d), 12L)                         # one row per county
+  expect_equal(ac$p$size_by, ".n_points")
+  expect_equal(ac$p$group_by, "__none__")
+  expect_equal(ac$p$cluster, "off")
+  expect_false(ac$p$heatmap)
+  expect_equal(ac$p$color, "yield")                     # numeric -> area mean
+  expect_equal(ac$p$label_col, "county")
+  expect_true("Points" %in% names(ac$d))
+  # categorical color pick is ignored
+  ac2 <- admin_cluster_params(d, utils::modifyList(base, list(color = "crop")),
+                              "lon", "lat")
+  expect_equal(ac2$p$color, "__none__")
+  # gates: none / missing col / lon-lat / too many areas
+  expect_false(admin_cluster_params(d, list(cluster_by = "__none__"),
+                                    "lon", "lat")$active)
+  expect_false(admin_cluster_params(d, list(cluster_by = "nope"),
+                                    "lon", "lat")$active)
+  expect_false(admin_cluster_params(d, list(cluster_by = "lat"),
+                                    "lon", "lat")$active)
+  d2 <- d; d2$id <- as.character(seq_len(nrow(d2)))     # 120 areas > 100
+  expect_false(admin_cluster_params(d2, list(cluster_by = "id"),
+                                    "lon", "lat")$active)
+})
+
+test_that("builder in admin mode: one marker per area, no cluster/heat/groups", {
+  d <- make_map_example_data()
+  p <- list(lon = "lon", lat = "lat", cluster_by = "county", color = "yield",
+            group_by = "crop", cluster = "on", heatmap = TRUE)
+  m <- build_leaflet_map(d, p)
+  calls <- vapply(m$x$calls, function(cl) cl$method, character(1))
+  expect_equal(sum(calls == "addCircleMarkers"), 1L)
+  expect_false("addLayersControl" %in% calls)
+  expect_false("addHeatmap" %in% calls)
+  mk <- m$x$calls[[which(calls == "addCircleMarkers")]]$args
+  expect_equal(length(mk[[1]]), 12L)                     # 12 county bubbles
+  radii <- mk[[3]]
+  expect_true(all(radii >= MAP_RADIUS_RANGE[1] & radii <= MAP_RADIUS_RANGE[2]))
+  expect_true("addLegend" %in% calls)                    # area-mean shading
+})
+
+test_that("admin-mode generated code aggregates and stays parseable", {
+  d <- make_map_example_data()
+  p <- list(lon = "lon", lat = "lat", cluster_by = "county", color = "yield")
+  code <- generate_map_code(d, p)
+  expect_match(code, "tapply", fixed = TRUE)
+  expect_match(code, ".n_points", fixed = TRUE)
+  expect_match(code, "mean(x, na.rm = TRUE)", fixed = TRUE)
+  expect_silent(parse(text = code))
+  # and it RUNS: eval the script against the raw data, then compare the
+  # aggregated frame it builds with aggregate_by_admin's
+  env <- new.env()
+  env$df <- d
+  code_noleaflet <- sub("leaflet\\(df\\)[\\s\\S]*$", "df", code, perl = TRUE)
+  got <- eval(parse(text = code_noleaflet), envir = env)
+  ref <- aggregate_by_admin(clean_coords(d, "lon", "lat")$data,
+                            "county", "lon", "lat", agg_cols = "yield")
+  expect_equal(got$.n_points, ref$.n_points)
+  expect_equal(got$county, ref$county)
+  expect_equal(got$yield, ref$yield, tolerance = 1e-12)
+})
+
+test_that("map_hint explains an unusable combine column", {
+  d <- make_map_example_data()
+  d$id <- as.character(seq_len(nrow(d)))
+  expect_match(map_hint(d, list(lon = "lon", lat = "lat", cluster_by = "id")),
+               "too many to combine")
+  d$one <- "same"
+  expect_match(map_hint(d, list(lon = "lon", lat = "lat", cluster_by = "one")),
+               "only one area")
+})

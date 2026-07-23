@@ -32,6 +32,8 @@ MAP_CLUSTER_AUTO <- 500    # "auto" clustering kicks in above this many points
 MAP_BIG_ROWS     <- 5000   # unclustered circles get sluggish past this -> hint
 MAP_LEGEND_MAX   <- 30     # a discrete legend beyond this is unreadable (facet-cap analog)
 MAP_GROUP_MAX    <- 12     # layer-control checkboxes beyond this are unusable
+MAP_ADMIN_MAX    <- 100    # "combine by area" bubbles beyond this are unreadable
+                           # (67 FL counties fit comfortably; raw ZIPs do not)
 MAP_QUANT_BINS   <- 5      # quantile color scale bin count
 
 # Color scales for a CONTINUOUS color column. Log spreads out skewed values
@@ -72,6 +74,70 @@ map_group_vals <- function(x) {
   g <- as.character(x)
   g[is.na(g)] <- "(missing)"
   g
+}
+
+# Collapse cleaned point rows to ONE row per admin area (county / region /
+# zip): the area's centroid (mean of the clean coordinates), a .n_points
+# count (dot-prefixed like every emitted helper column, so it can't clobber
+# a user column), and na.rm means of any requested numeric columns (an
+# all-NA area yields NA, not NaN). NA admin values form their own
+# "(missing)" area via map_group_vals(), exactly like layer grouping. Rows
+# come back sorted by area label so marker order, palette domains, and the
+# emitted tapply() script all agree.
+aggregate_by_admin <- function(d, admin_col, lon, lat,
+                               agg_cols = character(0)) {
+  av <- map_group_vals(d[[admin_col]])
+  n  <- tapply(rep(1L, length(av)), av, length)   # names sorted by label
+  out <- data.frame(names(n), stringsAsFactors = FALSE, check.names = FALSE)
+  names(out) <- admin_col
+  out[[lat]] <- as.vector(tapply(d[[lat]], av, mean))
+  out[[lon]] <- as.vector(tapply(d[[lon]], av, mean))
+  out$.n_points <- as.integer(n)
+  for (col in setdiff(agg_cols, c(admin_col, lon, lat))) {
+    if (!col %in% names(d) || !is.numeric(d[[col]])) next
+    v <- as.vector(tapply(d[[col]], av, function(x) mean(x, na.rm = TRUE)))
+    v[is.nan(v)] <- NA_real_
+    out[[col]] <- v
+  }
+  rownames(out) <- NULL
+  out
+}
+
+# The shared gate + params rewrite for "combine points by area", consumed by
+# BOTH build_leaflet_map and generate_map_code so the pane, the downloads,
+# and the emitted script can never disagree (the same quadruple-gate rule as
+# layer groups). Inactive -- d and p returned unchanged -- unless a usable
+# admin column with 2..MAP_ADMIN_MAX areas is chosen. When active, the
+# point layer is REPLACED by one bubble per area: sized by the .n_points
+# count through the existing radius machinery, colored by the area MEAN of
+# the user's color column when that column is numeric (a categorical pick
+# has no meaningful area aggregate and is ignored -> single marker color),
+# and labelled/popup'd with the area name + point count (via the friendly
+# "Points" alias). Proximity clustering, layer groups, and the heatmap are
+# point-level ideas, so they switch off while combining.
+admin_cluster_params <- function(d, p, lon, lat) {
+  av <- map_col(p$cluster_by)
+  if (is.null(av) || !av %in% names(d) || av %in% c(lon, lat))
+    return(list(d = d, p = p, active = FALSE))
+  n_area <- dplyr::n_distinct(map_group_vals(d[[av]]))
+  if (n_area < 2L || n_area > MAP_ADMIN_MAX)
+    return(list(d = d, p = p, active = FALSE))
+  cv <- map_col(p$color)
+  keep_cv <- !is.null(cv) && cv %in% names(d) && is.numeric(d[[cv]]) &&
+    !cv %in% c(av, lon, lat)
+  agg <- aggregate_by_admin(d, av, lon, lat,
+                            agg_cols = if (keep_cv) cv else character(0))
+  agg$Points <- agg$.n_points        # popup-friendly alias for the count
+  p2 <- utils::modifyList(p, list(
+    color      = if (keep_cv) cv else "__none__",
+    size_by    = ".n_points",
+    size_scale = "linear",
+    group_by   = "__none__",
+    cluster    = "off",
+    heatmap    = FALSE,
+    label_col  = av,
+    popup_cols = c(av, "Points", if (keep_cv) cv)))
+  list(d = agg, p = p2, active = TRUE)
 }
 
 # Vectorized validity predicates: finite and inside the plausible range.
@@ -439,6 +505,19 @@ map_hint <- function(df, p) {
         "'%s' has %d groups %s too many for a layer list (max %d), so grouping is ignored.",
         gv, n_grp, SYM_MDASH, MAP_GROUP_MAX))
   }
+  avh <- map_col(p$cluster_by)
+  if (!is.null(avh) && avh %in% names(df)) {
+    # Same gate admin_cluster_params applies, explained instead of silent.
+    n_area <- dplyr::n_distinct(map_group_vals(cc$data[[avh]]))
+    if (n_area > MAP_ADMIN_MAX)
+      hints <- c(hints, sprintf(
+        "'%s' has %d areas %s too many to combine into one bubble each (max %d), so it is ignored.",
+        avh, n_area, SYM_MDASH, MAP_ADMIN_MAX))
+    else if (n_area < 2L)
+      hints <- c(hints, sprintf(
+        "'%s' has only one area %s nothing to combine, so it is ignored.",
+        avh, SYM_MDASH))
+  }
   if (length(hints)) paste(hints, collapse = " ") else NULL
 }
 
@@ -657,6 +736,12 @@ build_leaflet_map <- function(df, p) {
   d  <- cc$data
   if (!nrow(d)) return(NULL)
 
+  # "Combine points by area": one bubble per admin value, then fall through
+  # to the ordinary single-layer path on the aggregated frame.
+  ac <- admin_cluster_params(d, p, lon, lat)
+  d  <- ac$d
+  p  <- ac$p
+
   gv <- map_col(p$group_by)
   if (!is.null(gv) && (!gv %in% names(d) || all(is.na(d[[gv]])) ||
                        dplyr::n_distinct(map_group_vals(d[[gv]])) > MAP_GROUP_MAX))
@@ -770,7 +855,7 @@ build_leaflet_map <- function(df, p) {
   if (show_pts && !is.null(sizev) && isTRUE(p$size_legend %||% TRUE)) {
     leg_html <- size_legend_html(
       size_legend_breaks(d[[sizev]], size_scale, MAP_RADIUS_RANGE),
-      title = sizev,
+      title = if (isTRUE(ac$active)) "Points" else sizev,
       fill  = if (is.null(pal_info)) (p$color_hex %||% UF_BLUE) else UF_BLUE)
     if (!is.null(leg_html))
       m <- leaflet::addControl(m, position = "bottomleft", html = leg_html)
@@ -924,6 +1009,15 @@ generate_map_code <- function(df, p) {
     p$legend <- FALSE; p$size_legend <- FALSE
     p$label_col <- "__none__"; p$popup_cols <- character(0)
   }
+  # "Combine points by area": rewrite params + aggregate d0 exactly like the
+  # builder does, so every palette/radius/guard decision below sees the
+  # aggregated frame; the matching aggregation code is emitted into `pre`
+  # once the emit helpers exist.
+  ac <- admin_cluster_params(d0, p, lon, lat)
+  if (ac$active) {
+    d0 <- ac$d
+    p  <- ac$p
+  }
   gv <- map_col(p$group_by)
   if (!is.null(gv) && (!gv %in% names(d0) || all(is.na(d0[[gv]])) ||
                        dplyr::n_distinct(map_group_vals(d0[[gv]])) > MAP_GROUP_MAX))
@@ -950,6 +1044,28 @@ generate_map_code <- function(df, p) {
     sprintf("      %s >= -90 & %s <= 90 & %s >= -180 & %s <= 360",
             dollar(lat), dollar(lat), dollar(lon), dollar(lon)),
     "df <- df[ok, ]")
+  if (ac$active) {
+    av <- map_col(p$cluster_by)
+    vc <- map_col(p$color)   # post-rewrite: the numeric color column or NULL
+    pre <- c(pre, "",
+      sprintf("# One bubble per %s: centroid of its points + how many it combines",
+              av),
+      sprintf("%s <- as.character(%s)", dollar(av), dollar(av)),
+      sprintf('%s[is.na(%s)] <- "(missing)"', dollar(av), dollar(av)),
+      sprintf("n <- tapply(%s, %s, length)", dollar(lat), dollar(av)),
+      "df <- data.frame(check.names = FALSE,",
+      sprintf("  %s = names(n),", bq(av)),
+      sprintf("  %s = as.vector(tapply(%s, %s, mean)),",
+              bq(lat), dollar(lat), dollar(av)),
+      sprintf("  %s = as.vector(tapply(%s, %s, mean)),",
+              bq(lon), dollar(lon), dollar(av)),
+      paste0("  `.n_points` = as.integer(n)",
+             if (is.null(vc)) ")" else ","),
+      if (!is.null(vc)) sprintf(
+        "  %s = as.vector(tapply(%s, %s, function(x) mean(x, na.rm = TRUE))))",
+        bq(vc), dollar(vc), dollar(av)),
+      "df$Points <- df$`.n_points`")
+  }
 
   show_legend <- FALSE
   fill_expr <- sprintf("fillColor = %s", qq(p$color_hex %||% UF_BLUE))

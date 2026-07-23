@@ -71,24 +71,29 @@ mapUI <- function(id) {
           selectInput(ns("palette"), "Color palette", choices = PALETTES),
           uiOutput(ns("ui_scale")),
           checkboxInput(ns("legend"), "Show legend", TRUE)),
-        uiOutput(ns("ui_size")),
-        conditionalPanel(
-          sprintf("input['%s'] && input['%s'] != '__none__'",
-                  ns("size_by"), ns("size_by")),
-          selectInput(ns("size_scale"),
-            tagList("Size scale", info_tip(
-              "How values map to bubble area. Linear keeps twice the value at ",
-              "twice the ink. Log spreads out skewed data so the small end ",
-              "stops looking identical. Quantile gives every size an equal ",
-              "share of points. Log and quantile fall back to linear when the ",
-              "data can't support them.")),
-            choices = MAP_SIZE_SCALES),
-          checkboxInput(ns("size_legend"), "Show size legend", TRUE)),
+        # Size controls hide while combining by area: bubble size then always
+        # encodes the per-area point count, not a chosen column.
         conditionalPanel(
           sprintf("!input['%s'] || input['%s'] == '__none__'",
-                  ns("size_by"), ns("size_by")),
-          sliderInput(ns("size"), "Point size", min = 2, max = 12, value = 6,
-                      step = 1))),
+                  ns("cluster_by"), ns("cluster_by")),
+          uiOutput(ns("ui_size")),
+          conditionalPanel(
+            sprintf("input['%s'] && input['%s'] != '__none__'",
+                    ns("size_by"), ns("size_by")),
+            selectInput(ns("size_scale"),
+              tagList("Size scale", info_tip(
+                "How values map to bubble area. Linear keeps twice the value at ",
+                "twice the ink. Log spreads out skewed data so the small end ",
+                "stops looking identical. Quantile gives every size an equal ",
+                "share of points. Log and quantile fall back to linear when the ",
+                "data can't support them.")),
+              choices = MAP_SIZE_SCALES),
+            checkboxInput(ns("size_legend"), "Show size legend", TRUE)),
+          conditionalPanel(
+            sprintf("!input['%s'] || input['%s'] == '__none__'",
+                    ns("size_by"), ns("size_by")),
+            sliderInput(ns("size"), "Point size", min = 2, max = 12, value = 6,
+                        step = 1)))),
       sliderInput(ns("alpha"), "Opacity", min = 0.1, max = 1, value = 0.8,
                   step = 0.05),
       conditionalPanel(
@@ -99,31 +104,47 @@ mapUI <- function(id) {
             "heatmap on its own. The HTML/PNG downloads and the generated ",
             "code follow suit.")),
           value = TRUE),
-        radioButtons(ns("cluster"),
-                     tagList("Cluster nearby points", info_tip(
-                       "Groups close-together markers into expandable bubbles. ",
-                       "Auto turns clustering on above ", MAP_CLUSTER_AUTO,
-                       " points. With layer groups, clustering happens within ",
-                       "each group.")),
-                     choices = c("Auto" = "auto", "On" = "on", "Off" = "off"),
-                     selected = "auto", inline = TRUE),
-        checkboxInput(ns("heatmap"),
-          tagList("Density heatmap layer", info_tip(
-            "Overlay a continuous density surface - useful when many points ",
-            "overlap into an unreadable blob. Optionally weighted by a ",
-            "numeric column. Needs the optional leaflet.extras package.")),
-          value = FALSE),
+        uiOutput(ns("ui_cluster_by")),
+        # Point-level ideas (proximity clustering, heatmap, layer groups,
+        # per-point popups/labels) hide while combining by area -- the
+        # combine mode sets them itself, and a control that silently does
+        # nothing is worse than one that disappears.
         conditionalPanel(
-          sprintf("input['%s']", ns("heatmap")),
-          uiOutput(ns("ui_heat"))),
-        hr(),
-        h6("Layer groups"),
-        uiOutput(ns("ui_group")),
-        uiOutput(ns("ui_focus")),
-        hr(),
-        h6("Popups & labels"),
-        uiOutput(ns("ui_popup")),
-        uiOutput(ns("ui_label"))),
+          sprintf("!input['%s'] || input['%s'] == '__none__'",
+                  ns("cluster_by"), ns("cluster_by")),
+          radioButtons(ns("cluster"),
+                       tagList("Cluster nearby points", info_tip(
+                         "Groups close-together markers into expandable bubbles. ",
+                         "Auto turns clustering on above ", MAP_CLUSTER_AUTO,
+                         " points. With layer groups, clustering happens within ",
+                         "each group.")),
+                       choices = c("Auto" = "auto", "On" = "on", "Off" = "off"),
+                       selected = "auto", inline = TRUE),
+          checkboxInput(ns("heatmap"),
+            tagList("Density heatmap layer", info_tip(
+              "Overlay a continuous density surface - useful when many points ",
+              "overlap into an unreadable blob. Optionally weighted by a ",
+              "numeric column. Needs the optional leaflet.extras package.")),
+            value = FALSE),
+          conditionalPanel(
+            sprintf("input['%s']", ns("heatmap")),
+            uiOutput(ns("ui_heat"))),
+          hr(),
+          h6("Layer groups"),
+          uiOutput(ns("ui_group")),
+          uiOutput(ns("ui_focus")),
+          hr(),
+          h6("Popups & labels"),
+          uiOutput(ns("ui_popup")),
+          uiOutput(ns("ui_label"))),
+        conditionalPanel(
+          sprintf("input['%s'] && input['%s'] != '__none__'",
+                  ns("cluster_by"), ns("cluster_by")),
+          helpText("Combining by area: one bubble per area at the average ",
+                   "position of its points, sized by how many it combines. ",
+                   "Click a bubble for the area name and point count. ",
+                   "Clustering, layer groups, the heatmap, and popups are ",
+                   "set automatically while this is on."))),
       checkboxInput(ns("scalebar"), "Show distance scale bar", TRUE),
       textInput(ns("title"), "Map title", placeholder = "(optional)"),
       hr(),
@@ -340,6 +361,29 @@ mapServer <- function(id, data_in) {
                   # renderUI re-fire (and flicker) on every selection
                   selected = isolate(input$color_scale) %||% "linear")
     })
+    output$ui_cluster_by <- renderUI({
+      df <- data_in(); req(is.data.frame(df))
+      lon <- map_col(input$lon); lat <- map_col(input$lat)
+      ok <- names(df)[vapply(df, function(x) {
+        # Same "(missing)"-inclusive count admin_cluster_params gates on.
+        n <- dplyr::n_distinct(map_group_vals(x))
+        n >= 2 && n <= MAP_ADMIN_MAX
+      }, logical(1))]
+      ok <- setdiff(ok, c(lon, lat))
+      selectInput(ns("cluster_by"),
+                  tagList("Combine points by area (optional)", info_tip(
+                    "One bubble per area - e.g. one per county - at the ",
+                    "average position of its points, sized by how many ",
+                    "points it combines. With a numeric Color by column, ",
+                    "bubbles are shaded by the area's average of it. ",
+                    "Columns with 2-", MAP_ADMIN_MAX,
+                    " distinct values qualify.")),
+                  choices = c("(none)" = "__none__", ok),
+                  # isolate: keep the pick across data-driven re-renders
+                  # without re-firing on our own selection
+                  selected = if (isolate(input$cluster_by) %||% "" %in% ok)
+                    isolate(input$cluster_by) else "__none__")
+    })
     output$ui_group <- renderUI({
       df <- data_in(); req(is.data.frame(df))
       ok <- names(df)[vapply(df, function(x) {
@@ -393,6 +437,7 @@ mapServer <- function(id, data_in) {
         popup_cols = input$popup_cols,
         label_col  = input$label_col %||% "__none__",
         show_points = isTRUE(input$show_points %||% TRUE),
+        cluster_by = input$cluster_by %||% "__none__",
         cluster    = input$cluster %||% "auto",
         legend     = isTRUE(input$legend %||% TRUE),
         color_scale = input$color_scale %||% "linear",
@@ -418,6 +463,7 @@ mapServer <- function(id, data_in) {
         color_scale  = input$choro_scale %||% "linear",
         legend       = isTRUE(input$choro_legend %||% TRUE),
         show_points  = TRUE,   # regions replace markers; the toggle is points-mode only
+        cluster_by   = "__none__",
         heatmap      = FALSE))
     }
     # Debounced so slider drags rebuild the widget once, not per tick.
@@ -568,10 +614,18 @@ mapServer <- function(id, data_in) {
           !all(c(lon, lat) %in% names(df)) ||
           !is.numeric(df[[lon]]) || !is.numeric(df[[lat]])) return(NULL)
       cc <- clean_coords(df, lon, lat)
+      # "Auto" clustering gives no feedback about which state it resolved
+      # to; say so here (recomputing the builder's switch) so a clustered
+      # map is never a surprise.
+      auto_note <- if (identical(input$cluster %||% "auto", "auto") &&
+                       is.null(map_col(input$cluster_by)) &&
+                       isTRUE(input$show_points %||% TRUE) &&
+                       nrow(cc$data) > MAP_CLUSTER_AUTO)
+        " \u00b7 clustering on (auto)" else ""
       span(class = "text-muted small",
-           sprintf("Showing %s of %s rows with usable coordinates.",
+           sprintf("Showing %s of %s rows with usable coordinates.%s",
                    format(nrow(cc$data), big.mark = ","),
-                   format(cc$n_total, big.mark = ",")))
+                   format(cc$n_total, big.mark = ","), auto_note))
     })
 
     output$code <- renderText({
