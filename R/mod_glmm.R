@@ -154,6 +154,8 @@ glmmUI <- function(id, binary = FALSE) {
         plotOutput(ns("dharma_plot"), height = "420px"),
         downloadButton(ns("dl_dharma"), "Download PNG",
                        class = "btn-outline-secondary uf-dl"),
+        h4("Uniformity (KS test)"),
+        verbatimTextOutput(ns("unif_test")),
         h4("Overdispersion"),
         verbatimTextOutput(ns("disp_test")),
         if (!binary) h4("Zero inflation"),
@@ -523,7 +525,7 @@ glmmServer <- function(id, data_in, binary = FALSE) {
       validate(need(!is.null(f), "Fit a model to see the DHARMa residuals."))
       s <- dharma_sim()
       validate(need(s$ok, s$error))
-      plot(s$sim)
+      glmm_dharma_plot(s$sim)
     })
 
     output$dl_dharma <- downloadHandler(
@@ -532,12 +534,20 @@ glmmServer <- function(id, data_in, binary = FALSE) {
         s <- dharma_sim(); req(s$ok)
         grDevices::png(file, width = 900, height = 600)
         on.exit(grDevices::dev.off(), add = TRUE)
-        plot(s$sim)
+        glmm_dharma_plot(s$sim)
       })
 
     dharma_tests <- reactive({
       s <- dharma_sim(); req(s$ok)
       glmm_dharma_tests(s$sim, binary = binary)
+    })
+
+    output$unif_test <- renderPrint({
+      f <- rv$fit
+      validate(need(!is.null(f), "Fit a model to run the uniformity test."))
+      s <- dharma_sim()
+      validate(need(s$ok, s$error))
+      print(dharma_tests()$uniformity)
     })
 
     output$disp_test <- renderPrint({

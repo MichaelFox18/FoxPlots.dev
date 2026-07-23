@@ -366,10 +366,34 @@ glmm_dharma_tests <- function(sim, binary = FALSE) {
   on.exit(restore_rng(), add = TRUE)
   run <- function(f) tryCatch(f(sim, plot = FALSE), error = function(e)
     paste("Test unavailable:", conditionMessage(e)))
-  out <- list(dispersion = run(DHARMa::testDispersion),
+  out <- list(uniformity = run(DHARMa::testUniformity),
+              dispersion = run(DHARMa::testDispersion),
               outliers   = run(DHARMa::testOutliers))
   if (!isTRUE(binary)) out$zero_inflation <- run(DHARMa::testZeroInflation)
   out
+}
+
+# Draw the two-panel DHARMa residual view with readable labels. DHARMa's own
+# plot() overprints three test annotations on the QQ panel and, when the
+# model has few distinct predictions, labels each residual boxplot with the
+# full-precision prediction value (e.g. "0.0943396226415094"). Here the QQ
+# panel is drawn clean (the formal tests are printed as text right below the
+# plot in the module), and few-level predictions become a factor of
+# significant-digit values so the boxplot axis reads like numbers. Continuous
+# predictions fall through to DHARMa's default rank-transformed scatter.
+glmm_dharma_plot <- function(sim) {
+  op <- graphics::par(mfrow = c(1, 2), oma = c(0, 0, 2, 0))
+  on.exit(graphics::par(op), add = TRUE)
+  DHARMa::plotQQunif(sim, testUniformity = FALSE, testOutliers = FALSE,
+                     testDispersion = FALSE)
+  pred <- sim$fittedPredictedResponse
+  if (length(unique(pred)) <= 12) {
+    DHARMa::plotResiduals(sim, form = factor(signif(pred, 3)),
+                          xlab = "Predicted response (one box per cell)")
+  } else {
+    DHARMa::plotResiduals(sim)
+  }
+  graphics::mtext("DHARMa simulated residuals", outer = TRUE, font = 2)
 }
 
 # ---------------------------------------------------------------------------

@@ -203,10 +203,20 @@ test_that("glmm_dharma simulates residuals and runs the test battery", {
   expect_true(sim$ok)
   expect_s3_class(sim$sim, "DHARMa")
   tests <- glmm_dharma_tests(sim$sim, binary = FALSE)
-  expect_named(tests, c("dispersion", "outliers", "zero_inflation"))
+  expect_named(tests, c("uniformity", "dispersion", "outliers",
+                        "zero_inflation"))
   expect_s3_class(tests$dispersion, "htest")
+  expect_s3_class(tests$uniformity, "htest")
   binry <- glmm_dharma_tests(sim$sim, binary = TRUE)
   expect_false("zero_inflation" %in% names(binry))
+  # the two-panel plot draws cleanly and leaves no device open
+  n_dev <- length(grDevices::dev.list())
+  f <- withr::local_tempfile(fileext = ".png")
+  grDevices::png(f)
+  glmm_dharma_plot(sim$sim)
+  grDevices::dev.off()
+  expect_true(file.exists(f) && file.size(f) > 0)
+  expect_equal(length(grDevices::dev.list()), n_dev)
 })
 
 test_that("glmm_dharma does not disturb the session RNG", {
