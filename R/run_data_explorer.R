@@ -111,7 +111,10 @@ data_explorer_app <- function() {
     title        = uf_title("Data Explorer"),
     window_title = "UF/IFAS Data Explorer",
     theme        = uf_theme(),
-    fillable     = c("reshape", "visualize", "compare", "regression"),
+    # regression is deliberately NOT fillable: its tabs are long scrolling
+    # stacks (same layout as the standalone tool), and a fillable host
+    # squeezes the EMMeans controls card into a clipped inner scroller.
+    fillable     = c("reshape", "visualize", "compare"),
 
     about_panel,
     nav_panel(tagList(icon("file-arrow-up"), " Import"),    value = "import",

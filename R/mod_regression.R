@@ -69,7 +69,11 @@ regressionUI <- function(id) {
                uiOutput(ns("interpretation")))
         ),
         nav_panel("Estimated means",
+          # fill = FALSE: this is the only tab that LEADS with a flexible
+          # controls card, and in a fillable host a fill-item card gets
+          # squeezed to a clipped inner scroller. Keep it natural-height.
           card(
+            fill = FALSE,
             card_body(
               uiOutput(ns("ui_emm_controls")),
               uiOutput(ns("emm_note"))
@@ -122,15 +126,29 @@ regressionUI <- function(id) {
         ),
         nav_panel("Model comparison",
           card(
+            fill = FALSE,
             card_body(
-              tags$p(class = "mb-2",
-                "Save the current fit as ", tags$b("Model A"), ", then change ",
-                "the setup and fit again to compare the two. Valid only when one ",
-                "model is nested in the other and both use the same rows."),
+              tags$p(class = "mb-1",
+                     tags$b("Does adding a predictor genuinely improve the ",
+                            "model? Three steps:")),
+              tags$ol(class = "mb-2",
+                tags$li("Fit a model with the sidebar's ",
+                        tags$b("Fit model"), " button."),
+                tags$li("Click ", tags$b("Save current fit as Model A"),
+                        " below."),
+                tags$li("Change the setup (add or drop a predictor) and fit ",
+                        "again \u2014 the new fit becomes Model B and the ",
+                        "comparison appears below.")),
+              tags$p(class = "text-muted small mb-2",
+                "Example: fit mpg ~ wt, save it as Model A, then add hp and ",
+                "fit again. A small p-value in the table means hp genuinely ",
+                "improves the model; similar AIC/BIC means it doesn't earn ",
+                "its keep. Valid only when one model is nested in the other ",
+                "and both use the same rows."),
+              uiOutput(ns("cmp_status")),
               actionButton(ns("save_a"), "Save current fit as Model A",
                            class = "btn-outline-primary btn-sm",
-                           icon = icon("bookmark")),
-              uiOutput(ns("saved_a"))
+                           icon = icon("bookmark"))
             )
           ),
           card(card_header(icon("code-compare"),
@@ -550,14 +568,31 @@ regressionServer <- function(id, data_in) {
     # A saved model no longer matches a new dataset.
     observeEvent(data_in(), saved_model(NULL), ignoreNULL = FALSE)
 
-    output$saved_a <- renderUI({
-      m <- saved_model()
-      if (is.null(m))
-        return(tags$p(class = "text-muted fst-italic mt-2 mb-0",
-                      "No model saved yet."))
-      f <- gsub("\\s+", " ", paste(deparse(stats::formula(m)), collapse = " "))
-      tags$p(class = "mt-2 mb-0",
-             tags$b("Model A: "), tags$code(f))
+    # One-line formula text for the status line.
+    fml_txt <- function(m)
+      gsub("\\s+", " ", paste(deparse(stats::formula(m)), collapse = " "))
+
+    # Live status: which of the three steps the user is on. identical() is
+    # TRUE only while B is literally the object saved as A (right after
+    # saving); any refit -- even of the same spec -- produces a new object
+    # and moves to the comparing state, which is honest (the table then
+    # shows a null comparison).
+    output$cmp_status <- renderUI({
+      a <- saved_model(); b <- model()
+      if (is.null(a) && is.null(b))
+        return(tags$p(class = "text-muted fst-italic mb-2",
+                      "Nothing fitted yet \u2014 start at step 1."))
+      if (is.null(a))
+        return(tags$p(class = "mb-2", icon("circle-check"),
+                      " Current fit ready \u2014 save it as Model A (step 2)."))
+      if (is.null(b) || identical(a, b))
+        return(tags$p(class = "mb-2",
+                      tags$b("Model A saved: "), tags$code(fml_txt(a)),
+                      tags$br(),
+                      "Now change the setup and fit again (step 3)."))
+      tags$p(class = "mb-2",
+             tags$b("Comparing A: "), tags$code(fml_txt(a)),
+             " ", tags$b("vs B: "), tags$code(fml_txt(b)))
     })
 
     comparison <- reactive({
@@ -567,8 +602,12 @@ regressionServer <- function(id, data_in) {
 
     output$compare <- DT::renderDT({
       validate(need(!is.null(saved_model()),
-                    "Save a model as A, then fit another to compare."))
-      validate(need(!is.null(model()), "Fit a current model (B)."))
+                    "Nothing to compare yet \u2014 follow steps 1-3 above."))
+      validate(need(!is.null(model()),
+                    "Fit a current model (B) \u2014 step 3 above."))
+      validate(need(!identical(saved_model(), model()), paste(
+        "Model B is still the same fit as Model A \u2014 change the setup",
+        "and fit again (step 3).")))
       cmp <- comparison()
       validate(need(is.null(cmp$error), cmp$error %||% "Comparison failed."))
       validate(need(!is.null(cmp$table),
@@ -577,7 +616,8 @@ regressionServer <- function(id, data_in) {
                     options = list(dom = "t", paging = FALSE, scrollX = TRUE))
     })
     output$compare_notes <- renderUI({
-      if (is.null(saved_model()) || is.null(model())) return(NULL)
+      if (is.null(saved_model()) || is.null(model()) ||
+          identical(saved_model(), model())) return(NULL)
       cmp <- comparison()
       deltas <- if (!is.null(cmp$table))
         tags$p(class = "small mt-2 mb-1", tags$b("B - A: "),

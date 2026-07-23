@@ -363,3 +363,13 @@ test_that("reg_validate rejects a binomial response constant among usable rows",
   d <- data.frame(y = c(0, 0, 0, 1, 1), x = c(1, 2, 3, NA, NA))
   expect_gt(length(reg_validate(d, reg_spec("y", "x", family = "binomial"))), 0L)
 })
+
+# ---- Model comparison tab discoverability (0.8.0 UX pass) -----------------
+
+test_that("regression UI carries the numbered comparison steps", {
+  html <- as.character(htmltools::renderTags(regressionUI("x"))$html)
+  expect_match(html, "Three steps", fixed = TRUE)
+  expect_match(html, "Save current fit as Model A", fixed = TRUE)
+  expect_match(html, "the new fit becomes Model B", fixed = TRUE)
+  expect_match(html, "mpg ~ wt", fixed = TRUE)      # the worked example
+})
