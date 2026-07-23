@@ -3,7 +3,7 @@
 `foxplots` is an **R package**. Once it's installed, you launch any app with a
 single line — no folders to point at, no files to source.
 
-There are seven apps:
+There are eight apps:
 
 | Launch with | App | What it's for |
 |---|---|---|
@@ -12,6 +12,7 @@ There are seven apps:
 | `run_combine_tool()`  | **Combine Tool**  | Merge / join / compare **two** tables |
 | `run_compare_groups()` | **Compare Groups** | Just the statistics: do these groups really differ? (t-test / ANOVA / rank tests / chi-square), then download a report |
 | `run_lmer_tool()`     | **Mixed Model Review** | Fit linear mixed models (lmer): ANOVA, EMMeans post-hoc, diagnostics |
+| `run_glmm_review()`   | **GLMM Review** | Fit **generalized** linear mixed models (glmmTMB) for counts, proportions, zero-inflated and 0/1 outcomes: family picker with live guardrails, DHARMa residual checks, Wald ANOVA, EMMeans with letters |
 | `run_map_tool()`      | **Map Tool**      | Interactive maps two ways: **points** (color / size by variables with log / quantile scales + a size legend, layer groups with toggle + zoom, popups, clustering, an optional density heatmap, scale bar) or **shaded regions** (upload a GeoJSON boundary file and shade each region by your data). One-file HTML + PNG download (basemap tiles need internet) |
 | `run_regression_tool()` | **Regression Tool** | Fit linear or logistic regression: numeric / categorical predictors, interactions, coefficient table with CIs, estimated marginal means, diagnostics with assumption checks and VIF, odds ratios, model comparison, then export or report |
 

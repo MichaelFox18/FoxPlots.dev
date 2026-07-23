@@ -12,11 +12,11 @@ code required. It is an installable **R package** built from reusable Shiny
 
 ## Status
 
-`foxplots` is an **installable R package**. It bundles the whole toolkit — seven
+`foxplots` is an **installable R package**. It bundles the whole toolkit — eight
 Shiny apps, the modules behind them, and a tested helper foundation — and exports
 both **launcher functions** (`run_data_explorer()`, `run_reshape_tool()`,
 `run_combine_tool()`, `run_compare_groups()`, `run_lmer_tool()`,
-`run_map_tool()`, `run_regression_tool()`) and the
+`run_glmm_review()`, `run_map_tool()`, `run_regression_tool()`) and the
 underlying **helper API** (`do_stack()`, `grouped_summary()`, `fit_model()`, …).
 Install it once and run anywhere.
 
@@ -76,7 +76,8 @@ Then launch any app:
 library(foxplots)
 run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
                          #    run_compare_groups() / run_lmer_tool() /
-                         #    run_map_tool() / run_regression_tool()
+                         #    run_glmm_review() / run_map_tool() /
+                         #    run_regression_tool()
 ```
 
 | Launcher | App | For… |
@@ -86,6 +87,7 @@ run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
 | `run_combine_tool()`  | **Combine Tool**  | merging / joining / comparing two tables |
 | `run_compare_groups()` | **Compare Groups** | testing whether groups differ (t-test / ANOVA / rank tests / chi-square), optionally split by a third variable |
 | `run_lmer_tool()`     | **Mixed Model Review** | fitting linear mixed models (lmer) |
+| `run_glmm_review()`   | **GLMM Review** | generalized linear mixed models (glmmTMB): counts, proportions, zero-inflated and 0/1 outcomes |
 | `run_map_tool()`      | **Map Tool**      | interactive maps — points, density heatmap, or shaded regions (choropleth) |
 | `run_regression_tool()` | **Regression Tool** | linear / logistic regression with diagnostics, marginal means, and a report |
 
@@ -95,7 +97,7 @@ The package also exports the helper functions for use in your own scripts (e.g.
 
 ---
 
-## 2. The seven apps — separately
+## 2. The eight apps — separately
 
 ### Data Explorer — the full pipeline
 Tabs run **left → right**, each feeding the next:
@@ -201,6 +203,33 @@ test), and a copy-paste R script for everything.
 > This app pulls in the mixed-model stack (`lme4`, `lmerTest`, `emmeans`,
 > `multcomp`), so the **first install is a little heavier** than the other tools.
 
+### GLMM Review — generalized linear mixed models (glmmTMB)
+
+**Import → General GLMM / Binary (0/1) GLMM → Export.** The Mixed Model
+Review's sibling for responses a normal distribution can't handle: counts,
+proportions, zero-heavy data, and presence/absence. Pick a response, a
+**distribution family** (Gaussian, Gamma, Poisson, negative binomial
+nbinom1/nbinom2, Tweedie, Beta — each with a live note on what values are
+valid, checked against your actual data *before* you fit), fixed effects and
+grouping (random) factors from drop-downs — no `glmmTMB()` calls to write.
+
+- Optional **zero-inflation** (`ziformula`) and **dispersion**
+  (`dispformula`) side-models, point-and-click.
+- **Binary (0/1) outcomes get their own tab** with a link-function picker
+  (logit / probit / cloglog / cauchit) and Bernoulli-specific guardrails.
+- Diagnostics use **DHARMa simulated residuals** — the right tool for
+  glmmTMB — with uniformity, overdispersion, zero-inflation and outlier
+  tests, plus a classic Pearson chi-square/df cross-check.
+- **Type III Wald ANOVA** (`car::Anova`), **EMMeans on the response scale**
+  (pairwise comparisons come out as ratios / odds ratios) with a compact
+  letter display and plot, CSV/PNG downloads, and a copy-paste R script.
+- Built-in **field example** (`make_glmm_example_data()`): an overdispersed
+  count, a zero-heavy count, a proportion, and a 0/1 response — one column
+  per family worth demonstrating.
+
+> Pulls in `glmmTMB` + `DHARMa` on top of the mixed-model stack, so the
+> first install is on the heavier side too.
+
 ### Map Tool — interactive maps from a spreadsheet
 
 **Import → Map → Export.** Two map types:
@@ -249,8 +278,8 @@ R/   the whole package
             |  (a launcher assembles the modules into an app)
             v
    run_data_explorer() . run_reshape_tool()  . run_combine_tool()
-   run_compare_groups() . run_lmer_tool()    . run_map_tool()
-   run_regression_tool()
+   run_compare_groups() . run_lmer_tool()    . run_glmm_review()
+   run_map_tool()       . run_regression_tool()
 ```
 
 - The **`mod_reshape`** in the Reshape Tool is the *exact same module* as the

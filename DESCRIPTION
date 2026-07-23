@@ -1,6 +1,6 @@
 Package: foxplots
 Title: Point-and-Click Data Exploration and Reshaping Toolkit
-Version: 0.6.0
+Version: 0.7.0
 Authors@R:
     person("Michael", "Fox", , "michaelfox0418@gmail.com", role = c("aut", "cre"))
 Description: A point-and-click toolkit, built on 'shiny', for importing,
