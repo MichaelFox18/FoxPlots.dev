@@ -13,7 +13,7 @@ There are eight apps:
 | `run_compare_groups()` | **Compare Groups** | Just the statistics: do these groups really differ? (t-test / ANOVA / rank tests / chi-square), then download a report |
 | `run_lmer_tool()`     | **Mixed Model Review** | Fit linear mixed models (lmer): ANOVA, EMMeans post-hoc, diagnostics |
 | `run_glmm_review()`   | **GLMM Review** | Fit **generalized** linear mixed models (glmmTMB) for counts, proportions, zero-inflated and 0/1 outcomes: family picker with live guardrails, DHARMa residual checks, Wald ANOVA, EMMeans with letters |
-| `run_map_tool()`      | **Map Tool**      | Interactive maps two ways: **points** (color / size by variables with log / quantile scales + a size legend, layer groups with toggle + zoom, popups, clustering, an optional density heatmap, scale bar) or **shaded regions** (upload a GeoJSON boundary file and shade each region by your data). One-file HTML + PNG download (basemap tiles need internet) |
+| `run_map_tool()`      | **Map Tool**      | Interactive maps two ways: **points** (color / size by variables with log / quantile scales + a size legend, layer groups with toggle + zoom, popups, clustering, an optional density heatmap, scale bar) or **shaded regions** (built-in US state / county / world-country boundaries, or your own GeoJSON, shaded by your data). One-file HTML + PNG download (basemap tiles need internet) |
 | `run_regression_tool()` | **Regression Tool** | Fit linear or logistic regression: numeric / categorical predictors, interactions, coefficient table with CIs, estimated marginal means, diagnostics with assumption checks and VIF, odds ratios, model comparison, then export or report |
 
 ---
@@ -77,7 +77,8 @@ can take a few minutes the first time; you only do it once.
 library(foxplots)
 run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
                          #    run_compare_groups() / run_lmer_tool() /
-                         #    run_map_tool() / run_regression_tool()
+                         #    run_glmm_review() / run_map_tool() /
+                         #    run_regression_tool()
 ```
 
 The app opens in your web browser. To stop it, press **Esc** in the R console
@@ -113,7 +114,7 @@ See `help(package = "foxplots")` for the full list.
 | The app opens but the UF logo is missing | Reinstall the package (Step 2) so its bundled files come along. |
 | Map tab: no PNG button, or a note about webshot2 | Install the optional extras from Step 2 (`webshot2`, `chromote`) — PNG snapshots also need Chrome or Edge on the computer. |
 | Map is grey / no background | Basemap tiles load from the internet — check the connection. Your points still export fine. |
-| Shaded-regions map is blank | Check the sidebar's match report — the boundary file's name property must exactly match your data column's values (e.g. "Alachua" vs "ALACHUA" won't match). |
+| Shaded-regions map is blank | Check the sidebar's match report — the boundary property must exactly match your data column's values (e.g. "Alachua" vs "ALACHUA" won't match). With built-in US counties, try the `county_state` ("Alachua County, Florida") or `fips` property, or set "Limit to state" and match on plain `county`. |
 
 ---
 

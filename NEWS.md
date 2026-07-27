@@ -1,4 +1,4 @@
-# foxplots 0.9.0 (development)
+# foxplots 0.9.0
 
 ## Every app can build a report -- and you pick what goes in it
 

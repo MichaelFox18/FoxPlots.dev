@@ -22,8 +22,11 @@ Install it once and run anywhere.
 
 Highlights:
 - **One-click report** — HTML or editable Word (`.docx`), pandoc-free, with a
-  "show the R code" toggle — now **including your map** as a snapshot of what
+  "show the R code" toggle — now in **every app**, with a **per-section picker**
+  so you choose what goes in, and **including your map** as a snapshot of what
   you framed on screen.
+- **Maps with boundaries included** — shade **US states, US counties, or world
+  countries** without hunting for a GeoJSON (uploading your own still works).
 - **Save / restore your progress** — a `.rds` of your data + all data prep.
 - **11 chart types** (incl. a bubble option) and a reversible Data Health
   cleaner with outlier flagging.
@@ -37,7 +40,7 @@ Highlights:
   against many groups at once**, and **split any analysis by a third variable**.
 - **Interactive maps** — points with layer groups, log/quantile color **and
   size** scales with a graduated size legend, an optional **density heatmap**,
-  or a **choropleth** (regions shaded from an uploaded GeoJSON boundary file) —
+  or a **choropleth** (regions shaded from built-in or uploaded boundaries) —
   plus one-file interactive HTML + PNG export and copy-ready leaflet code.
 
 The look stays UF/IFAS-themed (blue/orange + the IFAS logo) throughout.
@@ -88,7 +91,7 @@ run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
 | `run_compare_groups()` | **Compare Groups** | testing whether groups differ (t-test / ANOVA / rank tests / chi-square), optionally split by a third variable |
 | `run_lmer_tool()`     | **Mixed Model Review** | fitting linear mixed models (lmer) |
 | `run_glmm_review()`   | **GLMM Review** | generalized linear mixed models (glmmTMB): counts, proportions, zero-inflated and 0/1 outcomes |
-| `run_map_tool()`      | **Map Tool**      | interactive maps — points, density heatmap, or shaded regions (choropleth) |
+| `run_map_tool()`      | **Map Tool**      | interactive maps — points, density heatmap, or shaded regions (built-in state / county / country boundaries, or your own GeoJSON) |
 | `run_regression_tool()` | **Regression Tool** | linear / logistic regression with diagnostics, marginal means, and a report |
 
 The package also exports the helper functions for use in your own scripts (e.g.
@@ -121,7 +124,7 @@ Tabs run **left → right**, each feeding the next:
    **sized by a variable** to make a bubble chart.
 5. **Map** — put rows with coordinates on an interactive basemap (see the **Map
    Tool** below for everything it can do — points, layer groups, density
-   heatmap, or shaded regions from an uploaded boundary file).
+   heatmap, or shaded regions from built-in or uploaded boundaries).
 6. **Compare Groups** — a JMP-style one-way analysis: t-test / ANOVA (or
    non-parametric Wilcoxon / Kruskal with **Dunn's or Steel-Dwass** all-pairs)
    across groups, with a group-means table (SE + 95% CI), the full ANOVA table
@@ -242,9 +245,10 @@ grouping (random) factors from drop-downs — no `glmmTMB()` calls to write.
   (clustering stays within each group, plus a per-group zoom), click popups and
   hover labels, an optional **density heatmap** layer for dense data (optionally
   weighted by a value column), and a distance **scale bar**.
-- **Shaded regions (choropleth)** — upload a **GeoJSON** boundary file (e.g.
-  county outlines), match a boundary property to a column in your data, and
-  shade each region by the mean / sum / median of a numeric column. The app
+- **Shaded regions (choropleth)** — pick **built-in boundaries** (US states, US
+  counties, world countries — optionally limited to one state or continent) or
+  upload your own **GeoJSON**, match a boundary property to a column in your
+  data, and shade each region by the mean / sum / median of a numeric column. The app
   reports exactly **how many regions matched** and names the strays on both
   sides, so a join problem is never a mystery blank map.
 
