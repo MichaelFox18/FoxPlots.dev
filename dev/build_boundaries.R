@@ -8,10 +8,20 @@
 # and coordinates rounded to 4 dp (~11 m), plenty for choropleth shading.
 suppressPackageStartupMessages({library(sf); library(jsonlite)})
 
-WD  <- "/private/tmp/claude-501/-Users-mikemikemike-Desktop-FoxPlots/f38da0bd-6c5c-479b-a81d-719b912a2cf1/scratchpad/geo"
-OUT <- "/Users/mikemikemike/Desktop/FoxPlots/inst/geo"
+# Run from the package root:  Rscript dev/build_boundaries.R
+# Downloads land in a scratch dir under the repo (git-ignored); outputs are
+# written straight to inst/geo/.
+WD  <- file.path(tempdir(), "foxplots-boundaries")
+OUT <- file.path(getwd(), "inst", "geo")
+if (!dir.exists(file.path(getwd(), "R")))
+  stop("Run this from the package root (the folder containing R/ and inst/).")
+dir.create(WD,  showWarnings = FALSE, recursive = TRUE)
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 setwd(WD)
+
+NE_URL <- paste0("https://raw.githubusercontent.com/nvkelso/",
+                 "natural-earth-vector/master/geojson/",
+                 "ne_110m_admin_0_countries.geojson")
 
 fetch_zip <- function(url, stem) {
   z <- file.path(WD, paste0(stem, ".zip"))
@@ -25,7 +35,13 @@ fetch_zip <- function(url, stem) {
 write_geo <- function(x, keep, file, digits = 4) {
   x <- x[, keep]
   x <- st_zm(x, drop = TRUE)
-  tmp <- tempfile(fileext = ".geojson")
+  # st_write takes the layer "name" from the file stem, so write to a
+  # DETERMINISTIC temp name: a tempfile() would bake a random string like
+  # "file173995825dd02" into the shipped GeoJSON and make every rebuild
+  # differ from the last for no real reason.
+  stem <- sub("\\.geojson\\.gz$", "", file)
+  tmp  <- file.path(tempdir(), paste0(stem, ".geojson"))
+  unlink(tmp)
   suppressWarnings(st_write(x, tmp, driver = "GeoJSON", quiet = TRUE,
                             layer_options = paste0("COORDINATE_PRECISION=", digits)))
   txt <- paste(readLines(tmp, warn = FALSE), collapse = "\n")
@@ -70,7 +86,9 @@ write_geo(counties, c("county", "county_full", "state", "county_state", "fips"),
           "us_counties.geojson.gz")
 
 ## --- World countries -------------------------------------------------------
-ne <- st_read(file.path(WD, "ne_countries.geojson"), quiet = TRUE)
+ne_file <- file.path(WD, "ne_countries.geojson")
+if (!file.exists(ne_file)) download.file(NE_URL, ne_file, quiet = TRUE)
+ne <- st_read(ne_file, quiet = TRUE)
 ne$country <- ne$NAME_LONG
 ne$iso_a3  <- ne$ADM0_A3
 ne$iso_a2  <- ne$ISO_A2_EH
