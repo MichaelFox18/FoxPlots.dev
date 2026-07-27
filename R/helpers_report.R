@@ -240,7 +240,7 @@ regression_code <- function(model) {
 #' @export
 report_spec <- function(data, summary_tbl = NULL, plots = NULL, plot_code = NULL,
                         maps = NULL, map_code = NULL,
-                        comparison = NULL, model = NULL,
+                        comparison = NULL, model = NULL, mixed = NULL,
                         title = "Data Explorer Report", show_code = FALSE,
                         logo = NULL, generated = Sys.time()) {
   stopifnot(is.data.frame(data))
@@ -251,6 +251,11 @@ report_spec <- function(data, summary_tbl = NULL, plots = NULL, plot_code = NULL
   has_maps    <- !is.null(maps) && length(maps) > 0
   has_compare <- !is.null(comparison) && is.list(comparison) && !is.null(comparison$mode)
   has_model   <- !is.null(model) && inherits(model, "lm")
+  # `mixed` is a LIST of model-report payloads (see model_payload()), so one
+  # app can contribute several -- the GLMM tool runs a general and a binary
+  # model side by side and reports both.
+  mixed     <- Filter(function(x) is.list(x) && length(x$tables) > 0, mixed %||% list())
+  has_mixed <- length(mixed) > 0
 
   list(
     title     = title,
@@ -270,15 +275,43 @@ report_spec <- function(data, summary_tbl = NULL, plots = NULL, plot_code = NULL
     model         = if (has_model) model else NULL,
     model_interp  = if (has_model) model_interpretation(model) else NULL,
     regression_code = if (has_model) regression_code(model) else NULL,
+    mixed         = if (has_mixed) mixed else NULL,
     sections = c(
       overview   = TRUE,
       summary    = has_summary,
       charts     = has_charts,
       maps       = has_maps,
       comparison = has_compare,
-      regression = has_model
+      regression = has_model,
+      mixed      = has_mixed
     )
   )
+}
+
+# --- model-report payloads ---------------------------------------------------
+# The mixed-model tools (lmer, GLMM) produce richer output than a single lm:
+# several formulas, several tables, verbatim diagnostic blocks. Rather than
+# teach both renderers about each engine, the modules hand the report a plain
+# payload in this shape and ONE renderer per format walks it:
+#
+#   title    chr(1)  section heading, e.g. "Mixed model" / "GLMM (binary 0/1)"
+#   formulas named chr, printed as a label: value block ("Response" = "y ~ x")
+#   tables   named list of data frames, printed in order under their names
+#   texts    named list of chr, printed verbatim (test output, model summary)
+#   notes    chr, the engine's caveats (singular fit, contrast recoding, ...)
+#   code     chr(1), the reproducible script (shown only when show_code)
+#
+# Empty slots are dropped, so a payload degrades cleanly when the user never
+# opened, say, the EMMeans tab.
+model_payload <- function(title, formulas = character(0), tables = list(),
+                          texts = list(), notes = character(0), code = NULL) {
+  drop_empty <- function(l) Filter(function(x) !is.null(x) && length(x) > 0, l)
+  list(title    = title,
+       formulas = formulas[nzchar(formulas %||% character(0))],
+       tables   = drop_empty(tables),
+       texts    = drop_empty(texts),
+       notes    = notes[nzchar(notes %||% character(0))],
+       code     = if (!is.null(code) && nzchar(code)) code else NULL)
 }
 
 # --- the HTML document (pure) -----------------------------------------------
@@ -496,6 +529,34 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
          diag, code)
 }
 
+# One model-report payload as HTML: heading, formula block, each table, each
+# verbatim block, the engine's notes, and (optionally) its code.
+.model_payload_html <- function(pl, show_code) {
+  fml <- if (length(pl$formulas))
+    sprintf("<pre class=\"code\"><code>%s</code></pre>",
+            html_escape(paste(sprintf("%-13s %s", paste0(names(pl$formulas), ":"),
+                                      unname(pl$formulas)), collapse = "\n")))
+  tabs <- paste0(vapply(names(pl$tables), function(nm)
+    df_to_html(pl$tables[[nm]], nm), character(1)), collapse = "")
+  txts <- paste0(vapply(names(pl$texts), function(nm)
+    paste0("<h3>", html_escape(nm), "</h3>",
+           "<pre class=\"code\"><code>", html_escape(
+             paste(pl$texts[[nm]], collapse = "\n")), "</code></pre>"),
+    character(1)), collapse = "")
+  notes <- if (length(pl$notes))
+    paste0("<p class=\"note\">", paste(html_escape(pl$notes), collapse = "<br>"),
+           "</p>")
+  code <- if (isTRUE(show_code)) code_block_html(pl$code) else ""
+  paste0("<h3>", html_escape(pl$title), "</h3>", fml, tabs, txts, notes, code)
+}
+
+# The Mixed models section: every payload the app contributed, in order.
+.section_mixed <- function(spec) {
+  paste0("<h2 id=\"mixed\">Mixed models</h2>",
+         paste0(vapply(spec$mixed, .model_payload_html, character(1),
+                       show_code = spec$show_code), collapse = ""))
+}
+
 #' Assemble the full self-contained HTML report as a single string. Pure: takes
 #' pre-rasterized plot data URIs so it can be unit-tested with fakes.
 #'
@@ -517,11 +578,13 @@ build_report_html <- function(spec, plot_uris = character(0),
   if (isTRUE(sec[["maps"]]))       parts <- c(parts, .section_maps(spec, map_uris))
   if (isTRUE(sec[["comparison"]])) parts <- c(parts, .section_comparison(spec))
   if (isTRUE(sec[["regression"]])) parts <- c(parts, .section_regression(spec, reg_uris))
+  if (isTRUE(sec[["mixed"]]))      parts <- c(parts, .section_mixed(spec))
 
   toc_items <- c(
     overview   = "Data overview", summary = "Summary", charts = "Charts",
     maps       = "Maps",
-    comparison = "Group comparison", regression = "Regression")
+    comparison = "Group comparison", regression = "Regression",
+    mixed      = "Mixed models")
   toc <- paste0(vapply(names(toc_items), function(k)
     if (isTRUE(sec[[k]]))
       sprintf("<li><a href=\"#%s\">%s</a></li>", k, toc_items[[k]]) else "",
@@ -712,6 +775,28 @@ split_wide_df <- function(df, max_cols = 10L, keep = 1L) {
   doc
 }
 
+# The Mixed models section for Word: the same payloads the HTML path walks.
+.docx_section_mixed <- function(doc, spec) {
+  doc <- officer::body_add_par(doc, "Mixed models", style = "heading 1")
+  for (pl in spec$mixed) {
+    doc <- officer::body_add_par(doc, pl$title, style = "heading 2")
+    for (nm in names(pl$formulas))
+      doc <- officer::body_add_par(doc, sprintf("%s: %s", nm, pl$formulas[[nm]]),
+                                   style = "Normal")
+    for (nm in names(pl$tables))
+      doc <- .docx_add_table(doc, pl$tables[[nm]], nm)
+    for (nm in names(pl$texts)) {
+      doc <- officer::body_add_par(doc, nm, style = "heading 3")
+      doc <- .docx_add_code(doc, paste(pl$texts[[nm]], collapse = "\n"))
+    }
+    for (n in pl$notes)
+      doc <- officer::body_add_par(doc, n, style = "Normal")
+    if (isTRUE(spec$show_code) && !is.null(pl$code))
+      doc <- .docx_add_code(doc, pl$code)
+  }
+  doc
+}
+
 .docx_section_regression <- function(doc, spec, reg_paths) {
   m <- spec$model; info <- spec$model_interp
   f <- gsub("\\s+", " ", paste(deparse(stats::formula(m)), collapse = " "))
@@ -805,6 +890,7 @@ build_report_docx <- function(spec, plot_paths = character(0),
   }
   if (isTRUE(sec[["comparison"]])) doc <- .docx_section_comparison(doc, spec)
   if (isTRUE(sec[["regression"]])) doc <- .docx_section_regression(doc, spec, reg_paths)
+  if (isTRUE(sec[["mixed"]]))      doc <- .docx_section_mixed(doc, spec)
   doc
 }
 

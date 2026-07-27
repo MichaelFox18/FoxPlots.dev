@@ -236,3 +236,21 @@ test_that("make_example_data leaves the session RNG stream untouched", {
   expect_identical(.Random.seed, before)
   expect_identical(make_example_data(), make_example_data())  # still deterministic
 })
+
+test_that("lmer_report_payload summarises a fit for the report", {
+  skip_if_not_installed("lmerTest")
+  d <- make_example_data()
+  fit <- lmer_fit(d, list(response = "yield_kg", fixed = "Variety",
+                          random = "Block", reml = TRUE, anova_type = "3",
+                          ddf = "Satterthwaite"))
+  skip_if_not(isTRUE(fit$ok))
+  pl <- lmer_report_payload(fit, code = "lmer(...)")
+  expect_equal(pl$title, "Mixed model (lmerTest)")
+  expect_match(unname(pl$formulas[["Model"]]), "yield_kg")
+  expect_true("Fit statistics" %in% names(pl$tables))
+  expect_true(any(grepl("ANOVA", names(pl$tables))))
+  expect_true("Variance components" %in% names(pl$tables))
+  expect_equal(pl$code, "lmer(...)")
+  expect_null(lmer_report_payload(NULL))
+  expect_null(lmer_report_payload(list(ok = FALSE)))
+})

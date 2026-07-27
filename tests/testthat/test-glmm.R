@@ -322,11 +322,11 @@ test_that("glmmServer fits on example data and returns the augmented frame", {
                       run = 1)
     expect_true(rv$fit$ok)
     expect_match(rv$fit$fml_str, "insect_count")
-    expect_equal(nrow(session$returned()), nrow(d))
+    expect_equal(nrow(session$returned$data()), nrow(d))
     # combined-variable builder augments the returned frame
     session$setInputs(combo_vars = c("Treatment", "Season"), combo_sep = ".",
                       combo_add = 1)
-    expect_true("Treatment.Season" %in% names(session$returned()))
+    expect_true("Treatment.Season" %in% names(session$returned$data()))
   })
 })
 
@@ -436,4 +436,26 @@ test_that("glmm_fit and the binary tab accept a logical response", {
     html <- as.character(output$response_ui$html)
     expect_match(html, "present_l")
   })
+})
+
+test_that("glmm_report_payload summarises a fit for the report", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  fit <- glmm_fit(d, list(response = "insect_count", fixed = "Treatment",
+                          random = "Site", family_key = "nbinom2_log"))
+  pl <- glmm_report_payload(fit, code = "glmmTMB(...)")
+  expect_match(pl$title, "GLMM|Generalized")
+  expect_match(unname(pl$formulas[["Conditional"]]), "insect_count")
+  expect_equal(unname(pl$formulas[["ziformula"]]), "~0")
+  expect_true("Fit statistics" %in% names(pl$tables))
+  expect_true("Residual diagnostics" %in% names(pl$texts))
+  expect_match(paste(pl$texts[["Residual diagnostics"]], collapse = " "),
+               "Pearson chi-sq")
+  # binary fits omit the dispersion formula line
+  fb <- glmm_fit(d, list(response = "present", fixed = "Treatment",
+                         random = "Site", binary = TRUE, link = "logit"))
+  plb <- glmm_report_payload(fb, title = "GLMM: binary (0/1) outcome")
+  expect_equal(plb$title, "GLMM: binary (0/1) outcome")
+  expect_false("dispformula" %in% names(plb$formulas))
+  expect_null(glmm_report_payload(list(ok = FALSE)))
 })

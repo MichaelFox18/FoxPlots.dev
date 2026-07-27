@@ -45,14 +45,20 @@ lmer_tool_app <- function() {
                        example_choices = c("RCBD example (3-factor)" = "rcbd"))),
     nav_panel(tagList(icon("diagram-project"), " Mixed Model"), value = "model",
               lmerUI("lmer")),
-    nav_panel(tagList(icon("file-export"),     " Export"),      value = "export",
-              exportUI("ex", preview = FALSE))
+    nav_panel(tagList(icon("file-export"),     " Export & Report"),
+              value = "export",
+              exportReportUI("ex", "rep", preview = FALSE,
+                             default_title = "Mixed Model Report"))
   )
 
   server <- function(input, output, session) {
-    imported   <- importServer("imp", examples = list(rcbd = make_example_data()))
-    model_data <- lmerServer("lmer", imported)        # -> augmented dataset reactive
-    exportServer("ex", model_data, preview = FALSE)   # data-only; one preview lives in Import
+    imported <- importServer("imp", examples = list(rcbd = make_example_data()))
+    lmer_out <- lmerServer("lmer", imported)   # -> list(data =, report =)
+    exportServer("ex", lmer_out$data, preview = FALSE)  # one preview, in Import
+    reportServer("rep", lmer_out$data,
+                 mixed = reactive(Filter(Negate(is.null),
+                                         list(lmer_out$report()))),
+                 default_title = "Mixed Model Report")
   }
 
   shiny::shinyApp(ui, server)

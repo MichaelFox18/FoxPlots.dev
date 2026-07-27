@@ -1033,7 +1033,17 @@ lmerServer <- function(id, data_in) {
     })
 
     # Expose the augmented dataset (base import + combined variables) so an
-    # Export stage can download exactly what the model used.
-    dataset
+    # Export stage can download exactly what the model used, plus a report
+    # payload of the current fit so a Report stage can include the model.
+    # `$data` keeps the old contract for callers that only want the frame.
+    list(
+      data   = dataset,
+      report = reactive({
+        f <- rv$fit
+        if (is.null(f) || !isTRUE(f$ok)) return(NULL)
+        em <- tryCatch(emm_result(), error = function(e) NULL)
+        lmer_report_payload(f, if (isTRUE(em$ok)) em else NULL, rv$code)
+      })
+    )
   })
 }

@@ -108,6 +108,8 @@ test_that("report_spec includes a section only when its artifact is present", {
     map_code    = list("mcode1"),
     comparison  = { r <- compare_groups_numeric(mtcars, "mpg", "cyl"); r$mode <- "num"; r },
     model       = fit_model(mtcars, "mpg", "wt", "linear"),
+    mixed       = list(model_payload("Mixed model", c(Model = "y ~ x"),
+                                     tables = list(Fit = data.frame(AIC = 1)))),
     show_code   = TRUE)
   expect_true(all(full$sections))
   expect_true(full$show_code)
@@ -461,4 +463,55 @@ test_that("a report with no optional stages still builds the overview", {
   expect_false(any(spec$sections[-1]))
   html <- build_report_html(spec)
   expect_match(html, "id=\"overview\"", fixed = TRUE)
+})
+
+# ---- mixed-model report sections (0.9.0) ----------------------------------
+
+test_that("model_payload drops empty slots and keeps the filled ones", {
+  pl <- model_payload("Mixed model", c(Model = "y ~ x + (1|g)", Extra = ""),
+                      tables = list(A = data.frame(a = 1), B = NULL),
+                      texts = list(), notes = c("note", ""), code = "")
+  expect_equal(pl$title, "Mixed model")
+  expect_equal(unname(pl$formulas), "y ~ x + (1|g)")   # blank formula dropped
+  expect_named(pl$tables, "A")                          # NULL table dropped
+  expect_equal(pl$notes, "note")
+  expect_null(pl$code)                                  # empty code -> NULL
+})
+
+test_that("a mixed payload becomes a section in both renderers", {
+  pl <- model_payload(
+    "Mixed model (lmerTest)",
+    c(Model = "yield ~ Variety + (1|Block)", Estimator = "REML"),
+    tables = list("Fit statistics" = data.frame(Statistic = "AIC", Value = "12.3"),
+                  "Type 3 ANOVA"   = data.frame(Term = "Variety", p = 0.01)),
+    texts  = list("Residual diagnostics" = c("ratio: 0.9", "all clear")),
+    notes  = "Singular fit: a variance is on the boundary.",
+    code   = "lmer(yield ~ Variety + (1|Block), data = d)")
+  spec <- report_spec(mtcars, mixed = list(pl), show_code = TRUE)
+  expect_true(spec$sections[["mixed"]])
+  html <- build_report_html(spec)
+  expect_match(html, "id=\"mixed\"", fixed = TRUE)
+  expect_match(html, "Mixed models", fixed = TRUE)         # TOC + heading
+  expect_match(html, "yield ~ Variety + (1|Block)", fixed = TRUE)
+  expect_match(html, "Fit statistics", fixed = TRUE)
+  expect_match(html, "Residual diagnostics", fixed = TRUE)
+  expect_match(html, "Singular fit", fixed = TRUE)
+  expect_match(html, "lmer(yield ~ Variety", fixed = TRUE) # show_code on
+  # off by default when nothing is supplied
+  expect_false(report_spec(mtcars)$sections[["mixed"]])
+  skip_if_not_installed("officer")
+  doc <- build_report_docx(spec)
+  txt <- paste(officer::docx_summary(doc)$text, collapse = " | ")
+  expect_true(grepl("Mixed models", txt))
+  expect_true(grepl("Mixed model (lmerTest)", txt, fixed = TRUE))
+})
+
+test_that("two payloads (general + binary GLMM) both render", {
+  a <- model_payload("GLMM: general outcome", c(Conditional = "y ~ x"),
+                     tables = list(Fit = data.frame(AIC = 1)))
+  b <- model_payload("GLMM: binary (0/1) outcome", c(Conditional = "z ~ x"),
+                     tables = list(Fit = data.frame(AIC = 2)))
+  html <- build_report_html(report_spec(mtcars, mixed = list(a, b)))
+  expect_match(html, "GLMM: general outcome", fixed = TRUE)
+  expect_match(html, "GLMM: binary (0/1) outcome", fixed = TRUE)
 })

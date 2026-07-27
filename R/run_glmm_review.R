@@ -57,8 +57,9 @@ glmm_review_app <- function() {
               glmmUI("g", binary = FALSE)),
     nav_panel(tagList(icon("toggle-on"), " Binary (0/1) GLMM"), value = "binary",
               glmmUI("b", binary = TRUE)),
-    nav_panel(tagList(icon("file-export"), " Export"), value = "export",
-              exportUI("ex", preview = FALSE))
+    nav_panel(tagList(icon("file-export"), " Export & Report"), value = "export",
+              exportReportUI("ex", "rep", preview = FALSE,
+                             default_title = "GLMM Review Report"))
   )
 
   server <- function(input, output, session) {
@@ -71,7 +72,7 @@ glmm_review_app <- function() {
     # rows; new columns are unioned here).
     merged <- shiny::reactive({
       base <- imported(); shiny::req(is.data.frame(base))
-      for (aug in list(g_data, b_data)) {
+      for (aug in list(g_data$data, b_data$data)) {
         d <- tryCatch(aug(), error = function(e) NULL)
         if (is.data.frame(d) && nrow(d) == nrow(base))
           for (nm in setdiff(names(d), names(base))) base[[nm]] <- d[[nm]]
@@ -79,6 +80,13 @@ glmm_review_app <- function() {
       base
     })
     exportServer("ex", merged, preview = FALSE)  # data-only; one preview lives in Import
+    # Both tabs can be fitted at once, so the report carries whichever models
+    # exist -- general, binary, or both.
+    reportServer("rep", merged,
+                 mixed = shiny::reactive(Filter(Negate(is.null),
+                                                list(g_data$report(),
+                                                     b_data$report()))),
+                 default_title = "GLMM Review Report")
   }
 
   shiny::shinyApp(ui, server)

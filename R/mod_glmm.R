@@ -657,7 +657,21 @@ glmmServer <- function(id, data_in, binary = FALSE) {
     })
 
     # Return the augmented dataset (base + created combined variables) so the
-    # Export stage can download it.
-    dataset
+    # Export stage can download it, plus a report payload of the current fit.
+    # `$data` keeps the old contract for callers that only want the frame.
+    list(
+      data   = dataset,
+      report = reactive({
+        f <- rv$fit
+        if (is.null(f) || !isTRUE(f$ok)) return(NULL)
+        em <- tryCatch(emm_result(), error = function(e) NULL)
+        dh <- tryCatch(dharma_tests(), error = function(e) NULL)
+        glmm_report_payload(
+          f, if (isTRUE(em$ok)) em else NULL, dh,
+          tryCatch(full_code(), error = function(e) NULL),
+          title = if (binary) "GLMM: binary (0/1) outcome"
+                  else "GLMM: general outcome")
+      })
+    )
   })
 }

@@ -594,3 +594,42 @@ make_glmm_example_data <- function() {
 
   d
 }
+
+# --- report payload ----------------------------------------------------------
+
+# Turn a fitted GLMM into a model_payload() for the Report tab. Pure: takes
+# already-computed module state and omits whatever the user never produced.
+# `dharma` is a glmm_dharma_tests() list (or NULL), whose htest objects are
+# captured as printed text -- the report has no place for a live test object.
+glmm_report_payload <- function(fit, emm = NULL, dharma = NULL, code = NULL,
+                                title = NULL) {
+  if (is.null(fit) || !isTRUE(fit$ok)) return(NULL)
+  fmls <- c(Conditional = fit$fml_str,
+            ziformula = fit$zi_str,
+            dispformula = if (!isTRUE(fit$binary)) fit$disp_str,
+            family = glmm_family_text(fit))
+  tabs <- list()
+  st <- tryCatch(glmm_fit_stats(fit$mod, nrow(fit$data)), error = function(e) NULL)
+  if (is.data.frame(st)) tabs[["Fit statistics"]] <- st
+  an <- tryCatch(glmm_anova(fit$mod), error = function(e) NULL)
+  if (!is.null(an) && isTRUE(an$ok)) tabs[["Type III Wald ANOVA"]] <- an$table
+  if (!is.null(emm) && isTRUE(emm$ok)) {
+    tabs[["Estimated marginal means (letters)"]] <- round_df(emm$cld)
+    if (is.data.frame(emm$pairs))
+      tabs[["Pairwise comparisons"]] <- round_df(emm$pairs)
+  }
+  txts <- list()
+  ratio <- glmm_pearson_ratio(fit$mod)
+  diag_txt <- c(sprintf("Pearson chi-sq / residual df ratio: %s",
+                        if (is.na(ratio)) "unavailable" else ratio),
+                "  (~1 = fine; >>1 = overdispersion; <<1 = underdispersion)")
+  if (!is.null(dharma))
+    for (nm in names(dharma))
+      diag_txt <- c(diag_txt, "",
+                    tryCatch(utils::capture.output(print(dharma[[nm]])),
+                             error = function(e) paste(nm, "unavailable")))
+  txts[["Residual diagnostics"]] <- diag_txt
+  model_payload(title %||% "Generalized linear mixed model (glmmTMB)",
+                fmls, tabs, texts = txts,
+                notes = fit$notes %||% character(0), code = code)
+}

@@ -59,7 +59,7 @@ reportUI <- function(id, default_title = "Data Explorer Report") {
 
 reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
                          plot_code = NULL, maps = NULL, map_code = NULL,
-                         comparison = NULL, model = NULL,
+                         comparison = NULL, model = NULL, mixed = NULL,
                          default_title = "Data Explorer Report") {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -75,12 +75,14 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
                   charts     = !is.null(plots),
                   maps       = !is.null(maps),
                   comparison = !is.null(comparison),
-                  regression = !is.null(model))
+                  regression = !is.null(model),
+                  mixed      = !is.null(mixed))
     STAGE_LABEL <- c(summary = "Summary table", charts = "Charts",
                      maps = "Maps", comparison = "Group comparison",
-                     regression = "Regression")
+                     regression = "Regression", mixed = "Mixed model")
     STAGE_VERB  <- c(summary = "a summary", charts = "charts", maps = "a map",
-                     comparison = "a comparison", regression = "a model")
+                     comparison = "a comparison", regression = "a model",
+                     mixed = "a mixed model")
     on_stages   <- names(wired)[vapply(wired, isTRUE, logical(1))]
 
     # "a", "a or b", "a, b, or c"
@@ -106,13 +108,15 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
       s <- read_opt(summary_tbl); p <- read_opt(plots)
       mp <- read_opt(maps)
       cmp <- read_opt(comparison); m <- read_opt(model)
+      mx <- read_opt(mixed)
       list(
         overview   = is.data.frame(data_in()),
         summary    = is.data.frame(s) && nrow(s) > 0,
         charts     = !is.null(p) && length(p) > 0,
         maps       = !is.null(mp) && length(mp) > 0,
         comparison = is.list(cmp) && !is.null(cmp$mode),
-        regression = inherits(m, "lm")
+        regression = inherits(m, "lm"),
+        mixed      = length(Filter(Negate(is.null), mx %||% list())) > 0
       )
     })
 
@@ -196,6 +200,7 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
           map_code    = inc("maps", read_opt(map_code)),
           comparison  = inc("comparison", read_opt(comparison)),
           model       = inc("regression", read_opt(model)),
+          mixed       = inc("mixed", read_opt(mixed)),
           title       = label_or(input$title, default_title),
           show_code   = isTRUE(input$show_code),
           logo        = uf_logo_uri())

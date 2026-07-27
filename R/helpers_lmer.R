@@ -855,3 +855,48 @@ lmer_emm_plot <- function(er, response, transform) {
           axis.title = element_text(colour = UF_CHARCOAL),
           legend.title = element_text(colour = UF_CHARCOAL))
 }
+
+# --- report payload ----------------------------------------------------------
+
+# Turn a fitted mixed model into a model_payload() for the Report tab. Pure:
+# every argument is already-computed module state, and any piece the user
+# never produced (no EMMeans run, no ANOVA) is simply omitted. `emm` is an
+# lmer_emmeans() result or NULL; `code` the module's reproducible script.
+lmer_report_payload <- function(fit, emm = NULL, code = NULL) {
+  if (is.null(fit) || !isTRUE(fit$ok)) return(NULL)
+  fmls <- c(Model = fit$fml_str,
+            Estimator = if (isTRUE(fit$reml)) "REML" else "ML",
+            `ANOVA df` = fit$ddf)
+  tabs <- list()
+  st <- tryCatch(lmer_fit_stats(fit$mod, nrow(fit$data), fit$reml),
+                 error = function(e) NULL)
+  if (!is.null(st))
+    tabs[["Fit statistics"]] <- data.frame(Statistic = names(st),
+                                           Value = unlist(lapply(st, .fmt_cell)),
+                                           row.names = NULL,
+                                           stringsAsFactors = FALSE)
+  an <- tryCatch(lmer_anova(fit$mod, fit$atype, fit$ddf), error = function(e) NULL)
+  if (!is.null(an) && is.data.frame(an$table)) {
+    at <- an$table
+    at <- cbind(Term = rownames(at), at)
+    rownames(at) <- NULL
+    tabs[[sprintf("Type %s ANOVA", fit$atype)]] <- round_df(at)
+  }
+  vc <- tryCatch({
+    v <- as.data.frame(lme4::VarCorr(fit$mod))
+    v <- v[, intersect(c("grp", "var1", "vcov", "sdcor"), names(v)), drop = FALSE]
+    names(v)[names(v) == "grp"]   <- "Group"
+    names(v)[names(v) == "var1"]  <- "Term"
+    names(v)[names(v) == "vcov"]  <- "Variance"
+    names(v)[names(v) == "sdcor"] <- "SD"
+    round_df(v)
+  }, error = function(e) NULL)
+  if (!is.null(vc)) tabs[["Variance components"]] <- vc
+  if (!is.null(emm) && isTRUE(emm$ok)) {
+    tabs[["Estimated marginal means (letters)"]] <- round_df(emm$cld)
+    if (is.data.frame(emm$pairs))
+      tabs[["Pairwise comparisons"]] <- round_df(emm$pairs)
+  }
+  model_payload("Mixed model (lmerTest)", fmls, tabs,
+                notes = fit$notes %||% character(0), code = code)
+}
