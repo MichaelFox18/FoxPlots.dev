@@ -38,7 +38,8 @@ reshape_tool_app <- function() {
               importUI("imp")),
     nav_panel(tagList(icon("table-cells"),   " Reshape"), value = "reshape",
               reshapeUI("rs")),
-    nav_panel(tagList(icon("file-export"),   " Export"),  value = "export",
+    nav_panel(tagList(icon("file-export"),   " Export & Report"),
+              value = "export",
               exportReportUI("ex", "rep",
                              default_title = "Reshape Report"))
   )

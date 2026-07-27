@@ -55,7 +55,8 @@ combine_tool_app <- function() {
               importUI("right", ex_choices)),
     nav_panel(tagList(icon("object-group"),  " Combine"),     value = "combine",
               combineUI("cmb")),
-    nav_panel(tagList(icon("file-export"),   " Export"),      value = "export",
+    nav_panel(tagList(icon("file-export"),   " Export & Report"),
+              value = "export",
               exportReportUI("ex", "rep",
                              default_title = "Combine Report"))
   )

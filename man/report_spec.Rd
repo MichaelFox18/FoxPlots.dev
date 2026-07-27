@@ -13,6 +13,7 @@ report_spec(
   map_code = NULL,
   comparison = NULL,
   model = NULL,
+  mixed = NULL,
   title = "Data Explorer Report",
   show_code = FALSE,
   logo = NULL,

@@ -57,7 +57,8 @@ map_tool_app <- function() {
                 "Fiji earthquakes (1,000 points)"  = "quakes"))),
     nav_panel(tagList(icon("map-location-dot"), " Map"),    value = "map",
               mapUI("map")),
-    nav_panel(tagList(icon("file-export"),      " Export"), value = "export",
+    nav_panel(tagList(icon("file-export"),      " Export & Report"),
+              value = "export",
               exportReportUI("ex", "rep", preview = FALSE,
                              default_title = "Map Report"))
   )
