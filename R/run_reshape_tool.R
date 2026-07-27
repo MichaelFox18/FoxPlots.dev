@@ -39,13 +39,17 @@ reshape_tool_app <- function() {
     nav_panel(tagList(icon("table-cells"),   " Reshape"), value = "reshape",
               reshapeUI("rs")),
     nav_panel(tagList(icon("file-export"),   " Export"),  value = "export",
-              exportUI("ex"))
+              exportReportUI("ex", "rep",
+                             default_title = "Reshape Report"))
   )
 
   server <- function(input, output, session) {
     imported <- importServer("imp")             # -> reactive(data | NULL)
     reshaped <- reshapeServer("rs", imported)   # -> reactive(reshaped data)
     exportServer("ex", reshaped)                # terminal stage
+    # The reshaped table IS the result here, so its overview + column
+    # profile are the whole report.
+    reportServer("rep", reshaped, default_title = "Reshape Report")
   }
 
   shiny::shinyApp(ui, server)

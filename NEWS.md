@@ -1,5 +1,22 @@
 # foxplots 0.9.0 (development)
 
+## Every app can build a report -- and you pick what goes in it
+
+- **All eight apps now have an "Export & Report" tab.** Reshape, Combine,
+  Map, Mixed Model Review, and GLMM Review gain reports for the first time;
+  each one reports what that app actually produces, so the contents differ
+  by tool rather than pretending every app is the Data Explorer.
+- **Choose your sections.** The Report tab's fixed checklist becomes a
+  picker: tick or untick each section (everything starts ticked). Deselected
+  work is skipped entirely, so leaving out a map also skips its slow
+  snapshot.
+- **The mixed-model tools report their models**: formulas, fit statistics,
+  ANOVA (Type II/III for lmer, Type III Wald for GLMM), variance components,
+  estimated marginal means with letter groupings and pairwise comparisons,
+  the DHARMa residual battery for GLMMs, and the reproducible code. The GLMM
+  app reports its general and binary fits as separate subsections when both
+  are fitted.
+
 ## Built-in map boundaries -- no file hunting
 
 - **Shaded-region maps now ship with their boundaries.** Pick **US states**,

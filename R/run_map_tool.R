@@ -58,15 +58,20 @@ map_tool_app <- function() {
     nav_panel(tagList(icon("map-location-dot"), " Map"),    value = "map",
               mapUI("map")),
     nav_panel(tagList(icon("file-export"),      " Export"), value = "export",
-              exportUI("ex", preview = FALSE))
+              exportReportUI("ex", "rep", preview = FALSE,
+                             default_title = "Map Report"))
   )
 
   server <- function(input, output, session) {
     imported <- importServer("imp", examples = list(
       sites  = make_map_example_data(),
       quakes = as.data.frame(datasets::quakes)))
-    mapServer("map", imported)                       # map + its own downloads
+    map_out <- mapServer("map", imported)            # map + its own downloads
     exportServer("ex", imported, preview = FALSE)    # data-only download
+    reportServer("rep", imported,
+                 maps     = shiny::reactive(map_out()$maps),
+                 map_code = shiny::reactive(map_out()$code),
+                 default_title = "Map Report")
   }
 
   shiny::shinyApp(ui, server)

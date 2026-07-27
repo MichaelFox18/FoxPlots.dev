@@ -515,3 +515,19 @@ test_that("two payloads (general + binary GLMM) both render", {
   expect_match(html, "GLMM: general outcome", fixed = TRUE)
   expect_match(html, "GLMM: binary (0/1) outcome", fixed = TRUE)
 })
+
+test_that("every app builds with an Export & Report tab", {
+  apps <- list(data_explorer_app(), compare_groups_app(), regression_tool_app(),
+               reshape_tool_app(), combine_tool_app(), map_tool_app(),
+               lmer_tool_app(), glmm_review_app())
+  for (a in apps) expect_s3_class(a, "shiny.appobj")
+  expect_length(apps, 8L)          # all eight apps
+})
+
+test_that("an overview-only report (reshape/combine) builds cleanly", {
+  shiny::testServer(reportServer,
+                    args = list(data_in = shiny::reactive(mtcars)), {
+    expect_length(chosen(), 0L)          # no optional stages wired
+    expect_true(avail()$overview)
+  })
+})

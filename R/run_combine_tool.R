@@ -56,7 +56,8 @@ combine_tool_app <- function() {
     nav_panel(tagList(icon("object-group"),  " Combine"),     value = "combine",
               combineUI("cmb")),
     nav_panel(tagList(icon("file-export"),   " Export"),      value = "export",
-              exportUI("ex"))
+              exportReportUI("ex", "rep",
+                             default_title = "Combine Report"))
   )
 
   server <- function(input, output, session) {
@@ -64,6 +65,9 @@ combine_tool_app <- function() {
     right_data <- importServer("right", examples = combine_examples)
     combined   <- combineServer("cmb", left_data, right_data)
     exportServer("ex", combined)
+    # The combined table is the result; its overview + column profile are
+    # the report.
+    reportServer("rep", combined, default_title = "Combine Report")
   }
 
   shiny::shinyApp(ui, server)
