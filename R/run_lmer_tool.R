@@ -55,7 +55,11 @@ lmer_tool_app <- function() {
     imported <- importServer("imp", examples = list(rcbd = make_example_data()))
     lmer_out <- lmerServer("lmer", imported)   # -> list(data =, report =)
     exportServer("ex", lmer_out$data, preview = FALSE)  # one preview, in Import
-    reportServer("rep", lmer_out$data,
+    # NULL-safe: the module dataset req()s, and a silent error there would
+    # suppress the report's own "import data first" empty state.
+    rep_data <- shiny::reactive(
+      tryCatch(lmer_out$data(), error = function(e) NULL))
+    reportServer("rep", rep_data,
                  mixed = reactive(Filter(Negate(is.null),
                                          list(lmer_out$report()))),
                  default_title = "Mixed Model Report")

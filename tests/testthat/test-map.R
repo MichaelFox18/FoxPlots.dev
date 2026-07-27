@@ -1081,3 +1081,54 @@ test_that("the feature cap clears US counties and reports truncation", {
   expect_equal(diag$n_matched, 1L)
   expect_true(diag$builtin)                         # drives the muted wording
 })
+
+test_that("geojson_bounds is fast and correct on the largest built-in", {
+  g <- parse_geojson(builtin_boundary_text("us_counties"))
+  t0 <- Sys.time()
+  b <- geojson_bounds(g)
+  el <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  # the recursive accumulator took ~13 s here; anything near that is the
+  # quadratic path coming back
+  expect_lt(el, 3)
+  expect_true(b$lng1 < b$lng2 && b$lat1 < b$lat2)
+  expect_true(b$lat1 > 10 && b$lat2 < 75)          # plausibly the USA
+  # unchanged on the small fixture, and NULL-safe
+  expect_equal(geojson_bounds(parse_geojson(choro_gj())),
+               list(lng1 = -82, lat1 = 29, lng2 = -80, lat2 = 31))
+  expect_null(geojson_bounds(list(features = list())))
+})
+
+test_that("ui_choro preserves the user's picks across a boundary change", {
+  d <- make_map_example_data()
+  shiny::testServer(mapServer, args = list(data_in = shiny::reactive(d)), {
+    session$setInputs(map_type = "choro", geo_source = "us_counties",
+                      geo_filter = "__all__")
+    session$setInputs(region_prop = "county", region_key = "county",
+                      region_value = "yield", region_agg = "mean")
+    # narrowing to one state must not reset the join -- it used to blank
+    # the map by snapping every picker back to its first choice
+    session$setInputs(geo_filter = "Florida")
+    html <- as.character(output$ui_choro$html)
+    expect_match(html, "value=\"county\" selected", fixed = TRUE)
+    expect_match(html, "value=\"yield\" selected", fixed = TRUE)
+    expect_equal(length(geojson_state()$features), 67L)
+  })
+})
+
+test_that("peeking at a built-in keeps an already-uploaded file", {
+  d <- make_map_example_data()
+  gj_path <- withr::local_tempfile(fileext = ".geojson")
+  writeLines(choro_gj(), gj_path)
+  shiny::testServer(mapServer, args = list(data_in = shiny::reactive(d)), {
+    session$setInputs(map_type = "choro", geo_source = "__upload__",
+                      geojson_file = data.frame(
+                        name = "mine.geojson", datapath = gj_path,
+                        stringsAsFactors = FALSE))
+    expect_equal(length(geojson_state()$features), 3L)
+    session$setInputs(geo_source = "us_states")     # peek at a built-in
+    expect_equal(length(geojson_state()$features), 52L)
+    session$setInputs(geo_source = "__upload__")    # ...and back
+    expect_equal(length(geojson_state()$features), 3L)   # not silently lost
+    expect_null(geo_builtin())
+  })
+})

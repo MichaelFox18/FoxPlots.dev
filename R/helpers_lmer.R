@@ -868,13 +868,14 @@ lmer_report_payload <- function(fit, emm = NULL, code = NULL) {
             Estimator = if (isTRUE(fit$reml)) "REML" else "ML",
             `ANOVA df` = fit$ddf)
   tabs <- list()
+  # lmer_fit_stats() already returns a tidy Statistic/Value DATA FRAME (the
+  # module's own Fit statistics tab renders it directly). Treating it as a
+  # named list -- as this once did -- made names() yield the column names and
+  # collapsed all ten statistics to two mislabelled rows, so the report
+  # contradicted the screen.
   st <- tryCatch(lmer_fit_stats(fit$mod, nrow(fit$data), fit$reml),
                  error = function(e) NULL)
-  if (!is.null(st))
-    tabs[["Fit statistics"]] <- data.frame(Statistic = names(st),
-                                           Value = unlist(lapply(st, .fmt_cell)),
-                                           row.names = NULL,
-                                           stringsAsFactors = FALSE)
+  if (is.data.frame(st) && nrow(st)) tabs[["Fit statistics"]] <- st
   an <- tryCatch(lmer_anova(fit$mod, fit$atype, fit$ddf), error = function(e) NULL)
   if (!is.null(an) && is.data.frame(an$table)) {
     at <- an$table
@@ -882,16 +883,29 @@ lmer_report_payload <- function(fit, emm = NULL, code = NULL) {
     rownames(at) <- NULL
     tabs[[sprintf("Type %s ANOVA", fit$atype)]] <- round_df(at)
   }
-  vc <- tryCatch({
-    v <- as.data.frame(lme4::VarCorr(fit$mod))
-    v <- v[, intersect(c("grp", "var1", "vcov", "sdcor"), names(v)), drop = FALSE]
-    names(v)[names(v) == "grp"]   <- "Group"
-    names(v)[names(v) == "var1"]  <- "Term"
-    names(v)[names(v) == "vcov"]  <- "Variance"
-    names(v)[names(v) == "sdcor"] <- "SD"
-    round_df(v)
-  }, error = function(e) NULL)
-  if (!is.null(vc)) tabs[["Variance components"]] <- vc
+  # VarCorr mixes two kinds of row: variances (var2 is NA) and, for a
+  # correlated random slope, the intercept-slope COVARIANCE/CORRELATION pair
+  # (var2 names the partner term). Dropping var2 -- as this once did -- prints
+  # the correlation row as a second "(Intercept)" with a negative "Variance"
+  # and a negative "SD", which are impossible quantities and invite a
+  # misreported variance component. Split them into two honest tables.
+  vcraw <- tryCatch(as.data.frame(lme4::VarCorr(fit$mod)),
+                    error = function(e) NULL)
+  if (is.data.frame(vcraw) && nrow(vcraw)) {
+    has2 <- "var2" %in% names(vcraw) & !is.na(vcraw$var2)
+    vars <- vcraw[!has2, intersect(c("grp", "var1", "vcov", "sdcor"),
+                                   names(vcraw)), drop = FALSE]
+    names(vars) <- c("Group", "Term", "Variance", "SD")[seq_len(ncol(vars))]
+    vars$Term[is.na(vars$Term)] <- ""          # the Residual row has no term
+    tabs[["Variance components"]] <- round_df(vars)
+    if (any(has2)) {
+      cors <- vcraw[has2, intersect(c("grp", "var1", "var2", "vcov", "sdcor"),
+                                    names(vcraw)), drop = FALSE]
+      names(cors) <- c("Group", "Term 1", "Term 2", "Covariance",
+                       "Correlation")[seq_len(ncol(cors))]
+      tabs[["Random-effect correlations"]] <- round_df(cors)
+    }
+  }
   if (!is.null(emm) && isTRUE(emm$ok)) {
     tabs[["Estimated marginal means (letters)"]] <- round_df(emm$cld)
     if (is.data.frame(emm$pairs))

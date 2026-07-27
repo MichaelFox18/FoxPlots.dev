@@ -542,7 +542,7 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
   tabs <- paste0(vapply(names(pl$tables), function(nm)
     df_to_html(pl$tables[[nm]], nm), character(1)), collapse = "")
   txts <- paste0(vapply(names(pl$texts), function(nm)
-    paste0("<h3>", html_escape(nm), "</h3>",
+    paste0("<h4>", html_escape(nm), "</h4>",
            "<pre class=\"code\"><code>", html_escape(
              paste(pl$texts[[nm]], collapse = "\n")), "</code></pre>"),
     character(1)), collapse = "")
@@ -550,6 +550,9 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
     paste0("<p class=\"note\">", paste(html_escape(pl$notes), collapse = "<br>"),
            "</p>")
   code <- if (isTRUE(show_code)) code_block_html(pl$code) else ""
+  # The payload title sits a level above its own sub-blocks (h4), or two
+  # models in one report run together as a flat wall of same-size
+  # headings. The Word twin already nests heading 2 / heading 3.
   paste0("<h3>", html_escape(pl$title), "</h3>", fml, tabs, txts, notes, code)
 }
 

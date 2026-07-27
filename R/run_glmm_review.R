@@ -82,7 +82,10 @@ glmm_review_app <- function() {
     exportServer("ex", merged, preview = FALSE)  # data-only; one preview lives in Import
     # Both tabs can be fitted at once, so the report carries whichever models
     # exist -- general, binary, or both.
-    reportServer("rep", merged,
+    # NULL-safe (merged req()s): keep the report's own empty-state guards.
+    rep_data <- shiny::reactive(
+      tryCatch(merged(), error = function(e) NULL))
+    reportServer("rep", rep_data,
                  mixed = shiny::reactive(Filter(Negate(is.null),
                                                 list(g_data$report(),
                                                      b_data$report()))),

@@ -254,3 +254,47 @@ test_that("lmer_report_payload summarises a fit for the report", {
   expect_null(lmer_report_payload(NULL))
   expect_null(lmer_report_payload(list(ok = FALSE)))
 })
+
+test_that("report payload never prints a correlation as a variance", {
+  skip_if_not_installed("lmerTest")
+  d <- make_example_data()
+  fit <- suppressWarnings(lmer_fit(d, list(
+    response = "yield_kg", fixed = "Nitrogen", random = "Block",
+    slope = "Nitrogen", slope_group = "Block", reml = TRUE,
+    anova_type = "3", ddf = "Satterthwaite")))
+  skip_if_not(isTRUE(fit$ok))
+  pl <- suppressWarnings(lmer_report_payload(fit))
+  vc <- pl$tables[["Variance components"]]
+  expect_named(vc, c("Group", "Term", "Variance", "SD"))
+  # variances and SDs are non-negative by definition: a correlation row
+  # leaking in here is exactly what produced negative values before
+  expect_true(all(vc$Variance >= 0, na.rm = TRUE))
+  expect_true(all(vc$SD >= 0, na.rm = TRUE))
+  expect_equal(anyDuplicated(paste(vc$Group, vc$Term)), 0L)
+  # the intercept-slope pair is reported separately, labelled for what it is
+  cors <- pl$tables[["Random-effect correlations"]]
+  expect_named(cors, c("Group", "Term 1", "Term 2", "Covariance", "Correlation"))
+  expect_true(all(abs(cors$Correlation) <= 1))
+  # an intercept-only fit has no correlation table at all
+  f2 <- lmer_fit(d, list(response = "yield_kg", fixed = "Variety",
+                         random = "Block", reml = TRUE, anova_type = "3",
+                         ddf = "Satterthwaite"))
+  expect_false("Random-effect correlations" %in%
+                 names(lmer_report_payload(f2)$tables))
+})
+
+test_that("report Fit statistics carries every statistic, not two stray rows", {
+  skip_if_not_installed("lmerTest")
+  d <- make_example_data()
+  fit <- lmer_fit(d, list(response = "yield_kg", fixed = "Variety",
+                          random = "Block", reml = TRUE, anova_type = "3",
+                          ddf = "Satterthwaite"))
+  skip_if_not(isTRUE(fit$ok))
+  st <- pl <- NULL
+  st <- lmer_fit_stats(fit$mod, nrow(fit$data), fit$reml)
+  pl <- lmer_report_payload(fit)$tables[["Fit statistics"]]
+  expect_identical(pl, st)                       # report == the module's tab
+  expect_gt(nrow(pl), 5L)
+  expect_true(all(c("AIC", "BIC", "logLik") %in% pl$Statistic))
+  expect_false(any(pl$Statistic == "Statistic"))  # the old garbled header row
+})

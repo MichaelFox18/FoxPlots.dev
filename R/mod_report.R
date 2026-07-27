@@ -105,10 +105,15 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
 
     # Which sections currently have usable content (drives the live checklist).
     avail <- reactive({
-      s <- read_opt(summary_tbl); p <- read_opt(plots)
-      mp <- read_opt(maps)
-      cmp <- read_opt(comparison); m <- read_opt(model)
-      mx <- read_opt(mixed)
+      # Only evaluate what is still ticked: reading an unticked stage costs
+      # real work (a map's returned reactive rebuilds its widget), and the
+      # checklist discards the answer for excluded rows anyway.
+      sel  <- chosen()
+      want <- function(k, r) if (k %in% sel) read_opt(r) else NULL
+      s <- want("summary", summary_tbl); p <- want("charts", plots)
+      mp <- want("maps", maps)
+      cmp <- want("comparison", comparison); m <- want("regression", model)
+      mx <- want("mixed", mixed)
       list(
         overview   = is.data.frame(data_in()),
         summary    = is.data.frame(s) && nrow(s) > 0,

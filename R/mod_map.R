@@ -268,7 +268,12 @@ mapServer <- function(id, data_in) {
       src <- input$geo_source %||% "us_states"
       if (identical(src, "__upload__")) {
         geo_builtin(NULL)
-        geojson_state(NULL)
+        # Re-parse the file the user already chose rather than blanking the
+        # map: the fileInput still shows it loaded, so clearing state left
+        # the sidebar and the pane contradicting each other.
+        fp <- input$geojson_file$datapath
+        geojson_state(if (!is.null(fp) && file.exists(fp))
+          parse_geojson(paste(readLines(fp, warn = FALSE), collapse = "\n")))
         return()
       }
       gj <- parse_geojson(builtin_boundary_text(src, input$geo_filter))
@@ -319,36 +324,59 @@ mapServer <- function(id, data_in) {
       # (e.g. "county_state"), so preselect it instead of whatever happens to
       # come first in the file.
       bkey <- MAP_BUILTIN_BOUNDARIES[[geo_builtin() %||% ""]]$key
+      # Re-offer the user's current pick when it is still valid, else fall
+      # back to the input's first choice.
+      keep_sel <- function(id, valid) {
+        cur <- isolate(input[[id]])
+        if (!is.null(cur) && cur %in% valid) cur else NULL
+      }
       tagList(
         selectInput(ns("region_prop"),
           tagList("Region name property", info_tip(
             "The GeoJSON property naming each region (e.g. NAME). It must ",
             "match the values in your data's key column.")),
           choices = props,
-          selected = if (!is.null(bkey) && bkey %in% props) bkey else props[1]),
+          # The user's own pick wins; the built-in's natural key is only a
+          # STARTING point. Forcing bkey on every re-render undid a
+          # deliberate choice (e.g. matching plain "county" instead of
+          # "county_state") the moment the boundary filter changed, and the
+          # join silently fell to zero matches.
+          selected = keep_sel("region_prop", props) %||%
+            (if (!is.null(bkey) && bkey %in% props) bkey else props[1])),
         selectInput(ns("region_key"),
           tagList("Match to data column", info_tip(
             "The column in your data holding the region names, matched ",
             "against the property above (exact text match).")),
-          choices = c("Choose..." = "__none__", names(df))),
+          choices = c("Choose..." = "__none__", names(df)),
+          # isolate: this whole block re-renders whenever geojson_state()
+          # changes -- which now includes narrowing a built-in set with the
+          # "Limit to" filter. Without preserving the picks, choosing one
+          # state silently reset the join columns to "Choose..." and the
+          # finished map vanished. Same reason ui_scale/ui_cluster_by do it.
+          selected = keep_sel("region_key", names(df))),
         selectInput(ns("region_value"),
           tagList("Shade by (numeric)", info_tip(
             "The numeric column summarised within each region to set its ",
             "colour.")),
-          choices = c("Choose..." = "__none__", numeric_cols(df))),
+          choices = c("Choose..." = "__none__", numeric_cols(df)),
+          selected = keep_sel("region_value", numeric_cols(df))),
         selectInput(ns("region_agg"), "Summary",
-          choices = c("Mean" = "mean", "Sum" = "sum", "Median" = "median")),
+          choices = c("Mean" = "mean", "Sum" = "sum", "Median" = "median"),
+          selected = keep_sel("region_agg", c("mean", "sum", "median"))),
         # Choro styling gets its OWN inputs: the points palette/scale/legend
         # controls are hidden in this mode, and driving the map from hidden
         # inputs' stale values is exactly the trap we're avoiding.
-        selectInput(ns("choro_palette"), "Color palette", choices = PALETTES),
+        selectInput(ns("choro_palette"), "Color palette", choices = PALETTES,
+                    selected = keep_sel("choro_palette", PALETTES)),
         selectInput(ns("choro_scale"),
           tagList("Color scale", info_tip(
             "Quantile gives every colour an equal share of the regions - ",
             "useful when a few regions dwarf the rest. Falls back to linear ",
             "when values are too tied for unique bins.")),
-          choices = c("Linear" = "linear", "Quantile (5 bins)" = "quantile")),
-        checkboxInput(ns("choro_legend"), "Show legend", TRUE),
+          choices = c("Linear" = "linear", "Quantile (5 bins)" = "quantile"),
+          selected = keep_sel("choro_scale", c("linear", "quantile"))),
+        checkboxInput(ns("choro_legend"), "Show legend",
+                      isolate(input$choro_legend) %||% TRUE),
         uiOutput(ns("choro_diag"))
       )
     })
