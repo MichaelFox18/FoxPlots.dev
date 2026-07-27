@@ -47,7 +47,10 @@ reportUI <- function(id, default_title = "Data Explorer Report") {
       card_header(icon("file-lines"), " Your report"),
       # Server-rendered: only the stages this app actually wired are named.
       uiOutput(ns("intro")),
-      tags$h6(class = "mt-2 mb-1", "Included right now:"),
+      tags$h6(class = "mt-2 mb-1", "Sections to include:"),
+      # The picker renders ONCE (its choices are fixed at startup), so ticks
+      # survive every data change; live status lives in `contents` below it.
+      uiOutput(ns("section_picker")),
       uiOutput(ns("contents")),
       uiOutput(ns("empty_hint"))
     )
@@ -113,18 +116,48 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
       )
     })
 
+    # The section picker. Rendered once -- `on_stages` is fixed when the app
+    # wires the module, so nothing reactive is read here and the user's ticks
+    # are never reset by a data change. Everything starts ticked, matching the
+    # previous always-include-everything behaviour.
+    output$section_picker <- renderUI({
+      if (!length(on_stages))
+        return(helpText("This report covers the data overview."))
+      tagList(lapply(on_stages, function(k)
+        checkboxInput(ns(paste0("inc_", k)), unname(STAGE_LABEL[[k]]),
+                      value = TRUE)))
+    })
+
+    # One checkbox per stage rather than a checkboxGroupInput: a group input
+    # reads NULL both before it renders and when the user unticks everything,
+    # and those mean opposite things here. A per-stage input is unambiguous --
+    # NULL only ever means "not rendered yet", which defaults to included.
+    chosen <- reactive({
+      on_stages[vapply(on_stages,
+                       function(k) isTRUE(input[[paste0("inc_", k)]] %||% TRUE),
+                       logical(1))]
+    })
+
     output$contents <- renderUI({
       a <- avail()
-      item <- function(ok, label) tags$li(
+      sel <- chosen()
+      item <- function(ok, label, included = TRUE) tags$li(
         class = "mb-1",
-        icon(if (ok) "circle-check" else "circle",
-             class = if (ok) "text-success" else "text-muted"),
-        tags$span(style = "margin-left:6px;", label),
-        if (!ok) tags$span(class = "text-muted small", " - not added yet"))
+        icon(if (!included) "minus" else if (ok) "circle-check" else "circle",
+             class = if (!included) "text-muted"
+                     else if (ok) "text-success" else "text-muted"),
+        tags$span(style = "margin-left:6px;",
+                  class = if (!included) "text-muted" else NULL, label),
+        if (!included) tags$span(class = "text-muted small", " - left out")
+        else if (!ok) tags$span(class = "text-muted small", " - not added yet"))
       items <- list(item(a$overview, "Data overview (always included)"))
       for (k in on_stages)
-        items <- c(items, list(item(isTRUE(a[[k]]), unname(STAGE_LABEL[[k]]))))
-      do.call(tags$ul, c(list(class = "list-unstyled"), items))
+        items <- c(items, list(item(isTRUE(a[[k]]),
+                                    unname(STAGE_LABEL[[k]]),
+                                    included = k %in% sel)))
+      tagList(
+        tags$h6(class = "mt-3 mb-1", "In the report:"),
+        do.call(tags$ul, c(list(class = "list-unstyled"), items)))
     })
 
     output$empty_hint <- renderUI({
@@ -147,15 +180,22 @@ reportServer <- function(id, data_in, summary_tbl = NULL, plots = NULL,
         validate(need(is.data.frame(d),
                       "Import data on the Import tab before building a report."))
         fmt <- input$format %||% "html"
+        # Deselected sections are dropped HERE, before report_spec() sees
+        # them: the spec's own predicates then switch the section (and its
+        # table-of-contents entry) off for free, AND render_report never pays
+        # to rasterize an artifact nobody asked for -- a deselected map skips
+        # a ~7s headless-browser snapshot.
+        sel <- chosen()
+        inc <- function(k, x) if (k %in% sel) x else NULL
         spec <- report_spec(
           data        = d,
-          summary_tbl = read_opt(summary_tbl),
-          plots       = read_opt(plots),
-          plot_code   = read_opt(plot_code),
-          maps        = read_opt(maps),
-          map_code    = read_opt(map_code),
-          comparison  = read_opt(comparison),
-          model       = read_opt(model),
+          summary_tbl = inc("summary", read_opt(summary_tbl)),
+          plots       = inc("charts", read_opt(plots)),
+          plot_code   = inc("charts", read_opt(plot_code)),
+          maps        = inc("maps", read_opt(maps)),
+          map_code    = inc("maps", read_opt(map_code)),
+          comparison  = inc("comparison", read_opt(comparison)),
+          model       = inc("regression", read_opt(model)),
           title       = label_or(input$title, default_title),
           show_code   = isTRUE(input$show_code),
           logo        = uf_logo_uri())

@@ -416,3 +416,49 @@ test_that("docx chunking keeps ALL leading identifier columns", {
   expect_equal(sum(cells == "Variable"), 2L)   # key header in BOTH chunks
   expect_equal(sum(cells == "cyl"), 2L)
 })
+
+# ---- selectable report sections (0.9.0) -----------------------------------
+
+test_that("reportServer includes every wired section by default", {
+  shiny::testServer(reportServer, args = list(
+    data_in     = shiny::reactive(mtcars),
+    summary_tbl = shiny::reactive(grouped_summary(mtcars, "mpg", "cyl")),
+    model       = shiny::reactive(fit_model(mtcars, "mpg", "wt", "linear"))), {
+    expect_setequal(chosen(), c("summary", "regression"))
+    a <- avail()
+    expect_true(a$overview && a$summary && a$regression)
+    expect_false(a$charts)          # not wired -> never available
+  })
+})
+
+test_that("unticking a section drops it from the built spec", {
+  shiny::testServer(reportServer, args = list(
+    data_in     = shiny::reactive(mtcars),
+    summary_tbl = shiny::reactive(grouped_summary(mtcars, "mpg", "cyl")),
+    model       = shiny::reactive(fit_model(mtcars, "mpg", "wt", "linear"))), {
+    # keep only the summary
+    session$setInputs(inc_summary = TRUE, inc_regression = FALSE)
+    expect_equal(chosen(), "summary")
+    sel <- chosen()
+    spec <- report_spec(
+      data        = mtcars,
+      summary_tbl = if ("summary" %in% sel) grouped_summary(mtcars, "mpg", "cyl"),
+      model       = if ("regression" %in% sel) fit_model(mtcars, "mpg", "wt", "linear"))
+    expect_true(spec$sections[["summary"]])
+    expect_false(spec$sections[["regression"]])
+    html <- build_report_html(spec)
+    expect_match(html, "id=\"summary\"", fixed = TRUE)
+    expect_no_match(html, "id=\"regression\"", fixed = TRUE)
+    # unticking everything leaves the always-on overview
+    session$setInputs(inc_summary = FALSE, inc_regression = FALSE)
+    expect_equal(length(chosen()), 0L)
+  })
+})
+
+test_that("a report with no optional stages still builds the overview", {
+  spec <- report_spec(data = mtcars)
+  expect_true(spec$sections[["overview"]])
+  expect_false(any(spec$sections[-1]))
+  html <- build_report_html(spec)
+  expect_match(html, "id=\"overview\"", fixed = TRUE)
+})
