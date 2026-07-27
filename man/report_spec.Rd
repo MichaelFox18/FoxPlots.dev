@@ -37,6 +37,10 @@ report_spec(
 
 \item{model}{Fitted lm from mod_regression, or NULL.}
 
+\item{mixed}{List of model-report payloads (see model_payload()) from the
+mixed-model tools, or NULL. Several may be supplied: the GLMM app
+contributes its general and binary fits as separate entries.}
+
 \item{title}{Report title.}
 
 \item{show_code}{Whether the report should reveal reproducible R code.}

@@ -232,6 +232,9 @@ regression_code <- function(model) {
 #' @param map_code Character list aligned to `maps` (the leaflet code), or NULL.
 #' @param comparison Result list from mod_compare, or NULL.
 #' @param model Fitted lm from mod_regression, or NULL.
+#' @param mixed List of model-report payloads (see model_payload()) from the
+#'   mixed-model tools, or NULL. Several may be supplied: the GLMM app
+#'   contributes its general and binary fits as separate entries.
 #' @param title Report title.
 #' @param show_code Whether the report should reveal reproducible R code.
 #' @param logo Optional data-URI string for the masthead logo.
