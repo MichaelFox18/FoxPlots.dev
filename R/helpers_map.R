@@ -50,7 +50,12 @@ MAP_RADIUS_RANGE <- c(4, 18)  # graduated-symbol radius bounds in px (sqrt scale
 MAP_SIZE_LEG_N   <- 4      # graduated circles drawn in the size legend
 MAP_HEAT_RADIUS  <- 20     # default density-heatmap point radius (px)
 MAP_CHORO_BINS   <- 5      # quantile bins for a choropleth colour scale
-MAP_CHORO_MAX    <- 3000   # cap on GeoJSON features rendered (perf guard)
+# Cap on GeoJSON features rendered (perf guard). 4000 clears the built-in US
+# counties set (3,222 features incl. DC and Puerto Rico) with headroom -- at
+# 3000 it silently clipped the last ~200 counties off the map. When the cap
+# DOES bite, build_choropleth reports it in choro_diag rather than quietly
+# dropping regions.
+MAP_CHORO_MAX    <- 4000
 MAP_POPUP_MAX    <- 5      # the module preselects at most this many popup columns
 MAP_PNG_W        <- 1200   # fixed PNG snapshot size -- no extra inputs in v1
 MAP_PNG_H        <- 800
@@ -550,7 +555,89 @@ map_hint <- function(df, p) {
   if (length(hints)) paste(hints, collapse = " ") else NULL
 }
 
-# --- Choropleth (shaded regions from uploaded GeoJSON) ------------------------
+# --- Built-in boundaries ------------------------------------------------------
+# Finding and formatting a boundary file is the hard part of a choropleth, so
+# the package ships three ready-made sets. They enter the SAME engine as an
+# upload (parse_geojson -> build_choropleth), just from disk instead of a
+# fileInput, so every downstream feature -- property picker, join diagnostics,
+# HTML/PNG export, generated code -- works unchanged.
+#
+# Both sources are public domain: the US sets are Census Bureau cartographic
+# boundary files at 1:20,000,000 (a US Government work), the world set is
+# Natural Earth 1:110m. Built at dev time by dev/build_boundaries.R (sf is used
+# there to read shapefiles; the package itself never depends on it), stripped
+# to a few join-useful properties, coordinates rounded to 4 dp (~11 m) and
+# gzipped -- 611 KB for all three.
+#
+# `key` is the property pre-selected to join on; `filter_by` names an optional
+# property the module offers as a subset ("just Florida's counties"), which
+# also keeps the browser from drawing 3,222 polygons when 67 will do.
+MAP_BUILTIN_BOUNDARIES <- list(
+  us_states = list(
+    label     = "US states",
+    file      = "us_states.geojson.gz",
+    key       = "state",
+    filter_by = NULL,
+    source    = "US Census Bureau cartographic boundaries, 1:20m (public domain)"),
+  us_counties = list(
+    label     = "US counties",
+    file      = "us_counties.geojson.gz",
+    key       = "county_state",
+    filter_by = "state",
+    source    = "US Census Bureau cartographic boundaries, 1:20m (public domain)"),
+  world_countries = list(
+    label     = "World countries",
+    file      = "world_countries.geojson.gz",
+    key       = "country",
+    filter_by = "continent",
+    source    = "Natural Earth 1:110m admin-0 (public domain)"))
+
+# Named vector for a selectInput: label -> key, with the upload sentinel first.
+builtin_boundary_choices <- function() {
+  c(stats::setNames(names(MAP_BUILTIN_BOUNDARIES),
+                    vapply(MAP_BUILTIN_BOUNDARIES, `[[`, character(1), "label")),
+    "Upload my own file..." = "__upload__")
+}
+
+# Read one built-in set as GeoJSON TEXT (the same thing readLines() of an
+# upload yields), optionally keeping only features whose `filter_by` property
+# equals `filter_value`. Returns NULL for an unknown key or a missing file so
+# a stale bookmark degrades to "no boundaries" rather than an error.
+builtin_boundary_text <- function(key, filter_value = NULL) {
+  spec <- MAP_BUILTIN_BOUNDARIES[[key %||% ""]]
+  if (is.null(spec)) return(NULL)
+  path <- system.file("geo", spec$file, package = "foxplots")
+  if (!nzchar(path) || !file.exists(path)) return(NULL)
+  con <- gzfile(path, "rt")
+  on.exit(close(con), add = TRUE)
+  txt <- paste(readLines(con, warn = FALSE), collapse = "\n")
+  if (is.null(spec$filter_by) || is.null(filter_value) ||
+      !nzchar(filter_value) || identical(filter_value, "__all__"))
+    return(txt)
+  gj <- parse_geojson(txt)
+  if (is.null(gj)) return(NULL)
+  keep <- vapply(gj$features, function(f)
+    identical(geojson_prop_chr(f$properties, spec$filter_by), filter_value),
+    logical(1))
+  if (!any(keep)) return(txt)   # unknown filter value: show everything
+  gj$features <- gj$features[keep]
+  jsonlite::toJSON(gj, auto_unbox = TRUE, digits = NA)
+}
+
+# The distinct values of a built-in set's filter property (e.g. every state
+# name), for the module's "limit to" picker. character(0) when not filterable.
+builtin_boundary_filter_values <- function(key) {
+  spec <- MAP_BUILTIN_BOUNDARIES[[key %||% ""]]
+  if (is.null(spec) || is.null(spec$filter_by)) return(character(0))
+  gj <- parse_geojson(builtin_boundary_text(key))
+  if (is.null(gj)) return(character(0))
+  vals <- vapply(gj$features,
+                 function(f) geojson_prop_chr(f$properties, spec$filter_by),
+                 character(1))
+  sort(unique(vals[nzchar(vals)]))
+}
+
+# --- Choropleth (shaded regions from uploaded GeoJSON or a built-in set) ------
 
 # Parse GeoJSON text (or an already-parsed list) into a FeatureCollection list.
 # jsonlite is a hard leaflet dependency, so no extra guard is needed. Returns
@@ -664,7 +751,8 @@ build_choropleth <- function(df, p) {
   cp <- choro_palette(as.numeric(vals_by), p$palette %||% "auto",
                       p$color_scale %||% "linear")
 
-  n_feat  <- min(length(gj$features), MAP_CHORO_MAX)
+  n_total <- length(gj$features)          # before the perf cap truncates
+  n_feat  <- min(n_total, MAP_CHORO_MAX)
   gj$features <- gj$features[seq_len(n_feat)]
   geo_keys <- character(0); matched <- 0L
   for (i in seq_len(n_feat)) {
@@ -711,7 +799,14 @@ build_choropleth <- function(df, p) {
 
   attr(m, "choro_diag") <- list(
     n_features   = n_feat,
+    n_total      = n_total,
+    n_dropped    = max(0L, n_total - n_feat),
     n_matched    = matched,
+    # A built-in set covers a whole country, so "most regions have no data" is
+    # the normal case there, not a join failure -- the module words the
+    # diagnostic differently when this is TRUE. p$geo_builtin is the set's KEY
+    # (a string), so test for presence, not truth.
+    builtin      = !is.null(p$geo_builtin) && nzchar(p$geo_builtin),
     unmatched_geo  = setdiff(unique(geo_keys[nzchar(geo_keys)]), names(vals_by)),
     unmatched_data = setdiff(names(vals_by), geo_keys))
   m
@@ -969,12 +1064,33 @@ generate_choropleth_code <- function(p, df = NULL) {
   pipe_txt <- paste0(pipe[1], " |>\n  ",
                      paste(pipe[-1], collapse = " |>\n  "))
 
+  # A built-in set is reproducible from the installed package; an upload is
+  # only on the user's disk, so the script names a placeholder they replace.
+  bkey <- p$geo_builtin
+  geo_lines <- if (!is.null(bkey) && !is.null(MAP_BUILTIN_BOUNDARIES[[bkey]])) {
+    spec <- MAP_BUILTIN_BOUNDARIES[[bkey]]
+    filt <- p$geo_filter %||% "__all__"
+    c(sprintf("# Boundaries: %s, shipped with foxplots (%s)",
+              spec$label, spec$source),
+      sprintf('gj <- fromJSON(gzfile(system.file("geo", "%s", package = "foxplots")),',
+              spec$file),
+      "               simplifyVector = FALSE)",
+      if (!is.null(spec$filter_by) && nzchar(filt) &&
+          !identical(filt, "__all__"))
+        c(sprintf('# keep only %s == "%s"', spec$filter_by, filt),
+          sprintf('keep <- vapply(gj$features, function(f) identical(as.character(f$properties$%s), "%s"), logical(1))',
+                  spec$filter_by, filt),
+          "gj$features <- gj$features[keep]"))
+  } else {
+    c("# Your data frame `df` and the boundary file you uploaded:",
+      'gj <- fromJSON("your_boundaries.geojson", simplifyVector = FALSE)')
+  }
+
   paste(c(
     "library(leaflet)",
     "library(jsonlite)",
     "",
-    "# Your data frame `df` and the boundary file you uploaded:",
-    'gj <- fromJSON("your_boundaries.geojson", simplifyVector = FALSE)',
+    geo_lines,
     "",
     sprintf("# %s of %s within each %s", agg, bq(val), bq(key)),
     sprintf("vals <- tapply(df$%s, as.character(df$%s), %s, na.rm = TRUE)",

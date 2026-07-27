@@ -34,12 +34,21 @@ mapUI <- function(id) {
       # ---- choropleth controls ----
       conditionalPanel(
         sprintf("input['%s'] == 'choro'", ns("map_type")),
-        fileInput(ns("geojson_file"),
-          tagList("Boundaries (.geojson / .json)", info_tip(
-            "A GeoJSON FeatureCollection of the regions to shade - e.g. ",
-            "county boundaries. Each feature needs a property (like NAME) ",
-            "that matches a column in your data.")),
-          accept = c(".geojson", ".json")),
+        selectInput(ns("geo_source"),
+          tagList("Boundaries", info_tip(
+            "Built-in sets cover US states, US counties, and world ",
+            "countries - no file hunting needed. Choose 'Upload my own' for ",
+            "anything else (any GeoJSON FeatureCollection).")),
+          choices = builtin_boundary_choices(), selected = "us_states"),
+        uiOutput(ns("ui_geo_filter")),
+        conditionalPanel(
+          sprintf("input['%s'] == '__upload__'", ns("geo_source")),
+          fileInput(ns("geojson_file"),
+            tagList("Boundaries (.geojson / .json)", info_tip(
+              "A GeoJSON FeatureCollection of the regions to shade - e.g. ",
+              "county boundaries. Each feature needs a property (like NAME) ",
+              "that matches a column in your data.")),
+            accept = c(".geojson", ".json"))),
         uiOutput(ns("ui_choro"))),
 
       # ---- point controls ----
@@ -244,8 +253,43 @@ mapServer <- function(id, data_in) {
     })
 
     # ---- choropleth state + controls ----------------------------------------
-    # The uploaded GeoJSON, parsed once per upload.
+    # ONE parsed FeatureCollection drives everything downstream, written by
+    # exactly two paths: the built-in loader and the upload observer. A
+    # companion reactiveVal remembers which built-in set is showing (NULL for
+    # an upload) so the diagnostics and the generated code can speak
+    # accurately about the source.
     geojson_state <- reactiveVal(NULL)
+    geo_builtin   <- reactiveVal(NULL)
+
+    # Built-in sets (and their optional "limit to" subset) load straight from
+    # inst/geo. Switching to "Upload my own" clears the map rather than
+    # leaving the last built-in on screen under an upload prompt.
+    observeEvent(list(input$geo_source, input$geo_filter), {
+      src <- input$geo_source %||% "us_states"
+      if (identical(src, "__upload__")) {
+        geo_builtin(NULL)
+        geojson_state(NULL)
+        return()
+      }
+      gj <- parse_geojson(builtin_boundary_text(src, input$geo_filter))
+      geo_builtin(if (is.null(gj)) NULL else src)
+      geojson_state(gj)
+    }, ignoreInit = FALSE)
+
+    # The subset picker for sets that offer one (counties by state, countries
+    # by continent) -- 67 Florida polygons beat 3,222 national ones for both
+    # readability and render time.
+    output$ui_geo_filter <- renderUI({
+      src  <- input$geo_source %||% "us_states"
+      spec <- MAP_BUILTIN_BOUNDARIES[[src]]
+      if (is.null(spec) || is.null(spec$filter_by)) return(NULL)
+      vals <- builtin_boundary_filter_values(src)
+      selectInput(ns("geo_filter"),
+                  sprintf("Limit to %s (optional)", spec$filter_by),
+                  choices = c("All" = "__all__", vals),
+                  selected = isolate(input$geo_filter) %||% "__all__")
+    })
+
     observeEvent(input$geojson_file, {
       req(input$geojson_file$datapath)
       txt <- paste(readLines(input$geojson_file$datapath, warn = FALSE),
@@ -257,6 +301,7 @@ mapServer <- function(id, data_in) {
           "That file isn't a usable GeoJSON FeatureCollection. Export your",
           "boundaries as GeoJSON and try again."), type = "error", duration = 8)
       } else {
+        geo_builtin(NULL)
         geojson_state(gj)
         showNotification(sprintf("Loaded %d regions.", length(gj$features)),
                          type = "message")
@@ -267,14 +312,20 @@ mapServer <- function(id, data_in) {
       df <- data_in(); req(is.data.frame(df))
       gj <- geojson_state()
       if (is.null(gj))
-        return(helpText("Upload a GeoJSON boundary file to begin."))
+        return(helpText("Upload a GeoJSON boundary file to begin, or pick a ",
+                        "built-in set above."))
       props <- geojson_props(gj)
+      # A built-in set knows which of its properties is the natural join key
+      # (e.g. "county_state"), so preselect it instead of whatever happens to
+      # come first in the file.
+      bkey <- MAP_BUILTIN_BOUNDARIES[[geo_builtin() %||% ""]]$key
       tagList(
         selectInput(ns("region_prop"),
           tagList("Region name property", info_tip(
             "The GeoJSON property naming each region (e.g. NAME). It must ",
             "match the values in your data's key column.")),
-          choices = props),
+          choices = props,
+          selected = if (!is.null(bkey) && bkey %in% props) bkey else props[1]),
         selectInput(ns("region_key"),
           tagList("Match to data column", info_tip(
             "The column in your data holding the region names, matched ",
@@ -310,7 +361,17 @@ mapServer <- function(id, data_in) {
       if (is.null(diag)) return(NULL)
       msgs <- list(tags$p(class = "small mb-1", sprintf(
         "%d of %d regions matched your data.", diag$n_matched, diag$n_features)))
-      if (length(diag$unmatched_geo))
+      if (isTRUE(diag$n_dropped > 0))
+        msgs <- c(msgs, list(tags$p(class = "small text-warning mb-1", sprintf(
+          "%d further regions were not drawn (the file exceeds the %d-region limit).",
+          diag$n_dropped, MAP_CHORO_MAX))))
+      # A built-in set covers a whole country, so regions without data are
+      # expected there -- state it as coverage, not as a warning.
+      if (length(diag$unmatched_geo) && isTRUE(diag$builtin))
+        msgs <- c(msgs, list(tags$p(class = "small text-muted mb-1", sprintf(
+          "%d built-in regions have no data and are drawn pale grey.",
+          length(diag$unmatched_geo)))))
+      if (length(diag$unmatched_geo) && !isTRUE(diag$builtin))
         msgs <- c(msgs, list(tags$p(class = "small text-warning mb-1", paste0(
           "No data for: ", paste(utils::head(diag$unmatched_geo, 8),
                                  collapse = ", "),
@@ -455,6 +516,8 @@ mapServer <- function(id, data_in) {
       # stale points values (first duplicate name wins).
       utils::modifyList(base, list(
         geojson      = geojson_state(),
+        geo_builtin  = geo_builtin(),
+        geo_filter   = input$geo_filter %||% "__all__",
         region_key   = input$region_key %||% "__none__",
         region_prop  = input$region_prop %||% "",
         region_value = input$region_value %||% "__none__",

@@ -960,3 +960,124 @@ test_that("basemap-only hint fires despite a stale heatmap tick in admin mode", 
             show_points = FALSE, heatmap = TRUE)     # stale hidden tick
   expect_match(map_hint(d, p), "only the basemap")
 })
+
+# ---- built-in boundaries (0.9.0) ------------------------------------------
+
+test_that("the boundary registry is consistent and its files ship", {
+  for (key in names(MAP_BUILTIN_BOUNDARIES)) {
+    spec <- MAP_BUILTIN_BOUNDARIES[[key]]
+    expect_true(all(c("label", "file", "key", "source") %in% names(spec)))
+    path <- system.file("geo", spec$file, package = "foxplots")
+    expect_true(nzchar(path) && file.exists(path))
+  }
+  ch <- builtin_boundary_choices()
+  expect_true(all(names(MAP_BUILTIN_BOUNDARIES) %in% ch))
+  expect_equal(unname(ch[length(ch)]), "__upload__")   # upload last
+})
+
+test_that("each built-in set parses and exposes its documented join key", {
+  for (key in names(MAP_BUILTIN_BOUNDARIES)) {
+    spec <- MAP_BUILTIN_BOUNDARIES[[key]]
+    gj <- parse_geojson(builtin_boundary_text(key))
+    expect_s3_class(gj, NA)                       # a plain parsed list
+    expect_gt(length(gj$features), 1L)
+    props <- geojson_props(gj)
+    expect_true(spec$key %in% props)
+    if (!is.null(spec$filter_by)) expect_true(spec$filter_by %in% props)
+    # every feature actually carries a non-empty key value
+    vals <- vapply(gj$features,
+                   function(f) geojson_prop_chr(f$properties, spec$key),
+                   character(1))
+    expect_true(all(nzchar(vals)))
+  }
+})
+
+test_that("built-in sets have the expected shape and unique county labels", {
+  states <- parse_geojson(builtin_boundary_text("us_states"))
+  expect_equal(length(states$features), 52L)      # 50 + DC + PR
+  counties <- parse_geojson(builtin_boundary_text("us_counties"))
+  expect_gt(length(counties$features), 3000L)
+  lab <- vapply(counties$features,
+                function(f) geojson_prop_chr(f$properties, "county_state"),
+                character(1))
+  expect_equal(anyDuplicated(lab), 0L)            # "county, state" is unique
+  fips <- vapply(counties$features,
+                 function(f) geojson_prop_chr(f$properties, "fips"),
+                 character(1))
+  expect_equal(anyDuplicated(fips), 0L)
+  world <- parse_geojson(builtin_boundary_text("world_countries"))
+  expect_gt(length(world$features), 150L)
+})
+
+test_that("the filter subsets features and degrades safely", {
+  fl <- parse_geojson(builtin_boundary_text("us_counties", "Florida"))
+  expect_equal(length(fl$features), 67L)          # Florida has 67 counties
+  st <- vapply(fl$features,
+               function(f) geojson_prop_chr(f$properties, "state"),
+               character(1))
+  expect_true(all(st == "Florida"))
+  # unknown / empty / "all" filters fall back to the whole set
+  full <- length(parse_geojson(builtin_boundary_text("us_counties"))$features)
+  for (v in list(NULL, "", "__all__", "Nowhere"))
+    expect_equal(length(parse_geojson(
+      builtin_boundary_text("us_counties", v))$features), full)
+  # a non-filterable set ignores the argument
+  expect_equal(length(parse_geojson(
+    builtin_boundary_text("us_states", "Florida"))$features), 52L)
+  expect_null(builtin_boundary_text("no_such_set"))
+  expect_equal(builtin_boundary_filter_values("us_states"), character(0))
+  expect_true("Florida" %in% builtin_boundary_filter_values("us_counties"))
+})
+
+test_that("a built-in set drives build_choropleth like an upload does", {
+  d <- data.frame(state = c("Florida", "Georgia", "Texas"),
+                  yield = c(10, 20, 30))
+  p <- list(geojson = parse_geojson(builtin_boundary_text("us_states")),
+            region_prop = "state", region_key = "state",
+            region_value = "yield", region_agg = "mean")
+  m <- build_choropleth(d, p)
+  expect_s3_class(m, "leaflet")
+  diag <- attr(m, "choro_diag")
+  expect_equal(diag$n_matched, 3L)                # all three joined
+  expect_equal(diag$n_features, 52L)
+})
+
+test_that("built-in choropleth code is reproducible and runs standalone", {
+  d <- data.frame(state = c("Florida", "Georgia"), yield = c(10, 20))
+  p <- list(geojson = parse_geojson(builtin_boundary_text("us_states")),
+            geo_builtin = "us_states", region_prop = "state",
+            region_key = "state", region_value = "yield", region_agg = "mean")
+  code <- generate_choropleth_code(p, d)
+  expect_match(code, "system.file(\"geo\", \"us_states.geojson.gz\"", fixed = TRUE)
+  expect_no_match(code, "your_boundaries.geojson", fixed = TRUE)
+  expect_silent(parse(text = code))
+  # the emitted loader really does yield the same collection the app used
+  lines <- strsplit(code, "\n", fixed = TRUE)[[1]]
+  i <- grep("^gj <- fromJSON", lines)[1]
+  loader <- sub("fromJSON", "jsonlite::fromJSON",
+                paste(lines[i:(i + 1)], collapse = "\n"), fixed = TRUE)
+  gj <- eval(parse(text = loader))
+  expect_equal(length(gj$features), 52L)
+  # a filtered built-in emits the subset step
+  pf <- utils::modifyList(p, list(geo_builtin = "us_counties",
+                                  geo_filter = "Florida",
+                                  region_prop = "county_state"))
+  expect_match(generate_choropleth_code(pf, d), "keep <- vapply", fixed = TRUE)
+  # an upload keeps the placeholder
+  pu <- p; pu$geo_builtin <- NULL
+  expect_match(generate_choropleth_code(pu, d), "your_boundaries.geojson",
+               fixed = TRUE)
+})
+
+test_that("the feature cap clears US counties and reports truncation", {
+  expect_gt(MAP_CHORO_MAX, 3222L)                   # all counties fit
+  d <- data.frame(k = "Alachua County, Florida", v = 1)
+  p <- list(geojson = parse_geojson(builtin_boundary_text("us_counties")),
+            geo_builtin = "us_counties", region_prop = "county_state",
+            region_key = "k", region_value = "v")
+  diag <- attr(build_choropleth(d, p), "choro_diag")
+  expect_equal(diag$n_features, 3222L)              # nothing clipped
+  expect_equal(diag$n_dropped, 0L)
+  expect_equal(diag$n_matched, 1L)
+  expect_true(diag$builtin)                         # drives the muted wording
+})

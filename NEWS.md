@@ -1,3 +1,29 @@
+# foxplots 0.9.0 (development)
+
+## Built-in map boundaries -- no file hunting
+
+- **Shaded-region maps now ship with their boundaries.** Pick **US states**,
+  **US counties**, or **world countries** from the Boundaries dropdown and
+  start shading immediately; uploading your own GeoJSON is still there as
+  "Upload my own file...".
+- **Limit large sets to what you need** -- counties to a single state (67
+  Florida polygons instead of 3,222 national ones), countries to a
+  continent.
+- Each set ships several join properties so your data matches however it is
+  keyed: states by name, abbreviation, or FIPS; counties by name,
+  "County, State", or 5-digit FIPS (which also disambiguates Virginia's
+  independent cities from the counties they share a name with); countries by
+  name or ISO code. The natural key is preselected for you.
+- Regions with no data are reported as coverage ("55 built-in regions have
+  no data") rather than as a join warning, and the generated R code loads
+  the same boundaries from the installed package so a pasted script
+  reproduces the map exactly.
+- Sources are public domain: US Census cartographic boundary files (1:20m)
+  and Natural Earth (1:110m). All three sets together add ~620 KB.
+- Fixes a latent limit: the renderer capped GeoJSON at 3,000 features, which
+  would have silently dropped ~200 US counties. The cap is now 4,000 and
+  reports truncation when it does bite.
+
 # foxplots 0.8.0
 
 A polish release: every item from the 0.6.0/0.7.0 field-testing punch list,
