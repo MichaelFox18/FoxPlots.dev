@@ -1,3 +1,76 @@
+# foxplots 0.10.0
+
+Hardening pass from testing eight apps against real files (Kaggle sets, an
+11,000-row earthquake table). One severe defect, four usability fixes, the
+first automated coverage for the app layer, and a manual QA checklist.
+
+## Fixed: colouring a chart by an ID column froze the app
+
+Picking a high-cardinality column as "Color / group by" asked ggplot2 for one
+geom and one legend key per level. On 11,000 rows that took **111.7 seconds**
+for a density plot (boxplot 105s, scatter 29s) -- the single-threaded app
+simply stopped responding. Cost was linear in the level count, and hiding the
+legend saved nothing.
+
+- Discrete colour groups are now capped at **50**. Past that the colouring is
+  dropped and an on-chart note names the column, the count and the limit, and
+  suggests faceting instead. Same pattern as the 30-panel facet cap that has
+  always been there -- the colour picker had simply never got one.
+- **Continuous numeric colours are not capped**: they use one gradient scale
+  and stay fast at any cardinality.
+- The cap lives in the chart builder, so the **Export and Report downloads are
+  fixed too** -- their error handling caught errors, not hangs, so they froze
+  as well.
+- The copy-ready R code mirrors the cap, so a snippet can no longer carry an
+  11,000-element colour vector.
+
+Result on the reported case: **111.7 s -> 0.30 s.**
+
+## Map tool
+
+- **The settings panel scrolls on its own.** Reaching the controls near the
+  bottom used to scroll the whole page and push the map out of sight; the
+  sidebar now has its own scrollbar and stays pinned beside a fixed map.
+- **The settings are grouped.** Twenty-three controls spanning six concerns
+  all sat under one "Style" heading; they are now Basemap / Color / Markers /
+  Combine & cluster / Layer groups / Popups & labels / Finishing touches /
+  Download, with each section hidden when it does not apply.
+- **"Region name property" shows an example of each option** --
+  `county_state - e.g. Brooks County, Georgia` rather than a bare property
+  name -- so you can match it against your own column by eye.
+- **The density heatmap now works with "Combine points by area".** Turning on
+  the combine mode used to hide the heatmap entirely. The heat surface is
+  built from the underlying points, so the two compose: density beneath,
+  per-area counts on top. Hiding the markers as well gives a heatmap-only view.
+
+## Mapping data that has no coordinates
+
+Shaded regions never needed latitude or longitude -- a column of state, county
+or country names plus a number to shade by is enough -- but nothing said so.
+
+- The Map tab now **tells you** when it finds no coordinate columns, names the
+  column that looks like region names, and points at Shaded regions.
+- The map-type help no longer describes boundaries as something you upload
+  (they have been built in since 0.9.0).
+- **Fixed:** switching to Shaded regions before choosing the columns quietly
+  drew a *points* map, so the "pick the region property" prompt was
+  unreachable on any data that had coordinates.
+- **Fixed:** "Zoom to data" was visible in Shaded-regions mode but did nothing
+  (it needs coordinates); it is hidden there.
+
+## Testing
+
+- **First automated coverage for the twelve modules and eight launchers.**
+  Previously only the helpers were tested, while the bugs that actually
+  reached users lived in the wiring. Each launcher now builds, serves a real
+  page, and has its whole server run; each module has its contract checked.
+- The new tests were **mutation-tested** rather than assumed. Two mutations
+  initially escaped -- stripping the new property-picker labels, and mistyping
+  a module id so the server runs in a namespace with no UI -- and both gained
+  a test. The suite grew from 1,372 checks to 1,607.
+- **`TESTING_CHECKLIST.md`** is a new manual pass: per-app things to click,
+  edge cases, the deliberate limits, and what good looks like for each.
+
 # foxplots 0.9.0
 
 ## Every app can build a report -- and you pick what goes in it
