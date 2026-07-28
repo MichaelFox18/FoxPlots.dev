@@ -1,7 +1,7 @@
 # foxplots — Know Your Own Package
 
 *A presenter's crash course. Everything in here was checked against the actual source
-code (v0.6.0). Personal study material — not shipped in the package or the coworker repo.*
+code (v0.10.0). Personal study material — not shipped in the package or the coworker repo.*
 
 ---
 
@@ -9,27 +9,31 @@ code (v0.6.0). Personal study material — not shipped in the package or the cow
 
 **The elevator pitch:** "foxplots is a point-and-click toolkit for the full data
 workflow — import, clean, reshape, summarize, visualize, map, test, and model — built as
-seven R Shiny apps on one tested engine. Every result can show you the exact R code that
+eight R Shiny apps on one tested engine. Every result can show you the exact R code that
 produced it."
 
 **The architecture sentence:** "All the logic lives in plain, unit-tested R functions
-(~940 test checks); the app screens are thin wrappers around them. That's why I trust
-the numbers."
+(1,600+ test checks); the app screens are thin wrappers around them — and since v0.10.0
+the wrappers are tested too. That's why I trust the numbers."
 
 **Decision rules:**
 - Comparing a **number across groups** → Compare Groups. 2 groups → t-test (Welch by
   default); 3+ → ANOVA + Tukey. Data ugly (skewed, outliers)? → flip to rank-based
   (Wilcoxon / Kruskal-Wallis).
 - **Two categorical variables** → Compare Groups, chi-square mode.
-- **Blocks / farms / repeated measures in the design** → Mixed Model Review (lmer).
+- **Blocks / farms / repeated measures in the design**, response is a *number* →
+  Mixed Model Review (lmer).
+- **Counts, proportions, or presence/absence** — with or without blocks → **GLMM
+  Review** (glmmTMB). Don't transform a count in the lmer tool; name the family.
 - **Predicting a number from others** → Regression (linear; categorical predictors
   are fine — that's ANCOVA).
 - **Predicting a yes/no** → Regression, Outcome type = Binary (logistic; read odds
   ratios, not R²).
 - **Same test repeated within levels of a third variable** (mpg by cyl, split by am)
   → Compare Groups, "Split by".
-- **Rows have lat/lon** → Map Tool (points / heatmap); **rows name regions** and you
-  have a boundary file → Map Tool, Shaded regions.
+- **Rows have lat/lon** → Map Tool (points / heatmap); **rows name regions** (states,
+  counties, countries) → Map Tool, Shaded regions — **no coordinates and no boundary
+  file needed**, they ship in the package.
 
 **Numbers to hold:**
 | Number | Meaning |
@@ -44,6 +48,9 @@ the numbers."
 | **1,000 rows** | Charts switch from interactive to static (speed) |
 | **3×IQR** | Data Health's "extreme outlier" flag (flags, never deletes) |
 | **±90 / −180..360** | Valid latitude / longitude; >500 points auto-cluster |
+| **50** | Max distinct values you can colour a chart by (past it, colouring turns off) |
+| **52 / 3,222 / 177** | Built-in boundaries: US states / US counties / world countries |
+| **8 families** | GLMM Review's General tab (Poisson → nbinom2 → Beta → Tweedie …) |
 
 **The letters rule (say it exactly):** "Groups that share a letter could not be
 statistically separated. **No letter in common = significantly different.**"
@@ -67,24 +74,24 @@ cold, then re-read the crib card the morning of.
 
 ```mermaid
 flowchart LR
-    subgraph engine ["The engine (R/helpers_*.R) — pure functions, ~940 unit tests"]
+    subgraph engine ["The engine (R/helpers_*.R) — 14 files of pure functions, 1,600+ unit tests"]
         H1[helpers_io<br/>read files] --> H2[helpers_clean<br/>Data Health]
         H3[helpers_reshape] ~~~ H4[helpers_plot<br/>11 charts + code gen]
-        H5[helpers_compare<br/>tests engine] ~~~ H6[helpers_lmer<br/>mixed models]
+        H5[helpers_compare<br/>tests engine] ~~~ H6[helpers_lmer + helpers_glmm<br/>mixed models / GLMMs]
         H7[helpers_map<br/>leaflet maps] ~~~ H8[helpers_report<br/>HTML/Word]
     end
     engine --> M["Thin Shiny modules (mod_*)<br/>one per tab — just wiring"]
-    M --> A["Six apps (run_*)<br/>same modules, different lineups"]
+    M --> A["Eight apps (run_*)<br/>same modules, different lineups"]
 ```
 
 **Why this matters on stage:** when anyone asks "where does that number come from?",
 the answer is always the same — *a plain R function with unit tests; the screen is just
-a wrapper, and the result tab will show you the exact R code it ran.* The six apps
-(Data Explorer, Reshape, Combine, Compare Groups, Mixed Model Review, Map Tool) are
-different line-ups of the same eleven modules.
+a wrapper, and the result tab will show you the exact R code it ran.* The eight apps
+(Data Explorer, Reshape, Combine, Compare Groups, Mixed Model Review, GLMM Review,
+Map Tool, Regression Tool) are different line-ups of the same twelve modules.
 
 **Data flows left to right** in the Data Explorer: Import → Reshape → *working data* →
-everything downstream (Summarize, Visualize, Map, Compare, Regression, Export, Report).
+everything downstream (Summarize, Visualize, Map, Compare, Regression, Export & Report).
 Change the data upstream and every tab downstream sees the change.
 
 ---
@@ -154,12 +161,12 @@ Change the data upstream and every tab downstream sees the change.
 | **Combine** *(Combine Tool)* | Two-table ops: Concatenate (stack), Join (left/inner/full/right/cross by key), Update (overwrite or fill-blanks-only), Compare (which columns/cells differ). | "Anything that needs a *second* table lives here — the classic join-two-spreadsheets problem." |
 | **Summarize** | Group stats (N, Mean, Median, Mode, Min, Max, SD, SE, IQR) or category **proportions with exact binomial confidence intervals**. | "Proportions come with exact Clopper-Pearson intervals, not the rough approximation." |
 | **Visualize** | Up to 4 charts at once, 11 types, smart hints ("that X is categorical — try a box plot"), copy-ready ggplot2 code per chart. Interactive below 1,000 rows, static above (speed). | "Every chart has a copy button that gives you standalone ggplot2 code reproducing exactly what's on screen." |
-| **Map** | Two map types. **Points**: auto-detected lat/lon, color AND size by variables (log/quantile scales for both, a graduated size legend), layer groups, popups, clustering, an optional density heatmap, a scale bar. **Shaded regions**: upload a GeoJSON boundary file, match a property to a data column, shade by mean/sum/median — with a loud report of which regions matched. HTML/PNG download + leaflet code; the report includes a snapshot of exactly what you framed. | "If your rows have coordinates they're on a basemap in two clicks; if they name counties and you have a boundary file, you get a shaded map — and it tells you exactly which regions didn't match instead of going silently blank." |
+| **Map** | Two map types. **Points**: auto-detected lat/lon, color AND size by variables (log/quantile scales for both, a graduated size legend), layer groups, popups, clustering, an optional density heatmap, a scale bar. **Shaded regions**: pick a **built-in** boundary set (US states / US counties / world countries) or upload your own GeoJSON, match a property to a data column, shade by mean/sum/median — with a loud report of which regions matched. **No latitude/longitude needed.** HTML/PNG download + leaflet code; the report includes a snapshot of exactly what you framed. | "If your rows have coordinates they're on a basemap in two clicks; if they just name counties, you get a shaded map with no coordinates and no file to find — and it tells you exactly which regions didn't match instead of going silently blank." |
 | **Compare Groups** | Do groups differ? t-test/ANOVA or rank-based, with assumption checks, effect sizes, post-hoc letters — or a whole grid of outcomes × groups with corrected p-values, optionally **split by a third variable** (one analysis per stratum, BH across the whole family). | "It picks the right test from what you selected, checks the assumptions, and translates the result into a sentence. Split-by is JMP's By box: mpg by cyl within each transmission type." |
 | **Regression** | Predict a number (linear `lm`) or a yes/no (logistic `glm`): numeric AND categorical predictors (pick each factor's reference level), interactions, polynomial fits. Coefficient table with 95% CIs, fit stats, EMMeans with letters, Q-Q / scale-location / Cook's diagnostics with an assumption panel (Shapiro, Breusch-Pagan, linearity, DW) and VIF, odds ratios for logistic, save-A/fit-B model comparison, copy-ready code. | "Fitted-vs-actual should hug the diagonal; residuals should be a patternless band. For logistic, read the odds ratios — an OR of 2 doubles the odds per unit. VIF above 5 means two predictors are telling me the same story." |
 | **Mixed Model Review** | Field-trial modeling (lmerTest/emmeans): fixed treatments + random blocks, ANOVA, variance components, EMMeans with letters, diagnostics, model comparison. | "This is the tool for block designs and repeated measures — where plain ANOVA would pretend correlated plots are independent." |
-| **Export** | Data (CSV/Excel/RDS), charts (PNG/PDF with size/DPI), summary CSV, model outputs. | "Everything you made leaves the app in the format your journal or advisor wants." |
-| **Report + session save** | One click bundles the session into a self-contained HTML or an editable Word file (with optional "show the R code"); sections appear only for what you actually did. Save/restore captures the data-prep stage as a .rds. | "The report mirrors exactly what you did — nothing you didn't run shows up in it." |
+| **GLMM Review** *(own app)* | The same block-design modelling for responses that were never normal: counts, proportions, presence/absence (glmmTMB). Two tabs — **General GLMM** (8 families, plus optional zero-inflation and dispersion side-models) and **Binary (0/1)**. DHARMa simulated-residual checks, Type III Wald ANOVA, EMMeans with letters on the response scale. | "The Mixed Model tool transforms a count and hopes; this one names the distribution. And it checks itself — DHARMa simulates from the fitted model and asks whether my real data looks like its own forecast." |
+| **Export & Report** | One tab, two sub-tabs. *Data & downloads*: data (CSV/Excel/RDS), charts (PNG/PDF with size/DPI), summary CSV, model outputs. *Full report*: a self-contained HTML or editable Word file (with optional "show the R code") — **in all eight apps**, with a **per-section picker** so you choose what goes in. Save/restore captures the data-prep stage as a .rds. | "The report mirrors exactly what you did — and I can untick anything I don't want in it." |
 
 ---
 
@@ -494,8 +501,9 @@ flowchart TD
 **Broad subjects? Yes — that's the design goal.** Anything observed *somewhere*:
 research plots and trial sites, monitoring wells, weather stations, wildlife/insect
 sightings, disease cases, soil samples, customer or facility locations, earthquakes,
-storm reports. What it does **not** do (yet): shaded regions (choropleths), address
-geocoding, or drawing shapes — points only, by deliberate v1 scoping.
+storm reports. What it does **not** do (yet): address **geocoding**
+(street addresses → coordinates) or drawing your own shapes. Shaded regions arrived in
+v0.6.0 and stopped needing a downloaded boundary file in v0.9.0.
 
 **Worth knowing under questioning:** bubbles scale by **area** (square-root radius), so
 twice the value reads as twice the ink — linear radius scaling is the classic lie-factor
@@ -534,7 +542,7 @@ top 30 shown, rest lumped as "Other." Above 1,000 rows charts go static for spee
 
 | App | Needs (shape) | Good sources | Prep gotcha |
 |---|---|---|---|
-| **Map** | 1 row/point, decimal-degree lat+lon | **USGS Earthquake feed** (CSV, `latitude`/`longitude` — auto-detects as-is); **GBIF / eBird / iNaturalist** exports (`decimalLatitude`/`decimalLongitude` — also auto-detect); **USGS NWIS** water-monitoring sites; **Florida Geospatial Open Data Portal / FGDL** (export point layers as CSV); FDACS/FDOH open data | NOAA HURDAT2 storm tracks come as "28.0N 94.8W" text — convert to signed decimals first. **Anti-example:** USDA NASS Ag Census is county-level — no points; that's choropleth territory (roadmap) |
+| **Map** | 1 row/point, decimal-degree lat+lon | **USGS Earthquake feed** (CSV, `latitude`/`longitude` — auto-detects as-is); **GBIF / eBird / iNaturalist** exports (`decimalLatitude`/`decimalLongitude` — also auto-detect); **USGS NWIS** water-monitoring sites; **Florida Geospatial Open Data Portal / FGDL** (export point layers as CSV); FDACS/FDOH open data | NOAA HURDAT2 storm tracks come as "28.0N 94.8W" text — convert to signed decimals first. **Once an anti-example, now a headline case:** USDA NASS Ag Census is county-level with no points — that is exactly what Shaded regions is for. Join on county name (set "Limit to state") or on 5-digit FIPS, which never collides |
 | **Compare Groups** | 1 row/observation; numeric outcome + categorical group | Built-ins first (iris, mtcars); the **`agridat`** R package — hundreds of real published ag trials, the single best source for this audience; any survey CSV for chi-square | Grid mode wants tidy long data — one measurement column per outcome |
 | **Mixed Model** | Long format, 1 row/plot; treatment columns + a block/farm/rep column | The built-in RCBD example (always demo with it); **`agridat`** again — most entries are blocked designs ready to go; your unit's own trial spreadsheets | Treatments stored as numbers (like the example's Nitrogen) need recasting to factor |
 | **Reshape / Combine / Visualize** | any tidy CSV | dplyr's `band_members`/`band_instruments` (the join demo), FL open-data portals, NASS QuickStats CSVs (great reshape practice — they arrive wide) | — |
@@ -607,8 +615,11 @@ top 30 shown, rest lumped as "Other." Above 1,000 rows charts go static for spee
 
 **Map**
 
-21. **Can it shade counties (choropleth)?** Not in v1 — points only, deliberately. It's
-    top of the roadmap; today you can map county-level values as county-centroid points.
+21. **Can it shade counties (choropleth)?** Yes — and the boundaries ship inside the
+    package, so there is no file to hunt for and **no coordinates needed**. Map type →
+    Shaded regions → Boundaries: **US counties** → "Limit to state" if you want one
+    state → match your county column → shade by a number. If it comes out blank, read
+    the match report: the join is an exact text match and it names the strays.
 22. **My points are in the ocean.** Almost always a sign: west longitudes must be
     negative (−82, not 82) — or the columns are swapped; there's a one-click Swap link.
 23. **Why did rows disappear from the map?** Missing or out-of-range coordinates are
@@ -623,27 +634,42 @@ top 30 shown, rest lumped as "Other." Above 1,000 rows charts go static for spee
     result tab exports the exact R code, so anything can be reproduced or audited.
 26. **How does it compare to JMP — and didn't AI write it?** JMP's Tables menu and
     Fit-Y-by-X were the explicit design targets. It was built AI-assisted with the
-    statistical engine unit-tested (~940 checks) against reference values, and the
+    statistical engine unit-tested (1,600+ checks) against reference values, and the
     generated-code feature means nothing is a black box.
 
 ---
 
 ## 10. Recommended next additions (ranked)
 
-1. **Choropleth / county maps.** The #1 gap for an extension audience: county-level
-   data is everywhere (NASS, FDOH), point data isn't. Ship simplified county/state
-   boundaries in the package, join by county name/FIPS, color by value. The map module
-   was built with this in mind.
-2. **Full app-state save/restore.** Session save currently captures the data-prep
-   stage only; extending it to Visualize/Compare/Regression choices is already sketched
-   in CLAUDE.md's "Possible next steps."
-3. **GLMMs (counts & proportions).** The honest next step for the Mixed Model tool:
-   `pest_count` and `germination` are currently handled by transformations; a
-   `glmer` path (Poisson / binomial) is the modern treatment.
-4. **shinyapps.io / Connect deployment.** Coworkers without R could use everything
-   from a browser link; the apps are already written deployment-safe.
-5. **Geocoding companion for the Map** (addresses → coordinates) — GeoJSON upload
-   for custom regions shipped in v0.6.0; geocoding is the remaining half.
+*Two of the original five shipped. Kept here — with what actually happened — because
+"what's next" is a question you will be asked, and "we built it" is the best answer.*
+
+- ~~**Choropleth / county maps.**~~ **DONE.** The choropleth path shipped in v0.6.0
+  (GeoJSON upload); v0.9.0 put the boundaries *inside the package* — US states,
+  US counties, world countries — joinable by name, abbreviation or FIPS. Exactly the
+  NASS/FDOH case this item was written for.
+- ~~**GLMMs (counts & proportions).**~~ **DONE, and bigger than proposed.** v0.7.0
+  shipped a whole eighth app, GLMM Review — `glmmTMB` rather than `glmer`, eight
+  families, zero-inflation and dispersion side-models, DHARMa checks. Contributed by
+  a collaborator and absorbed to the house pattern.
+
+**Still open, in order:**
+
+1. **Full app-state save/restore.** Session save still captures the **data-prep stage
+   only** (working data, filters, reshape settings). Extending it to the Visualize /
+   Compare / Regression choices is sketched in CLAUDE.md's "Possible next steps" — the
+   plumbing (a shared `session_store`) already exists; each analysis module would
+   publish its inputs to it the way `mod_reshape` does.
+2. **CRAN.** The package has been `R CMD check --as-cran` clean for three releases
+   (only environmental NOTEs). Remaining work is an `@examples` pass and the
+   submission mechanics. *Deliberately paused, not blocked.*
+3. **shinyapps.io / Connect deployment.** Coworkers without R could use everything
+   from a browser link; the apps are already written deployment-safe (`system.file()`
+   paths, inlined logo, thin `inst/apps/<name>/app.R` entries).
+4. **Geocoding companion for the Map** (addresses → coordinates). The only part of the
+   original item 5 still missing — the boundary half went further than proposed.
+5. **A row-count guard on import.** There is no cap or warning today: an 11k-row file
+   is comfortable, a multi-million-row one will be slow everywhere. Known gap.
 
 ---
 
@@ -695,11 +721,229 @@ interpretation card wording.
 - **Report:** the map now lands IN the HTML/Word report, framed exactly as on
   screen.
 
-**Crib updates:** seven apps; ~940 checks; the Map has two modes; Regression is
+**Crib updates (as of v0.6.0 - superseded by the v0.10.0 addendum below):** seven
+apps; ~940 checks; the Map has two modes; Regression is
 linear + logistic; split-by caps at 6 strata; choropleth caps at 3,000 regions.
 
 ---
 
-*Fact-checked against source v0.4.0; crib card, tab tour and the v0.6.0 addendum updated against v0.6.0 (helpers_compare.R, helpers_lmer.R, helpers_map.R, helpers_model.R,
-helpers_clean.R and friends). If the app and this guide ever disagree, trust the app
-and fix the guide.*
+
+---
+
+## Addendum — what changed in v0.7.0 → v0.10.0 (the eighth app, and four fixes worth knowing)
+
+*Four releases in one addendum. The big one is **GLMM Review**, a whole new statistical
+area — if someone asks about counts or proportions, this is where you go.*
+
+### The one-line version of each release
+- **v0.7.0** — an eighth app, **GLMM Review** (glmmTMB), contributed by a collaborator.
+- **v0.8.0** — a 10-item field-testing punch list: the combination cap to 24, SEs on the
+  connecting letters, combine-points-by-area on the map, Export and Report merged.
+- **v0.9.0** — **built-in map boundaries**, and a report in **every** app with a picker.
+- **v0.10.0** — the colour-by freeze fixed, the map settings made usable, and the first
+  automated tests for the app layer itself.
+
+---
+
+## G. GLMM Review — the new deep dive
+
+### Card G1 — What a GLMM is · *"same block design, different kind of measurement"*
+A mixed model (fixed treatments + random blocks, exactly Card 10) for a response that is
+**not** a bell curve — counts, proportions, presence/absence — made workable by naming
+the **family** (what kind of number it is) and the **link** (the scale the arithmetic
+happens on).
+*Field analogy:* `lmer` assumes yield could in principle be any number, spread
+symmetrically. Insect counts can't: they're whole numbers, they stop dead at zero, and
+the busy traps are also the noisiest. A GLMM keeps the block structure and swaps the
+assumption about the measurement.
+*Say this:* "Same design, honest distribution. The old move was to log-transform a count
+and hope; this names what the number actually is."
+*In the app:* the **GLMM Review** app → **General GLMM** tab.
+
+### Card G2 — The link · *"model in log, report in bugs"*
+The scale the model does its straight-line arithmetic on. The link converts back so a
+prediction can never leave the legal range: counts can't go negative, but a straight line
+can. On a log link, "Fertilized adds 0.6" means **multiplies counts by e⁰·⁶ ≈ 1.8** — and
+a multiplier can shrink toward zero forever without crossing it.
+*Say this:* "Coefficients are on the link scale, so differences become **ratios**. The
+marginal means tab hands them back on the response scale."
+*In the app:* every family names its link — *"Poisson (log link) – counts"*.
+
+### Card G3 — Overdispersion · *"the Poisson's one and only promise"* ⭐
+Poisson assumes **variance = mean**. Real field counts clump, so the variance is bigger —
+and a model that won't allow it reports standard errors that are too small and p-values
+that are too exciting.
+*Field analogy:* insects arrive in flushes, so some traps sit empty and others are
+loaded. Poisson budgets for "randomly scattered"; the negative binomial budgets for
+"clumped."
+*Say this:* "Overdispersion doesn't bias the estimates much — it lies about the
+**uncertainty**. That's why it manufactures significance."
+*In the app:* **DHARMa residuals** tab flags it; the fix is Family → **negative binomial
+(nbinom2)**. nbinom1 is the alternative shape (variance grows proportionally rather than
+quadratically).
+
+### Card G4 — Zero-inflation · *"two different reasons for a zero"*
+Some zeros mean *the process ran and produced nothing*; others mean *the process was
+never there*. Zero-inflation fits the second kind separately — a probability of a
+structural zero sitting on top of the ordinary count model.
+*Field analogy:* a quadrat with no seedlings might be poor ground that had a bad year (a
+sampling zero) or scraped ground with no seed bank at all (a structural zero). Pool them
+and the count model concludes the whole field is dead.
+*In the app:* **Advanced model options** → **"Zero-inflation model (ziformula)"**. Blank
+means intercept-only ("a constant share of structural zeros"); naming predictors lets the
+*chance* of a structural zero depend on them.
+*Demo response:* `seedling_count` in the example data is built zero-heavy for this.
+
+### Card G5 — Beta and Tweedie · *"proportions, and rainfall"*
+- **Beta (logit link)** — a proportion measured in its own right: percent cover, moisture
+  fraction, share of a leaf diseased. Strictly **between** 0 and 1, with **no denominator
+  to count**. Its variance naturally shrinks near both ends, which a normal model has no
+  concept of. *(If you DO have a denominator — 7 of 20 plants — that's binomial, not
+  Beta.)*
+- **Tweedie (log link)** — non-negative **continuous** data with a real pile of exact
+  zeros: rainfall, biomass with true absences. The near neighbour, **Gamma**, refuses
+  zeros outright, which is the usual reason a Gamma fit errors.
+*In the app:* `cover_prop` in the example data is the Beta demo (clamped strictly inside
+(0,1) on purpose).
+
+### Card G6 — DHARMa simulated residuals · *"where does each plot fall in its own forecast?"* ⭐
+You can't eyeball raw residuals from a count model — they're not supposed to be normal.
+DHARMa instead simulates hundreds of possible outcomes for **every row**, then asks what
+fraction fall below what you actually observed. If the model is right, those fractions are
+spread **uniformly between 0 and 1** — whatever family you picked.
+*Field analogy:* the model is a machine for generating plausible fields. Run it a thousand
+times; each real plot should land in an unremarkable spot in its own pile. If real plots
+keep landing at the extremes, the machine is wrong.
+*Say this:* "It turns 'are these residuals OK?' into one question with the same answer
+shape for every family: **is this uniform?**"
+*In the app:* the **DHARMa residuals** tab — a QQ plot that should sit on the diagonal, a
+predicted-vs-residual panel, and printed tests for **uniformity, dispersion, outliers and
+zero-inflation**. Check it *before* you read the ANOVA.
+
+### Card G7 — The Binary (0/1) tab · *"presence/absence gets its own room"*
+A separate tab for a 0/1 or two-level response. The family is fixed (Bernoulli); the only
+distributional choice left is the **link** — logit (default, coefficients are log-odds),
+probit, cloglog (asymmetric, useful when 1s are rare), cauchit.
+*Why separate:* 0/1 data has **no free dispersion parameter**, so a shared code path would
+have to silently ignore half the controls. Keeping it apart avoids the "it did something
+odd with my 0/1 column" failure mode.
+*Say this:* "It tells me on screen which level it's modelling — `Modeling P(present = "1")`
+— so I'm never guessing which direction the odds run."
+
+### Card G8 — Wald Type III ANOVA · *"chi-square where you expected an F"*
+The omnibus "does this term matter" test for a glmmTMB fit is a **Wald chi-square** per
+term, Type III (each tested with everything else already in the model). There's no F
+because there's no residual variance to form one from.
+*In the app:* the **Wald ANOVA** tab. It uses the optional `car` package — without it the
+tab prints an instructive note instead of erroring.
+
+### Card G9 — Which modelling tool do I open? · *the three doors* ⭐
+- **Numbers, rows independent** → **Regression Tool** (`lm`); yes/no → Outcome type Binary (`glm`).
+- **Numbers, rows share blocks / farms / years / repeated measures** → **Mixed Model Review** (`lmerTest`).
+- **Counts, proportions, presence/absence** — with or without a grouping → **GLMM Review** (`glmmTMB`).
+*The tools enforce it themselves:* the Mixed Model tool refuses to run without a random
+effect; the GLMM tool runs happily without one and tells you it fitted a plain GLM.
+
+---
+
+## M. Map — three things that changed
+
+### Card M1 — Built-in boundaries · *"a column of county names is enough"* ⭐
+Shaded maps no longer need a downloaded file. **US states (52), US counties (3,222), world
+countries (177)** ship inside the package. You need **one column of names and one number** —
+no latitude, no longitude, no download.
+*In the app:* Map type → Shaded regions → **Boundaries**. "Limit to state" narrows counties
+(Florida = 67 polygons instead of 3,222). If your data has no coordinates at all, the Map
+tab **says so** and points you here.
+
+### Card M2 — The choropleth join is a spreadsheet lookup · *"blank map = failed join"*
+The shading is an **exact text match** between the boundary's name property and your
+column. `"FL"` will not match `"Florida"`; `"ALACHUA"` will not match `"Alachua"`.
+Unmatched regions draw pale grey.
+*Say this:* "A blank map is almost never a bug — it's a join that found nothing, and the
+sidebar names the strays on both sides."
+*In the app:* **"Region name property"** shows an example of each option
+(`county_state — e.g. Brooks County, Georgia`) so you can eyeball which one matches your
+column. **FIPS never collides** — use it when names are messy.
+
+### Card M3 — Three ways to stop drawing 11,000 dots
+| Control | What it actually does |
+|---|---|
+| **Cluster nearby points** | Purely **cosmetic**. Nearby markers collapse into a numbered bubble that splits as you zoom. No arithmetic. Auto switches on above **500** points. |
+| **Combine points by area** | Real **aggregation**: one bubble per area at the centroid of its points, sized by how many it combined. Needs 2–100 distinct areas. |
+| **Shaded regions** | A different map entirely: no points at all, regions shaded by a summary. |
+Since v0.10.0 the **density heatmap composes with "Combine points by area"** — the heat
+surface is built from the raw points, so you get density underneath and per-area counts on
+top. Untick "Show point markers" for a heatmap-only view.
+
+---
+
+## V. Visualize — the 50-level colour cap
+
+### Card V1 — Colour is a category channel, not an ID channel ⭐
+Colouring by a column with hundreds of distinct values asks ggplot2 for one drawing pass
+and one legend key **per value**. On an 11,000-row file, colouring a density plot by an ID
+column took **111.7 seconds** — and Shiny is single-threaded, so that's a two-minute frozen
+app, not a slow chart. Cost is linear in the level count; hiding the legend saves nothing.
+**Discrete colour groups are capped at 50.** Past that the colouring is dropped and a note
+names the column, the count and the limit.
+*Important nuance:* **continuous numeric colours are not capped** — they use a single
+gradient scale and stay fast at any cardinality. The cap only applies to *categories*.
+*Say this:* "Fifty colours is already more than anyone can read. Past that it isn't a
+chart, it's a hang — so it turns itself off and tells you."
+
+---
+
+## R. Reporting — one tab, and you pick what's in it
+
+### Card R1 — Export & Report
+Every app now ends in a single **Export & Report** tab with two sub-tabs: *Data &
+downloads* for files, *Full report* for the write-up. **All eight apps report**, each on
+what it actually produces — the mixed-model tools report formulas, fit statistics, ANOVA,
+variance components and EMMeans with letters; the GLMM app reports its General and Binary
+fits side by side.
+**The per-section picker** is the part to demo: one checkbox per stage, all ticked by
+default. Unticking is applied *before* the report is built, so dropping a map also skips
+its slow snapshot.
+
+**Also worth knowing:** the connecting-letters table now carries a **standard error**
+(Group / Mean / SE / N / Letters). On the classic-ANOVA path the SE is **pooled** —
+√(MSE/n) — matching JMP's "Means for Oneway Anova"; on the rank-based path it's each
+group's own SD/√n. *Say this:* "The letters answer *which differ*; the SE says how well
+each mean is pinned down. Pooled on the ANOVA path because ANOVA already assumed one
+common spread."
+
+---
+
+## 30-second demos for the new material
+
+- **GLMM instead of a transformation.** GLMM Review → Load example → General GLMM →
+  Response `insect_count` → Family **Negative binomial (nbinom2)** → random effect `Site`
+  → Fit. Check **DHARMa residuals** first, then Wald ANOVA. *"The old way was log(count+1)
+  and hope."*
+- **Wrong family, caught before fitting.** Same tab: Response `cover_prop` (a proportion),
+  Family **Poisson**. A warning appears **before** you fit — counts must be whole numbers.
+  Switch to **Beta**. *"It checks the response against the family's legal range."*
+- **The colour cap.** Data Explorer → Florida sites example → Visualize → Density plot,
+  X `yield`, Colour by `site` (120 values) → instant, uncoloured, with the note. Then
+  colour by `crop` → colours return.
+- **A map with no coordinates.** Import a table of state names + one number → Map → the
+  blue note points at Shaded regions → US states → match `state` → shade. *"No lat/lon
+  anywhere in that file."*
+- **Heatmap-only, combined by area.** Map Tool → Fiji earthquakes → Combine points by area
+  → tick Density heatmap → untick Show point markers.
+- **Pick what's in the report.** After doing a chart, a map and a comparison → Export &
+  Report → Full report → untick the map → Generate. *"It's not in there, and it didn't
+  spend the time rendering it."*
+
+**Crib updates:** eight apps; 1,600+ checks; twelve modules; 14 helper files; the map has
+two modes with boundaries built in; the choropleth cap is **4,000** regions; discrete
+colour caps at **50**; combine-by-area caps at **100** areas.
+
+---
+
+*Fact-checked against source **v0.10.0** (helpers_compare.R, helpers_lmer.R,
+helpers_glmm.R, helpers_map.R, helpers_model.R, helpers_plot.R, helpers_report.R,
+helpers_clean.R and friends); every number and in-app control name in the v0.7.0-v0.10.0
+addendum was verified by running the package, not by reading another document. If the app
+and this guide ever disagree, trust the app and fix the guide.*
