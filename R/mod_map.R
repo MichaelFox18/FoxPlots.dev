@@ -359,9 +359,15 @@ mapServer <- function(id, data_in) {
       tagList(
         selectInput(ns("region_prop"),
           tagList("Region name property", info_tip(
-            "The GeoJSON property naming each region (e.g. NAME). It must ",
-            "match the values in your data's key column.")),
-          choices = props,
+            "Boundary files store several names for each region - a short ",
+            "name, a full name, a code. Pick the one written the same way as ",
+            "your data. Each option shows an example of what it holds, so ",
+            "you can match it against your own column by eye.")),
+          # Labels carry an example value ("county_state - e.g. Brooks County,
+          # Georgia") because a bare property name says nothing about its
+          # contents. The VALUES stay the bare names, so keep_sel() below and
+          # any saved selection still match.
+          choices = geojson_prop_choices(gj, props),
           # The user's own pick wins; the built-in's natural key is only a
           # STARTING point. Forcing bkey on every re-render undid a
           # deliberate choice (e.g. matching plain "county" instead of

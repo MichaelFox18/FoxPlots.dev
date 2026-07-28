@@ -1132,3 +1132,64 @@ test_that("peeking at a built-in keeps an already-uploaded file", {
     expect_null(geo_builtin())
   })
 })
+
+# ---- geojson_prop_examples / geojson_prop_choices ----------------------------
+# The picker offers raw property names ("county_state", "fips") that say
+# nothing about what they hold. Labels gain an example value; VALUES must stay
+# the bare names or keep_sel() in mod_map stops matching.
+
+.gj_props_fixture <- function() {
+  list(type = "FeatureCollection", features = list(
+    # feature 1 is deliberately missing "fips" and has an empty "county"
+    list(type = "Feature", properties = list(county = "", state = "Georgia"),
+         geometry = list(type = "Point", coordinates = list(1, 2))),
+    list(type = "Feature",
+         properties = list(county = "Brooks", state = "Georgia",
+                           fips = list("13027"),          # array-shaped
+                           county_state = "Brooks County, Georgia"),
+         geometry = list(type = "Point", coordinates = list(3, 4)))))
+}
+
+test_that("geojson_prop_examples finds a value even when feature 1 lacks it", {
+  gj <- .gj_props_fixture()
+  ex <- geojson_prop_examples(gj)
+  expect_equal(unname(ex[["county"]]), "Brooks")            # skipped the "" 
+  expect_equal(unname(ex[["fips"]]), "13027")               # unwrapped the array
+  expect_equal(unname(ex[["county_state"]]), "Brooks County, Georgia")
+  expect_named(ex, geojson_props(gj), ignore.order = TRUE)
+})
+
+test_that("geojson_prop_examples truncates long values and survives empties", {
+  long <- paste(rep("x", 80), collapse = "")
+  gj <- list(type = "FeatureCollection", features = list(
+    list(type = "Feature", properties = list(a = long, b = NULL),
+         geometry = list(type = "Point", coordinates = list(0, 0)))))
+  ex <- geojson_prop_examples(gj, max_chars = 10L)
+  expect_equal(nchar(ex[["a"]]), 10L)
+  expect_true(grepl("\u2026$", ex[["a"]]))
+  expect_equal(geojson_prop_examples(NULL), character(0))
+  expect_equal(geojson_prop_examples(gj, character(0)), character(0))
+})
+
+test_that("geojson_prop_choices labels the options but keeps the raw values", {
+  gj <- .gj_props_fixture()
+  ch <- geojson_prop_choices(gj)
+  # THE regression guard: mod_map's keep_sel() matches on the values, and the
+  # built-in's natural key is looked up among them.
+  expect_setequal(unname(ch), geojson_props(gj))
+  expect_true(any(grepl("Brooks County, Georgia", names(ch), fixed = TRUE)))
+  expect_true(any(grepl("^county_state \u2014 e.g.", names(ch))))
+  expect_equal(geojson_prop_choices(NULL), character(0))
+})
+
+test_that("every built-in boundary set gets a readable example per property", {
+  for (k in names(MAP_BUILTIN_BOUNDARIES)) {
+    gj <- parse_geojson(builtin_boundary_text(k))
+    ch <- geojson_prop_choices(gj)
+    expect_setequal(unname(ch), geojson_props(gj))
+    expect_true(all(grepl("e.g.", names(ch))),
+                info = paste(k, "every property should show an example"))
+    # the set's own join key must still be selectable by value
+    expect_true(MAP_BUILTIN_BOUNDARIES[[k]]$key %in% unname(ch))
+  }
+})

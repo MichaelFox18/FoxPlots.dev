@@ -671,6 +671,39 @@ geojson_prop_chr <- function(props, name) {
   if (is.null(v) || !length(v)) "" else as.character(v[[1]])
 }
 
+# One sample value per property, for labelling the "Region name property"
+# picker. Raw property names ("county_state", "fips") say nothing about what
+# they hold, so the picker shows the name AND an example -- the difference
+# between "county_state" and "Brooks County, Georgia" is the whole point.
+# Scans several features because the first one can be missing a property.
+geojson_prop_examples <- function(gj, props = NULL, n_scan = 20L,
+                                  max_chars = 30L) {
+  if (is.null(gj) || !length(gj$features)) return(character(0))
+  if (is.null(props)) props <- geojson_props(gj)
+  if (!length(props)) return(character(0))
+  feats <- gj$features[seq_len(min(length(gj$features), n_scan))]
+  out <- vapply(props, function(p) {
+    for (f in feats) {
+      v <- geojson_prop_chr(f$properties, p)
+      if (nzchar(v) && !identical(v, "NA")) return(v)
+    }
+    ""
+  }, character(1))
+  trunc_at <- function(x) if (nchar(x) > max_chars)
+    paste0(substr(x, 1L, max_chars - 1L), "\u2026") else x
+  vapply(out, trunc_at, character(1))
+}
+
+# Choices for the region-property picker: values stay the bare property names
+# (so a saved selection still matches), only the LABELS gain the example.
+geojson_prop_choices <- function(gj, props = NULL) {
+  if (is.null(props)) props <- geojson_props(gj)
+  if (!length(props)) return(character(0))
+  ex  <- geojson_prop_examples(gj, props)
+  lab <- ifelse(nzchar(ex), sprintf("%s \u2014 e.g. %s", props, ex), props)
+  stats::setNames(props, lab)
+}
+
 # Bounding box of every coordinate in the collection. GeoJSON nests
 # positions arbitrarily deep (Polygon -> rings -> [lng,lat]; MultiPolygon
 # adds another level), so flatten each feature's coordinates in one pass and
