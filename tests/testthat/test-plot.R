@@ -374,3 +374,25 @@ test_that("chart_hint explains the dropped colour and names the limit", {
   expect_null(chart_hint(df, list(type = "density", x = "x", color = "few")))
   expect_null(chart_hint(df, list(type = "scatter", x = "x", y = "y", color = "y")))
 })
+
+test_that("the hint and the cap agree on how NA counts (release-review finding)", {
+  # ggplot draws NA as its own level with its own legend key, so it costs one
+  # of the GROUP_MAX slots. build_full_plot and generate_code always counted it;
+  # chart_hint used na.rm = TRUE, so a column of exactly 50 real levels plus any
+  # NA was dropped with NO on-screen explanation -- the exact failure the hint
+  # exists to prevent.
+  lv <- sprintf("L%02d", seq_len(GROUP_MAX))         # 50 real levels
+  g  <- c(lv, lv, NA, NA)                            # + NA  -> 51 counted
+  df <- data.frame(x = seq_along(g), y = seq_along(g), g = g,
+                   stringsAsFactors = FALSE)
+  p  <- list(type = "scatter", x = "x", y = "y", color = "g")
+  expect_equal(dplyr::n_distinct(df$g), GROUP_MAX + 1L)
+  expect_null(colour_var(build_full_plot(df, p)))      # builder drops it ...
+  expect_false(is.null(chart_hint(df, p)))             # ... and now says so
+  expect_true(grepl(as.character(GROUP_MAX + 1L), chart_hint(df, p)))
+  # and 50 real levels with NO missing values is still under the cap
+  df2 <- data.frame(x = 1:100, y = 1:100, g = rep_len(lv, 100),
+                    stringsAsFactors = FALSE)
+  expect_false(is.null(colour_var(build_full_plot(df2, p))))
+  expect_null(chart_hint(df2, p))
+})

@@ -114,7 +114,12 @@ chart_hint <- function(df, p) {
             p$color %in% names(df)) p$color else NULL
   if (!is.null(cv) && !pt %in% c("pie", "hexbin", "heatmap") &&
       !is.numeric(df[[cv]])) {
-    n_cv <- dplyr::n_distinct(df[[cv]], na.rm = TRUE)
+    # na.rm = FALSE deliberately, matching build_full_plot and generate_code:
+    # ggplot draws NA as its own level with its own legend key (verified), so
+    # a missing value really does cost one of the GROUP_MAX slots. Counting it
+    # here too keeps all three in step -- with na.rm = TRUE a column of exactly
+    # 50 real levels plus any NA lost its colouring with no explanation.
+    n_cv <- dplyr::n_distinct(df[[cv]])
     if (n_cv > GROUP_MAX)
       return(sprintf("<b>%s</b> has %s different values &mdash; too many to colour by (limit %d), so the colouring is turned off. Pick a column with fewer categories, or use it as a <b>facet</b> if you want one panel per value.",
                      cv, format(n_cv, big.mark = ","), GROUP_MAX))

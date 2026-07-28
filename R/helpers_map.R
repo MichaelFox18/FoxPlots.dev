@@ -132,8 +132,10 @@ aggregate_by_admin <- function(d, admin_col, lon, lat,
 # the user's color column when that column is numeric (a categorical pick
 # has no meaningful area aggregate and is ignored -> single marker color),
 # and labelled/popup'd with the area name + point count (via the friendly
-# "Points" alias). Proximity clustering, layer groups, and the heatmap are
-# point-level ideas, so they switch off while combining.
+# "Points" alias). Proximity clustering and layer groups are point-level
+# ideas, so they switch off while combining. The density HEATMAP does not:
+# build_leaflet_map keeps the un-aggregated rows and draws it from those, so
+# it still describes the underlying points (see the note at the modifyList).
 admin_cluster_params <- function(d, p, lon, lat) {
   av <- map_col(p$cluster_by)
   if (is.null(av) || !av %in% names(d) || av %in% c(lon, lat))
@@ -1208,9 +1210,15 @@ assemble_map_code <- function(pre, code) {
 generate_map_code <- function(df, p) {
   if (is.null(df) || !is.data.frame(df))
     return("# Import data to generate map code.")
-  # Choropleth mode has its own (much shorter) script.
-  if (!is.null(p$geojson) && !is.null(map_col(p$region_value)))
+  # Choropleth mode has its own (much shorter) script. Mirror
+  # build_leaflet_map exactly: p$geojson alone is the mode flag, so a
+  # half-configured choropleth must NOT fall through and emit a points script
+  # while the pane refuses to draw one.
+  if (!is.null(p$geojson)) {
+    if (is.null(map_col(p$region_value)))
+      return("# Choose the numeric column to shade the regions by.")
     return(generate_choropleth_code(p, df))
+  }
   lon <- map_col(p$lon); lat <- map_col(p$lat)
   if (is.null(lon) || is.null(lat) || identical(lon, lat) ||
       !lon %in% names(df) || !lat %in% names(df) ||

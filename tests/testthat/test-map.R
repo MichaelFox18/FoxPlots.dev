@@ -1314,3 +1314,25 @@ test_that("a half-configured choropleth draws nothing, not a points map", {
   expect_true("addGeoJSON" %in% calls || "addPolygons" %in% calls)
   expect_false("addCircleMarkers" %in% calls)
 })
+
+test_that("code-gen mirrors the builder's choropleth gate (release-review finding)", {
+  # build_leaflet_map treats p$geojson alone as the mode flag, so a
+  # half-configured choropleth returns NULL. generate_map_code kept the older
+  # two-condition gate and fell through, emitting a full POINTS script while
+  # the pane showed "pick the region property..." -- copy-pasting it produced a
+  # scatter of markers with nothing to do with the map on screen.
+  d  <- make_map_example_data()
+  gj <- parse_geojson(builtin_boundary_text("us_counties", "Florida"))
+  p  <- list(lon = "lon", lat = "lat", geojson = gj,
+             region_prop = "county", region_key = "county")   # no region_value
+  expect_null(build_leaflet_map(d, p))
+  code <- generate_map_code(d, p)
+  expect_false(grepl("addCircleMarkers", code, fixed = TRUE))
+  expect_match(code, "^#")                     # an instruction, not a script
+  # once configured, both sides agree on the choropleth
+  p$region_value <- "yield"
+  expect_false(is.null(build_leaflet_map(d, p)))
+  code2 <- generate_map_code(d, p)
+  expect_match(code2, "addPolygons|addGeoJSON")
+  expect_false(grepl("addCircleMarkers", code2, fixed = TRUE))
+})
