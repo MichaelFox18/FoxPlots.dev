@@ -851,7 +851,9 @@ test_that("admin_cluster_params gates and rewrites like the design says", {
   expect_equal(ac$p$size_by, ".n_points")
   expect_equal(ac$p$group_by, "__none__")
   expect_equal(ac$p$cluster, "off")
-  expect_false(ac$p$heatmap)
+  # 0.10.0: the heatmap is NOT forced off -- it is built from the raw points,
+  # so it still describes the data once they are combined into area bubbles.
+  expect_true(ac$p$heatmap)
   expect_equal(ac$p$color, "yield")                     # numeric -> area mean
   expect_equal(ac$p$label_col, "county")
   expect_true("Points" %in% names(ac$d))
@@ -871,15 +873,14 @@ test_that("admin_cluster_params gates and rewrites like the design says", {
                                     "lon", "lat")$active)
 })
 
-test_that("builder in admin mode: one marker per area, no cluster/heat/groups", {
+test_that("builder in admin mode: one marker per area, no cluster/groups", {
   d <- make_map_example_data()
   p <- list(lon = "lon", lat = "lat", cluster_by = "county", color = "yield",
-            group_by = "crop", cluster = "on", heatmap = TRUE)
+            group_by = "crop", cluster = "on", heatmap = FALSE)
   m <- build_leaflet_map(d, p)
   calls <- vapply(m$x$calls, function(cl) cl$method, character(1))
   expect_equal(sum(calls == "addCircleMarkers"), 1L)
   expect_false("addLayersControl" %in% calls)
-  expect_false("addHeatmap" %in% calls)
   mk <- m$x$calls[[which(calls == "addCircleMarkers")]]$args
   expect_equal(length(mk[[1]]), 12L)                     # 12 county bubbles
   radii <- mk[[3]]
@@ -954,10 +955,15 @@ test_that("admin-mode generated code titles the size legend Points", {
   expect_no_match(code, ">\\.n_points<")             # no internal name in HTML
 })
 
-test_that("basemap-only hint fires despite a stale heatmap tick in admin mode", {
+test_that("in admin mode the heatmap tick is honoured, not overridden", {
+  # 0.10.0 reversal: the tick used to be force-cleared in admin mode, so the
+  # hint had to mirror that gate. Now the heatmap really is on, so hiding the
+  # markers leaves a legible map and the basemap-only warning must NOT fire.
   d <- make_map_example_data()
   p <- list(lon = "lon", lat = "lat", cluster_by = "county",
-            show_points = FALSE, heatmap = TRUE)     # stale hidden tick
+            show_points = FALSE, heatmap = TRUE)
+  expect_false(any(grepl("only the basemap", map_hint(d, p) %||% "")))
+  p$heatmap <- FALSE
   expect_match(map_hint(d, p), "only the basemap")
 })
 
@@ -1192,4 +1198,78 @@ test_that("every built-in boundary set gets a readable example per property", {
     # the set's own join key must still be selectable by value
     expect_true(MAP_BUILTIN_BOUNDARIES[[k]]$key %in% unname(ch))
   }
+})
+
+# ---- heatmap + "combine points by area" (0.10.0) -----------------------------
+# The heat surface describes the RAW points, so it composes with the per-area
+# bubbles instead of being suppressed by them.
+
+test_that("admin mode and the heatmap draw together, heat from the raw points", {
+  skip_if_not_installed("leaflet.extras")
+  d <- make_map_example_data()                       # 120 points, 12 counties
+  p <- list(lon = "lon", lat = "lat", cluster_by = "county", heatmap = TRUE)
+  m <- build_leaflet_map(d, p)
+  calls <- vapply(m$x$calls, function(cl) cl$method, character(1))
+  expect_true("addHeatmap" %in% calls)
+  expect_equal(sum(calls == "addCircleMarkers"), 1L)
+  # 12 bubbles ...
+  expect_equal(length(m$x$calls[[which(calls == "addCircleMarkers")]]$args[[1]]), 12L)
+  # ... but the heat layer must carry all 120 point positions, NOT 12 centroids.
+  # addHeatmap packs its points into a single lat/lng[/intensity] matrix.
+  heat <- m$x$calls[[which(calls == "addHeatmap")]]$args[[1]]
+  expect_true(is.matrix(heat))
+  expect_equal(nrow(heat), nrow(d))
+  expect_gt(nrow(heat), 12L)          # the aggregated frame would give 12
+})
+
+test_that("weighted heat in admin mode weights points, not area means", {
+  skip_if_not_installed("leaflet.extras")
+  d <- make_map_example_data()
+  m <- build_leaflet_map(d, list(lon = "lon", lat = "lat",
+                                 cluster_by = "county", heatmap = TRUE,
+                                 heat_by = "acres"))
+  calls <- vapply(m$x$calls, function(cl) cl$method, character(1))
+  heat  <- m$x$calls[[which(calls == "addHeatmap")]]$args[[1]]
+  expect_equal(dim(heat), c(nrow(d), 3L))    # lat, lng, intensity per POINT
+  # the intensity column must be the raw acres values, not per-county means
+  expect_setequal(round(sort(heat[, 3]), 6), round(sort(d$acres), 6))
+})
+
+test_that("combine + hidden markers + heatmap gives a heatmap-only view", {
+  skip_if_not_installed("leaflet.extras")
+  d <- make_map_example_data()
+  m <- build_leaflet_map(d, list(lon = "lon", lat = "lat", cluster_by = "county",
+                                 show_points = FALSE, heatmap = TRUE))
+  calls <- vapply(m$x$calls, function(cl) cl$method, character(1))
+  expect_true("addHeatmap" %in% calls)
+  expect_false("addCircleMarkers" %in% calls)
+  expect_false("addLegend" %in% calls)
+})
+
+test_that("generated code keeps the points frame for the heat layer", {
+  d <- make_map_example_data()
+  code <- generate_map_code(d, list(lon = "lon", lat = "lat",
+                                    cluster_by = "county", heatmap = TRUE,
+                                    heat_by = "acres"))
+  expect_silent(parse(text = code))
+  expect_match(code, "pts <- df", fixed = TRUE)
+  expect_match(code, "addHeatmap", fixed = TRUE)
+  # the heat layer must read the stashed points, never the aggregated df
+  heat_line <- grep("addHeatmap", strsplit(code, "\n")[[1]], value = TRUE)
+  expect_match(heat_line, "pts$", fixed = TRUE)
+  expect_false(any(grepl("lng = ~", heat_line, fixed = TRUE)))
+  # and the aggregation still happens, in the right order
+  expect_lt(regexpr("pts <- df", code, fixed = TRUE),
+            regexpr("tapply", code, fixed = TRUE))
+})
+
+test_that("without combine mode the heat layer still uses leaflet formulas", {
+  d <- make_map_example_data()
+  code <- generate_map_code(d, list(lon = "lon", lat = "lat", heatmap = TRUE,
+                                    heat_by = "acres"))
+  expect_silent(parse(text = code))
+  expect_false(grepl("pts <- df", code, fixed = TRUE))
+  heat_line <- grep("addHeatmap", strsplit(code, "\n")[[1]], value = TRUE)
+  expect_match(heat_line, "lng = ~", fixed = TRUE)
+  expect_match(heat_line, "intensity = ~pmax", fixed = TRUE)
 })

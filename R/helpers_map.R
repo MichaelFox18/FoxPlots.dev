@@ -151,13 +151,16 @@ admin_cluster_params <- function(d, p, lon, lat) {
   # popup then shows the dot-prefixed internal name instead.
   count_col <- if ("Points" %in% names(agg)) ".n_points" else "Points"
   if (identical(count_col, "Points")) agg$Points <- agg$.n_points
+  # `heatmap` is deliberately NOT forced off here. The heat surface is built
+  # from the RAW points (see build_leaflet_map), so it composes with the
+  # per-area bubbles: density underneath, counts on top. Everything else in
+  # this list genuinely cannot apply once the rows are aggregated.
   p2 <- utils::modifyList(p, list(
     color      = if (keep_cv) cv else "__none__",
     size_by    = ".n_points",
     size_scale = "linear",
     group_by   = "__none__",
     cluster    = "off",
-    heatmap    = FALSE,
     label_col  = av,
     popup_cols = c(av, count_col, if (keep_cv) cv)))
   list(d = agg, p = p2, active = TRUE)
@@ -511,18 +514,9 @@ map_hint <- function(df, p) {
         "'%s' doesn't have enough distinct values for quantile sizing %s using a linear scale.",
         sv, SYM_MDASH))
   }
-  # The heatmap is force-disabled while combining by area, so a stale
-  # (hidden) heatmap tick must not suppress the basemap-only warning --
-  # mirror admin_cluster_params' activity gate here.
-  av0 <- map_col(p$cluster_by)
-  admin_on <- !is.null(av0) && av0 %in% names(df) &&
-    !av0 %in% c(map_col(p$lon), map_col(p$lat)) &&
-    {
-      n_a <- dplyr::n_distinct(map_group_vals(cc$data[[av0]]))
-      n_a >= 2L && n_a <= MAP_ADMIN_MAX
-    }
-  eff_heat <- isTRUE(p$heatmap) && !admin_on
-  if (!isTRUE(p$show_points %||% TRUE) && !eff_heat)
+  # The heatmap now survives "combine by area" (it describes the raw points),
+  # so the tick is always the effective state -- no admin-mode gate needed.
+  if (!isTRUE(p$show_points %||% TRUE) && !isTRUE(p$heatmap))
     hints <- c(hints, paste0(
       "Point markers are hidden and the density heatmap is off ", SYM_MDASH,
       " the map shows only the basemap. Turn one of them back on."))
@@ -903,7 +897,10 @@ build_leaflet_map <- function(df, p) {
   if (!nrow(d)) return(NULL)
 
   # "Combine points by area": one bubble per admin value, then fall through
-  # to the ordinary single-layer path on the aggregated frame.
+  # to the ordinary single-layer path on the aggregated frame. Keep the
+  # un-aggregated rows: the density heatmap must describe where the POINTS
+  # are, not where a dozen area centroids sit, so it stays on d_pts.
+  d_pts <- d
   ac <- admin_cluster_params(d, p, lon, lat)
   d  <- ac$d
   p  <- ac$p
@@ -953,12 +950,14 @@ build_leaflet_map <- function(df, p) {
   # Weighting uses map_heat_weights() -- the shared sanitiser the code
   # generator also consults -- and quietly falls back to plain density when
   # the weight column is unusable (all-NA/Inf, or a non-positive max).
+  # d_pts, not d: while combining by area, d holds one row per area, and a
+  # heat surface over a dozen centroids would say nothing about the data.
   if (isTRUE(p$heatmap) && requireNamespace("leaflet.extras", quietly = TRUE)) {
     hw <- map_heat_weights(if (!is.null(map_col(p$heat_by)) &&
-                               map_col(p$heat_by) %in% names(d))
-      d[[map_col(p$heat_by)]] else NULL)
+                               map_col(p$heat_by) %in% names(d_pts))
+      d_pts[[map_col(p$heat_by)]] else NULL)
     m <- leaflet.extras::addHeatmap(
-      m, lng = d[[lon]], lat = d[[lat]], intensity = hw$intensity,
+      m, lng = d_pts[[lon]], lat = d_pts[[lat]], intensity = hw$intensity,
       radius = p$heat_radius %||% MAP_HEAT_RADIUS, blur = 15, max = hw$max)
   }
 
@@ -1235,6 +1234,12 @@ generate_map_code <- function(df, p) {
     av <- map_col(p$cluster_by)
     vc <- map_col(p$color)   # post-rewrite: the numeric color column or NULL
     pre <- c(pre, "",
+      # The aggregation overwrites df, so stash the points first when the
+      # heatmap needs them -- it describes where the POINTS are, not the
+      # handful of area centroids.
+      if (isTRUE(p$heatmap)) c(
+        "# Keep the un-aggregated points for the density heatmap",
+        "pts <- df", ""),
       sprintf("# One bubble per %s: centroid of its points + how many it combines",
               av),
       "# (lonmean handles the rare area whose points span the antimeridian)",
@@ -1379,12 +1384,25 @@ generate_map_code <- function(df, p) {
   # uniform blob, nothing like the app's map.
   heat_args <- if (isTRUE(p$heatmap)) {
     hb <- map_col(p$heat_by)
-    hw <- map_heat_weights(if (!is.null(hb) && hb %in% names(d0)) d0[[hb]]
+    # Weights come from the CLEANED, un-aggregated rows -- d0 is the aggregated
+    # frame while combining by area, and its per-area means are not the point
+    # weights the builder uses.
+    hsrc <- if (ac$active) cc$data else d0
+    hw <- map_heat_weights(if (!is.null(hb) && hb %in% names(hsrc)) hsrc[[hb]]
                            else NULL)
-    sprintf("lng = ~%s, lat = ~%s%s, radius = %s, blur = 15, max = %s",
-            bq(lon), bq(lat),
-            if (hw$weighted) sprintf(", intensity = ~pmax(0, ifelse(is.finite(%s), %s, 0))",
-                                     bq(hb), bq(hb)) else "",
+    # Formulas (~col) resolve against leaflet's data, which is the aggregated
+    # df in combine mode -- so reference the stashed `pts` frame explicitly
+    # there. Note the tilde prefixes the whole intensity EXPRESSION, not each
+    # column, so the two modes differ by more than the column reference.
+    ref  <- if (ac$active) function(cn) paste0("pts$", bq(cn)) else
+                           function(cn) paste0("~", bq(cn))
+    icol <- if (ac$active) function(cn) paste0("pts$", bq(cn)) else bq
+    tld  <- if (ac$active) "" else "~"
+    sprintf("lng = %s, lat = %s%s, radius = %s, blur = 15, max = %s",
+            ref(lon), ref(lat),
+            if (hw$weighted) sprintf(
+              ", intensity = %spmax(0, ifelse(is.finite(%s), %s, 0))",
+              tld, icol(hb), icol(hb)) else "",
             p$heat_radius %||% MAP_HEAT_RADIUS,
             if (hw$weighted) format(hw$max) else "1")
   }

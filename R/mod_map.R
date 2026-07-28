@@ -130,10 +130,24 @@ mapUI <- function(id) {
         hr(),
         h6("Combine & cluster"),
         uiOutput(ns("ui_cluster_by")),
-        # Point-level ideas (proximity clustering, heatmap, layer groups,
-        # per-point popups/labels) hide while combining by area -- the
-        # combine mode sets them itself, and a control that silently does
-        # nothing is worse than one that disappears.
+        # The density heatmap is deliberately OUTSIDE the gate below: it is
+        # built from the raw points, so it still means something once they are
+        # combined into per-area bubbles (density underneath, counts on top).
+        checkboxInput(ns("heatmap"),
+          tagList("Density heatmap layer", info_tip(
+            "Overlay a continuous density surface - useful when many points ",
+            "overlap into an unreadable blob. Optionally weighted by a ",
+            "numeric column. It always describes the underlying points, so ",
+            "it works alongside 'Combine points by area' too. Needs the ",
+            "optional leaflet.extras package.")),
+          value = FALSE),
+        conditionalPanel(
+          sprintf("input['%s']", ns("heatmap")),
+          uiOutput(ns("ui_heat"))),
+        # The remaining point-level ideas (proximity clustering, layer groups,
+        # per-point popups/labels) hide while combining by area -- the combine
+        # mode sets them itself, and a control that silently does nothing is
+        # worse than one that disappears.
         conditionalPanel(
           sprintf("!input['%s'] || input['%s'] == '__none__'",
                   ns("cluster_by"), ns("cluster_by")),
@@ -145,15 +159,6 @@ mapUI <- function(id) {
                          "each group.")),
                        choices = c("Auto" = "auto", "On" = "on", "Off" = "off"),
                        selected = "auto", inline = TRUE),
-          checkboxInput(ns("heatmap"),
-            tagList("Density heatmap layer", info_tip(
-              "Overlay a continuous density surface - useful when many points ",
-              "overlap into an unreadable blob. Optionally weighted by a ",
-              "numeric column. Needs the optional leaflet.extras package.")),
-            value = FALSE),
-          conditionalPanel(
-            sprintf("input['%s']", ns("heatmap")),
-            uiOutput(ns("ui_heat"))),
           hr(),
           h6("Layer groups"),
           uiOutput(ns("ui_group")),
@@ -168,8 +173,9 @@ mapUI <- function(id) {
           helpText("Combining by area: one bubble per area at the average ",
                    "position of its points, sized by how many it combines. ",
                    "Click a bubble for the area name and point count. ",
-                   "Clustering, layer groups, the heatmap, and popups are ",
-                   "set automatically while this is on."))),
+                   "Clustering, layer groups and popups are set automatically ",
+                   "while this is on. The density heatmap still works - it ",
+                   "describes the individual points underneath the bubbles."))),
       hr(),
       # Shared by both modes, so these stay OUTSIDE the points panel: alpha is
       # the fill opacity of markers AND of shaded regions.
