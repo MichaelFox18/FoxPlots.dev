@@ -37,9 +37,12 @@ mapUI <- function(id) {
       h5("Map settings"),
       radioButtons(ns("map_type"),
         tagList("Map type", info_tip(
-          "Points puts each row on the map by its coordinates. Shaded regions ",
-          "(choropleth) colours uploaded boundaries (a GeoJSON file) by a ",
-          "summary of your data - e.g. counties shaded by average yield.")),
+          "Points puts each row on the map by its latitude and longitude. ",
+          "Shaded regions (choropleth) colours whole areas by a summary of ",
+          "your data - e.g. states shaded by average income. It needs NO ",
+          "latitude or longitude: just a column of state, county or country ",
+          "names plus a number to shade by. Boundaries for those three are ",
+          "built in.")),
         choices = c("Points" = "points", "Shaded regions" = "choro"),
         selected = "points", inline = TRUE),
 
@@ -200,8 +203,13 @@ mapUI <- function(id) {
       card_header(
         class = "d-flex justify-content-between align-items-center",
         span(icon("map-location-dot"), " Map"),
-        actionButton(ns("zoom_data"), tagList(icon("expand"), " Zoom to data"),
-                     class = "btn-sm btn-outline-secondary")),
+        # Points mode only: fly_to() needs numeric lon/lat, so in choropleth
+        # mode this button silently did nothing. The choropleth frames itself
+        # from the boundary bounds, so there is nothing for it to do there.
+        conditionalPanel(
+          sprintf("input['%s'] == 'points'", ns("map_type")),
+          actionButton(ns("zoom_data"), tagList(icon("expand"), " Zoom to data"),
+                       class = "btn-sm btn-outline-secondary"))),
       # Fixed height on purpose: a leafletOutput inside a flex fill can
       # collapse to zero height; full_screen covers the immersive case.
       leaflet::leafletOutput(ns("map"), height = "600px"),
@@ -715,6 +723,15 @@ mapServer <- function(id, data_in) {
         if (isTRUE(input$heatmap) &&
             !requireNamespace("leaflet.extras", quietly = TRUE)) return(NULL)
         return(NULL)
+      }
+      # No coordinates at all? Point at Shaded regions rather than leaving the
+      # user staring at two empty pickers. Informational, not a warning -- the
+      # data is fine, it just wants the other map type.
+      if (is.null(map_col(input$lon)) || is.null(map_col(input$lat))) {
+        adv <- map_no_coord_advice(df)
+        if (!is.null(adv))
+          return(div(class = "alert alert-info py-1 px-2 small mb-2",
+                     role = "alert", icon("circle-info"), HTML(paste0(" ", adv))))
       }
       msgs <- map_hint(df, params_d())   # debounced: the hint scans all rows
       if (isTRUE(input$heatmap) &&

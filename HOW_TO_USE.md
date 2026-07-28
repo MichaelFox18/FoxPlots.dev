@@ -114,6 +114,7 @@ See `help(package = "foxplots")` for the full list.
 | The app opens but the UF logo is missing | Reinstall the package (Step 2) so its bundled files come along. |
 | Map tab: no PNG button, or a note about webshot2 | Install the optional extras from Step 2 (`webshot2`, `chromote`) — PNG snapshots also need Chrome or Edge on the computer. |
 | Map is grey / no background | Basemap tiles load from the internet — check the connection. Your points still export fine. |
+| My data has no latitude/longitude — can I still map it? | Yes. Set **Map type → Shaded regions**: it maps data by *name* (state, county or country) and needs no coordinates at all. Pick a built-in boundary set, match your name column, and choose the number to shade by. The Map tab tells you this itself when it finds no coordinate columns. |
 | Shaded-regions map is blank | Check the sidebar's match report — the boundary property must exactly match your data column's values (e.g. "Alachua" vs "ALACHUA" won't match). With built-in US counties, try the `county_state` ("Alachua County, Florida") or `fips` property, or set "Limit to state" and match on plain `county`. |
 
 ---

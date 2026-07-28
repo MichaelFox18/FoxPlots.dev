@@ -448,6 +448,33 @@ popup_html <- function(df, cols) {
   do.call(paste, c(parts, sep = "<br/>"))
 }
 
+# Data with no coordinates can still be mapped -- as shaded regions, keyed on
+# a name column. Nothing said so, so users with (say) state-level poverty
+# rates assumed the map tool was not for them. Returns the nudge, or NULL when
+# the data has usable coordinates or nothing that looks like region names.
+# `n_regions` bounds what is plausible: 1 value is not a map, and thousands of
+# distinct strings is an ID column, not a set of areas.
+map_no_coord_advice <- function(df, n_regions = c(2L, 4000L)) {
+  if (is.null(df) || !is.data.frame(df) || !nrow(df)) return(NULL)
+  det <- detect_coord_cols(df)
+  if (!is.null(det$lon) && !is.null(det$lat)) return(NULL)
+  # A plausible region column: text (or factor), with a sane number of levels.
+  cand <- names(df)[vapply(df, function(x) {
+    if (!(is.character(x) || is.factor(x))) return(FALSE)
+    n <- dplyr::n_distinct(x, na.rm = TRUE)
+    n >= n_regions[1] && n <= n_regions[2]
+  }, logical(1))]
+  if (!length(cand)) return(NULL)
+  # "or" takes singular agreement, so one "holds" serves any candidate count.
+  sprintf(paste0("No latitude/longitude columns found. If %s holds state, ",
+                 "county or country names, switch Map type to <b>Shaded ",
+                 "regions</b> %s it maps data by name, with boundaries built ",
+                 "in, and needs no coordinates."),
+          paste(sprintf("<b>%s</b>", htmltools::htmlEscape(utils::head(cand, 3))),
+                collapse = " or "),
+          SYM_MDASH)
+}
+
 # Advisory shown under the pickers (chart_hint analog). NULL when all is well.
 map_hint <- function(df, p) {
   if (is.null(df) || !is.data.frame(df) || !nrow(df)) return(NULL)
@@ -884,9 +911,15 @@ build_choropleth <- function(df, p) {
 #                Never emitted in code.
 build_leaflet_map <- function(df, p) {
   if (is.null(df) || !is.data.frame(df) || !nrow(df)) return(NULL)
-  # Choropleth mode: shaded regions from uploaded GeoJSON, no lon/lat needed.
-  if (!is.null(p$geojson) && !is.null(map_col(p$region_value)))
+  # Choropleth mode: shaded regions from GeoJSON, no lon/lat needed. The
+  # presence of p$geojson IS the mode flag (only the choro branch of
+  # map_params sets it), so a half-configured choropleth returns NULL and the
+  # caller shows "pick the region property..." -- it must NOT fall through and
+  # quietly draw a points map, which looked like the mode switch had failed.
+  if (!is.null(p$geojson)) {
+    if (is.null(map_col(p$region_value))) return(NULL)
     return(build_choropleth(df, p))
+  }
   lon <- map_col(p$lon); lat <- map_col(p$lat)
   if (is.null(lon) || is.null(lat) || identical(lon, lat)) return(NULL)
   if (!lon %in% names(df) || !lat %in% names(df)) return(NULL)

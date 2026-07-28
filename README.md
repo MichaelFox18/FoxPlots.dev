@@ -252,6 +252,14 @@ grouping (random) factors from drop-downs — no `glmmTMB()` calls to write.
   reports exactly **how many regions matched** and names the strays on both
   sides, so a join problem is never a mystery blank map.
 
+> **No coordinates? You can still make a map.** Shaded regions needs *no*
+> latitude or longitude — just a column of state / county / country names and a
+> number to shade by, e.g. poverty rate by state. Boundaries for all three are
+> built in, and the property picker shows an example of each option
+> (`county_state — e.g. Brooks County, Georgia`) so you can match it against
+> your own column by eye. Import data with no coordinates and the Map tab says
+> so and points you here.
+
 Downloads: a **one-file interactive HTML** map (works offline, no extra
 software) and a **PNG snapshot** framed exactly as on screen (needs the optional
 `webshot2` + `chromote` packages plus Chrome). Every map comes with copy-ready

@@ -1273,3 +1273,44 @@ test_that("without combine mode the heat layer still uses leaflet formulas", {
   expect_match(heat_line, "lng = ~", fixed = TRUE)
   expect_match(heat_line, "intensity = ~pmax", fixed = TRUE)
 })
+
+# ---- no-coordinate data: point users at Shaded regions (0.10.0) --------------
+
+test_that("map_no_coord_advice fires only when there are no coords but names", {
+  # the case that prompted this: state-level rates, no lat/lon anywhere
+  states <- data.frame(state = c("Florida", "Georgia", "Alabama"),
+                       poverty_rate = c(12.7, 14.0, 15.6),
+                       stringsAsFactors = FALSE)
+  adv <- map_no_coord_advice(states)
+  expect_true(grepl("Shaded regions", adv, fixed = TRUE))
+  expect_true(grepl("state", adv, fixed = TRUE))
+  # data that DOES have coordinates gets no nudge
+  expect_null(map_no_coord_advice(make_map_example_data()))
+  # nothing name-like -> no nudge (do not badger someone with a numeric table)
+  expect_null(map_no_coord_advice(data.frame(a = 1:5, b = rnorm(5))))
+  # a single constant text column is not a set of regions
+  expect_null(map_no_coord_advice(data.frame(g = rep("x", 5), v = 1:5)))
+  # an ID column is not a set of regions either
+  big <- data.frame(id = sprintf("r%05d", 1:5000), v = 1)
+  expect_null(map_no_coord_advice(big))
+  expect_null(map_no_coord_advice(NULL))
+  expect_null(map_no_coord_advice(states[0, ]))
+})
+
+test_that("a half-configured choropleth draws nothing, not a points map", {
+  # Before 0.10.0 the builder fell through to the points path, so switching to
+  # Shaded regions on data that HAS coordinates silently drew points and the
+  # "pick the region property" message never appeared.
+  d  <- make_map_example_data()
+  gj <- builtin_boundary_text("us_counties", "Florida")
+  p  <- list(lon = "lon", lat = "lat", geojson = gj,
+             region_prop = "county", region_key = "county")
+  expect_null(build_leaflet_map(d, p))                    # no region_value yet
+  p$region_value <- "__none__"
+  expect_null(build_leaflet_map(d, p))
+  p$region_value <- "yield"                               # now configured
+  m <- build_leaflet_map(d, p)
+  calls <- vapply(m$x$calls, function(cl) cl$method, character(1))
+  expect_true("addGeoJSON" %in% calls || "addPolygons" %in% calls)
+  expect_false("addCircleMarkers" %in% calls)
+})
