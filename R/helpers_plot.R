@@ -18,6 +18,15 @@ BIG_ROWS   <- 1000
 PIE_MAX    <- 12   # pie slices beyond this are grouped into "Other"
 BREWER_MAX <- 8    # ColorBrewer Set1/Set2 run out past ~8 levels -> viridis
 BAR_MAX    <- 30   # bars beyond this are grouped into "Other"
+# Discrete "Color / group by" levels beyond this are dropped. Cost is LINEAR in
+# the level count -- measured on 11,000 rows: 30 levels 0.4s, 500 levels 4.9s,
+# 11,000 levels 111.7s, which freezes the single-threaded app for two minutes.
+# Suppressing the legend saves nothing (it is per-level geom/scale work, not
+# legend construction), so the only fix is to stop grouping. 50 keeps ordinary
+# categorical work (a 40-county scatter costs 0.3s) and cuts the pathological
+# case. Continuous numeric colors are NOT capped -- they use a single gradient
+# scale and stay fast at any cardinality.
+GROUP_MAX  <- 50
 
 # Maps the 0.5-5 size slider onto a sensible 0.2-0.9 bar width.
 bar_width <- function(size) 0.2 + (size - 0.5) / 4.5 * 0.7
@@ -98,6 +107,18 @@ chart_hint <- function(df, p) {
     return(sprintf("<b>%s</b> is categorical. Hexbin bins a dense <b>numeric</b> X against a numeric Y &mdash; try a <b>bar chart</b> for categories.", xv))
   if (pt == "pie" && cont_x)
     return(sprintf("<b>%s</b> looks continuous, which makes an unreadable pie. Pie charts need a <b>categorical</b> variable with a handful of values.", xv))
+  # Colouring by a high-cardinality column asks for one geom and one legend key
+  # per level, which freezes the app long before it finishes. build_full_plot()
+  # drops the grouping at GROUP_MAX; say so, and name the way out.
+  cv <- if (!is.null(p$color) && nzchar(p$color) && p$color != "__none__" &&
+            p$color %in% names(df)) p$color else NULL
+  if (!is.null(cv) && !pt %in% c("pie", "hexbin", "heatmap") &&
+      !is.numeric(df[[cv]])) {
+    n_cv <- dplyr::n_distinct(df[[cv]], na.rm = TRUE)
+    if (n_cv > GROUP_MAX)
+      return(sprintf("<b>%s</b> has %s different values &mdash; too many to colour by (limit %d), so the colouring is turned off. Pick a column with fewer categories, or use it as a <b>facet</b> if you want one panel per value.",
+                     cv, format(n_cv, big.mark = ","), GROUP_MAX))
+  }
   barlim <- p$cat_limit %||% BAR_MAX
   if (pt == "bar" && is_discrete_col(x) && n_x > barlim)
     return(sprintf("<b>%s</b> has %s categories; only the largest %d are shown (the rest grouped as &ldquo;Other&rdquo;). Use the &ldquo;Maximum bars&rdquo; slider to show more or fewer.",
@@ -312,6 +333,14 @@ build_full_plot <- function(df, p) {
     # distinct) can't define boxes/violins/bars, so drop it.
     if (pt %in% c("histogram", "bar", "boxplot", "violin", "meanerror", "density") &&
         is.numeric(df[[cv]]))
+      cv <- NULL
+    # A DISCRETE group past GROUP_MAX draws one geom (and one legend key) per
+    # level -- an ID column would ask for thousands. Checked after the as.factor
+    # coercion above, and gated on !is.numeric so a continuous numeric colour
+    # (one gradient scale, fast at any size) is never caught. chart_hint() says
+    # so on screen, and generate_code() mirrors the drop.
+    if (!is.null(cv) && !is.numeric(df[[cv]]) &&
+        dplyr::n_distinct(df[[cv]]) > GROUP_MAX)
       cv <- NULL
   } else {
     cv <- NULL
@@ -730,6 +759,11 @@ generate_code <- function(df, p) {
       pre <- c(pre, sprintf('df[["%s"]] <- as.factor(df[["%s"]])', cv, cv))
     if (pt %in% c("histogram", "bar", "boxplot", "violin", "meanerror", "density") &&
         is.numeric(df[[cv]]) && dplyr::n_distinct(df[[cv]]) > 10) cv <- NULL
+    # Same GROUP_MAX cap as build_full_plot, so the emitted code reproduces the
+    # chart the user actually saw (no colour on screen -> no colour in the code,
+    # and no 11,000-element values = c(...) literal in the snippet).
+    if (!is.null(cv) && !is.numeric(df[[cv]]) &&
+        dplyr::n_distinct(df[[cv]]) > GROUP_MAX) cv <- NULL
   } else {
     cv <- NULL
   }

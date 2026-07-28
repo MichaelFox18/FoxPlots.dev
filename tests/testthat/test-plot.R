@@ -294,3 +294,83 @@ test_that("render_plots_to_file reports an unavailable device instead of failing
     expect_equal(unname(grDevices::dev.cur()), 1L)   # and no device left open
   }
 })
+
+# ---- GROUP_MAX: the high-cardinality colour cap -------------------------------
+# Regression guard for the 0.10.0 freeze: colouring by an 11,000-level ID column
+# took 111.7s to render (linear in level count), locking the single-threaded app.
+
+# Grab whatever build_full_plot mapped to colour, or NULL if it dropped it.
+# Base R only -- rlang is not a declared dependency, and an undeclared ::  in
+# the tests is an R CMD check --as-cran warning.
+colour_var <- function(p_obj) {
+  v <- p_obj$mapping$colour %||% p_obj$mapping$fill
+  if (is.null(v)) return(NULL)
+  sub('^.*\\[\\["(.*)"\\]\\].*$', "\\1", paste(deparse(v), collapse = ""))
+}
+
+test_that("build_full_plot keeps a discrete colour at the cap and drops it past", {
+  n  <- 400
+  df <- data.frame(x = rnorm(n), y = rnorm(n))
+  df$at  <- sprintf("g%03d", rep_len(seq_len(GROUP_MAX),     n))   # exactly 50
+  df$ovr <- sprintf("g%03d", rep_len(seq_len(GROUP_MAX + 1L), n))  # 51
+  expect_equal(dplyr::n_distinct(df$at),  GROUP_MAX)
+  expect_equal(dplyr::n_distinct(df$ovr), GROUP_MAX + 1L)
+
+  for (ty in c("density", "boxplot", "violin", "histogram", "meanerror", "scatter", "line")) {
+    p <- list(type = ty, x = if (ty %in% c("density", "histogram")) "x" else "y",
+              y = "y", color = "at")
+    if (ty %in% c("scatter", "line")) p$x <- "x"
+    expect_false(is.null(colour_var(build_full_plot(df, p))),
+                 info = paste(ty, "should keep a 50-level colour"))
+    p$color <- "ovr"
+    expect_null(colour_var(build_full_plot(df, p)),
+                info = paste(ty, "should drop a 51-level colour"))
+  }
+})
+
+test_that("the colour cap does not touch a continuous numeric colour", {
+  # A numeric colour uses ONE gradient scale, so it is fast at any cardinality
+  # and must survive -- this is what makes the cap safe to set as low as 50.
+  n  <- 2000
+  df <- data.frame(x = rnorm(n), y = rnorm(n), depth = runif(n, 0, 700))
+  expect_gt(dplyr::n_distinct(df$depth), GROUP_MAX)
+  p <- build_full_plot(df, list(type = "scatter", x = "x", y = "y", color = "depth"))
+  expect_identical(colour_var(p), "depth")
+})
+
+test_that("a factor and a Date colour are capped like any other discrete column", {
+  n  <- 300
+  df <- data.frame(x = rnorm(n), y = rnorm(n))
+  df$f <- factor(sprintf("l%03d", seq_len(n)))                  # 300 levels
+  df$d <- as.Date("2020-01-01") + seq_len(n)                    # 300 dates
+  expect_null(colour_var(build_full_plot(df, list(type = "scatter", x = "x", y = "y", color = "f"))))
+  expect_null(colour_var(build_full_plot(df, list(type = "scatter", x = "x", y = "y", color = "d"))))
+})
+
+test_that("generate_code mirrors the colour cap so the snippet matches the chart", {
+  n  <- 300
+  df <- data.frame(x = rnorm(n), y = rnorm(n),
+                   few  = rep_len(letters[1:5], n),
+                   many = sprintf("id%03d", seq_len(n)))
+  keep <- generate_code(df, list(type = "density", x = "x", color = "few"))
+  drop <- generate_code(df, list(type = "density", x = "x", color = "many"))
+  expect_match(keep, "few")
+  expect_false(grepl("many", drop, fixed = TRUE))
+  # and it must still be runnable code, not a broken aes()
+  expect_silent(parse(text = drop))
+})
+
+test_that("chart_hint explains the dropped colour and names the limit", {
+  n  <- 300
+  df <- data.frame(x = rnorm(n), y = rnorm(n),
+                   id  = sprintf("EQ%03d", seq_len(n)),
+                   few = rep_len(letters[1:4], n))
+  msg <- chart_hint(df, list(type = "density", x = "x", color = "id"))
+  expect_true(grepl("id", msg))
+  expect_true(grepl("300", msg))                 # the actual count
+  expect_true(grepl(as.character(GROUP_MAX), msg))
+  expect_true(grepl("facet", msg))               # the way out
+  # silent for an ordinary grouping and for a continuous numeric colour
+  expect_null(chart_hint(df, list(type = "density", x = "x", color = "few")))
+  expect_null(chart_hint(df, list(type = "scatter", x = "x", y = "y", color = "y")))
+})
