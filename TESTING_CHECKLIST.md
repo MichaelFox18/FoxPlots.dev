@@ -41,7 +41,7 @@ run_data_explorer()   # or run_map_tool(), run_glmm_review(), ...
 | A **completely empty** file | Clean message, no crash |
 | A **one-column** file | Imports; Data Health does not mangle it |
 | **Duplicate column names** (`x`, `x`, `x`) | Data Health flags it; the fix makes them `x`, `x_1`, `x_2` |
-| **Blank column names** | Flagged; become `V1`, `V2`… |
+| **Blank column names** | Flagged; become `V`, `V_1`, `V_2`… |
 | A column that is **entirely blank** | Flagged as an empty column and dropped (default on) |
 | A row of **empty fields** (`,,`) in the middle | Read as an all-missing row, flagged as an empty row, removed by the default-on fix. (A *truly blank line* is skipped by the CSV reader itself and never becomes a row) |
 | Numbers stored as text with `$`, `,`, `%` | "Numbers stored as text" is flagged and the fix converts them |
@@ -70,7 +70,7 @@ There are **nine** issue types; two are opt-in. Check each fires and each fix wo
 | Do | What good looks like |
 |---|---|
 | Download data as CSV / Excel | Opens cleanly; column names match the app |
-| Download the charts | The image matches what is on screen |
+| Download the charts (**Data Explorer** — the chart block appears only where a Visualize stage feeds Export; the Map tool downloads from its own Map tab) | The image matches what is on screen |
 | Generate an **HTML report** | Opens in a browser with no missing images; wide tables scroll inside their box rather than overflowing |
 | Generate a **Word report** | Opens in Word and is editable (needs the optional `officer` package) |
 | **Untick a section**, regenerate | That section is genuinely absent, not just blank |
@@ -91,7 +91,7 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | Set 4 plots at once | All four render; the sidebar accordion keeps them separate |
 | A bar chart of a column with **> 30 categories** | Only the largest 30 shown, rest as "Other", and a note says so |
 | A pie chart with **> 12 slices** | Same, capped at 12 |
-| **Facet** by a column with > 30 values | Faceting is dropped and explained |
+| Open **Facet by** on a table with a >30-value column | That column is not offered at all — the picker lists only columns with 30 or fewer values |
 | Copy the **R code** for a plot into a fresh R session | Reproduces the chart you saw — including any cap that was applied |
 | **Save session** on Import, reload the app, **Restore** | Working data, filters and reshape settings all come back (analysis-tab choices are *not* saved — known limit) |
 
@@ -106,7 +106,7 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | **Swap lat / lon** | Points move to the mirrored position — proves the button works |
 | Colour by a column, try **log** and **quantile** scales | Legend changes sensibly; falls back to linear with a note if the data can't support it |
 | **Size by** a numeric column | Bubbles scale by *area*, and a graduated size legend appears |
-| **Group layers by** a column with **> 12 levels** | Grouping is ignored with an explanation (12 is the cap) |
+| Open **Group layers by** on a table with a >12-level column | That column is not offered — the picker lists only columns with 2–12 groups |
 | **Density heatmap** | A smooth surface appears (needs optional `leaflet.extras`; without it you get a note, not a crash) |
 | **Combine points by area** + **heatmap together** | *Both* draw — bubbles per area over a heat surface built from the **raw** points |
 | Then untick **Show point markers** | Heatmap alone, no markers, no stray legends |
@@ -121,7 +121,7 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 |---|---|
 | Import a table of **state names + a number**, no lat/lon | The Map tab shows a blue note pointing you to Shaded regions |
 | Follow it: US states → `state` → your number | The map shades; the sidebar reports "N of 52 regions matched your data" |
-| Deliberately use abbreviations (`FL`) against the `state` property | Reports 0 matched and **names the strays on both sides** — never a silent blank map |
+| Deliberately use abbreviations (`FL`) against the `state` property | Reports "0 of 52 regions matched", says how many regions have no data, and **names the unmatched values on both sides** — never a silent blank map |
 | Open **Region name property** | Every option shows an example (`county_state — e.g. Brooks County, Georgia`) |
 | US counties → **Limit to state = Florida** | Renders fast (a second at most), and your property / key / value picks **survive the change** |
 | Switch to Shaded regions **before** choosing columns | The pane stays empty with "pick the region property…" — it must **not** draw a points map |
@@ -136,7 +136,7 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | One outcome × one group, parametric | t-test/ANOVA with assumptions, effect size, and connecting letters (with SEs) |
 | Switch to **non-parametric** | Wilcoxon/Kruskal with Dunn or Steel-Dwass post-hoc |
 | **6 outcomes × 4 groups** (the maximum) | 24 combinations run, BH-corrected summary plus a per-combination accordion |
-| Try to exceed 24 | A clear message, not a hang |
+| Try to add a 7th outcome or a 5th grouping variable | The picker refuses — 6 × 4 = 24 is the ceiling. (The over-limit *message* appears when a **Split by** multiplies a full grid past 24) |
 | **Split by** a third variable | One stratum per level (max 6), BH applied across the whole family |
 | Set split-by back to **(none)** | It actually returns to none — *this was broken before 0.8.0* |
 | Chi-square on two categorical columns | Table with the percentage options working |
@@ -188,10 +188,10 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 
 | Do | What good looks like |
 |---|---|
-| Load `band_members` + `band_instruments`, **join** on `name` | Left/inner/full/anti all behave as labelled |
+| Load `band_members` + `band_instruments`, **join** on `name` | Left / inner / full / right / cross all behave as labelled |
 | **Concatenate** the two mtcars halves | 32 rows; the optional source column marks which table each row came from |
 | **Update** and **Compare** | Compare names the differing columns/rows |
-| Join on a column present in only one table | Clear message, not a crash |
+| Join two tables that share **no** column | A clear message asking for a key column — the key picker only ever lists shared columns |
 | Note there are **two** Data Health panels (one per table) | Both work independently |
 
 ---

@@ -13,8 +13,8 @@ simply stopped responding. Cost was linear in the level count, and hiding the
 legend saved nothing.
 
 - Discrete colour groups are now capped at **50**. Past that the colouring is
-  dropped and an on-chart note names the column, the count and the limit, and
-  suggests faceting instead. Same pattern as the 30-panel facet cap that has
+  dropped and a note beside the picker names the column, the count and the
+  limit, and points at a lower-cardinality column instead. Same pattern as the 30-panel facet cap that has
   always been there -- the colour picker had simply never got one.
 - **Continuous numeric colours are not capped**: they use one gradient scale
   and stay fast at any cardinality.
@@ -31,8 +31,9 @@ Result on the reported case: **111.7 s -> 0.30 s.**
 - **The settings panel scrolls on its own.** Reaching the controls near the
   bottom used to scroll the whole page and push the map out of sight; the
   sidebar now has its own scrollbar and stays pinned beside a fixed map.
-- **The settings are grouped.** Twenty-three controls spanning six concerns
-  all sat under one "Style" heading; they are now Basemap / Color / Markers /
+- **The settings are grouped.** Twenty-one controls -- colour, size, markers,
+  clustering, the heatmap, layer groups, popups and titling -- all sat under a
+  single "Style" heading; they are now Basemap / Color / Markers /
   Combine & cluster / Layer groups / Popups & labels / Finishing touches /
   Download, with each section hidden when it does not apply.
 - **"Region name property" shows an example of each option** --
@@ -67,7 +68,7 @@ or country names plus a number to shade by is enough -- but nothing said so.
 - The new tests were **mutation-tested** rather than assumed. Two mutations
   initially escaped -- stripping the new property-picker labels, and mistyping
   a module id so the server runs in a namespace with no UI -- and both gained
-  a test. The suite grew from 1,372 checks to 1,607.
+  a test. The suite grew from 1,372 checks to 1,619.
 - **`TESTING_CHECKLIST.md`** is a new manual pass: per-app things to click,
   edge cases, the deliberate limits, and what good looks like for each.
 

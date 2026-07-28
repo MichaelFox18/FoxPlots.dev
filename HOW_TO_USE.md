@@ -7,7 +7,7 @@ There are eight apps:
 
 | Launch with | App | What it's for |
 |---|---|---|
-| `run_data_explorer()` | **Data Explorer** | The whole workflow: import → clean → reshape → summarize → visualize → compare → model → report |
+| `run_data_explorer()` | **Data Explorer** | The whole workflow: import → clean → reshape → summarize → visualize → map → compare → model → report |
 | `run_reshape_tool()`  | **Reshape Tool**  | Just restructure one table (stack / split / transpose / sort / subset / summarize) and export it |
 | `run_combine_tool()`  | **Combine Tool**  | Merge / join / compare **two** tables |
 | `run_compare_groups()` | **Compare Groups** | Just the statistics: do these groups really differ? (t-test / ANOVA / rank tests / chi-square), then download a report |

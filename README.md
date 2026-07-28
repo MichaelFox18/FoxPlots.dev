@@ -21,6 +21,12 @@ underlying **helper API** (`do_stack()`, `grouped_summary()`, `fit_model()`, …
 Install it once and run anywhere.
 
 Highlights:
+- **Charts stay responsive** — colouring by a column with hundreds or thousands
+  of categories used to lock the app for minutes; it is now capped, explained on
+  screen, and instant.
+- **A map you can drive** — grouped settings with their own scrollbar (the map
+  stays put while you scroll), example values on the boundary-property picker,
+  and the density heatmap now works *together* with combining points by area.
 - **One-click report** — HTML or editable Word (`.docx`), pandoc-free, with a
   "show the R code" toggle — now in **every app**, with a **per-section picker**
   so you choose what goes in, and **including your map** as a snapshot of what
@@ -95,7 +101,7 @@ run_data_explorer()      # or run_reshape_tool() / run_combine_tool() /
 | `run_regression_tool()` | **Regression Tool** | linear / logistic regression with diagnostics, marginal means, and a report |
 
 The package also exports the helper functions for use in your own scripts (e.g.
-`do_stack()`, `grouped_summary()`, `build_full_plot()`); see
+`do_stack()`, `grouped_summary()`, `fit_model()`); see
 `help(package = "foxplots")`. Step-by-step setup is in `HOW_TO_USE.md`.
 
 ---
@@ -142,24 +148,24 @@ Tabs run **left → right**, each feeding the next:
    marginal means with **connecting letters**, full residual diagnostics with
    an **assumption-check panel** and **VIF**, odds ratios (logistic), nested
    model comparison, and copy-ready R code.
-8. **Export** — download the (reshaped) data (CSV/Excel/RDS), the **charts**
-   (PNG/PDF), the **summary**, and the **regression** results.
-9. **Report** — one click bundles the whole session into a report: **HTML** (a
-   single self-contained file) or an editable **Word `.docx`**, with an optional
-   "show the R code" toggle. **The map is included** as a snapshot of exactly
-   what you framed on screen.
+8. **Export & Report** — two sub-tabs. *Data & downloads*: the (reshaped) data
+   (CSV/Excel/RDS), the **charts** (PNG/PDF), the **summary**, and the
+   **regression** results. *Full report*: one click bundles the whole session
+   into **HTML** (a single self-contained file) or an editable **Word `.docx`**,
+   with an optional "show the R code" toggle and a **per-section picker**.
+   **The map is included** as a snapshot of exactly what you framed on screen.
 
 > **The pipeline is live:** whatever you do on Import + Reshape is the "working
 > data" that Summarize, Visualize, Compare Groups, Regression, and Export all
 > read. Reshape it and everything downstream follows.
 
 ### Reshape Tool — a focused mini-app
-**Import → Reshape → Export**, nothing else. Reach for it when you only need to
+**Import → Reshape → Export & Report**, nothing else. Reach for it when you only need to
 restructure a single table (the JMP "Tables" single-table operations) and save
 the result.
 
 ### Combine Tool — for two tables
-**Left table → Right table → Combine → Export.** Import (and optionally clean)
+**Left table → Right table → Combine → Export & Report.** Import (and optionally clean)
 two separate tables, then:
 - **Concatenate** — stack their rows;
 - **Join** — match side by side by a key (left / inner / full / right / cross);
@@ -171,10 +177,10 @@ Right, then **Join by `name`**.
 
 ### Compare Groups — do these groups actually differ?
 
-**Import → Compare Groups → Export → Report.** The same Compare Groups stage the
+**Import → Compare Groups → Export & Report.** The same Compare Groups stage the
 Data Explorer has, on its own, for when you only want the statistics and can skip
-the reshape / visualize / regression machinery. It's the only mini-app with a
-**Report** tab, so you can go from a spreadsheet to a written-up HTML/Word
+the reshape / visualize / regression machinery. Like every app, it carries an **Export &
+Report** tab, so you can go from a spreadsheet to a written-up HTML/Word
 results document in three clicks.
 
 Two modes: a **number across groups** (t-test / ANOVA, or the rank-based
@@ -186,7 +192,7 @@ Built-in demo: load **iris**, then compare `Sepal.Length` across `Species`.
 
 ### Mixed Model Review — linear mixed models (lmer)
 
-**Import → Mixed Model → Export.** A point-and-click front end for `lmerTest` /
+**Import → Mixed Model → Export & Report.** A point-and-click front end for `lmerTest` /
 `emmeans` mixed models: pick a numeric response, up to three fixed effects, and
 one or more grouping (random) factors from drop-downs — no `lmer()` calls to
 write. It returns an ANOVA (Kenward-Roger or Satterthwaite df), fit & variance
@@ -208,7 +214,7 @@ test), and a copy-paste R script for everything.
 
 ### GLMM Review — generalized linear mixed models (glmmTMB)
 
-**Import → General GLMM / Binary (0/1) GLMM → Export.** The Mixed Model
+**Import → General GLMM / Binary (0/1) GLMM → Export & Report.** The Mixed Model
 Review's sibling for responses a normal distribution can't handle: counts,
 proportions, zero-heavy data, and presence/absence. Pick a response, a
 **distribution family** (Gaussian, Gamma, Poisson, negative binomial
@@ -235,7 +241,7 @@ grouping (random) factors from drop-downs — no `glmmTMB()` calls to write.
 
 ### Map Tool — interactive maps from a spreadsheet
 
-**Import → Map → Export.** Two map types:
+**Import → Map → Export & Report.** Two map types:
 
 - **Points** — rows with latitude / longitude become markers on a pannable
   basemap (coordinates auto-detected, with a swap button). Color by any column
@@ -267,7 +273,7 @@ leaflet R code.
 
 ### Regression Tool — model fitting on its own
 
-**Import → Regression → Export → Report.** The Data Explorer's (deep) Regression
+**Import → Regression → Export & Report.** The Data Explorer's (deep) Regression
 tab as a focused app: linear or logistic models, numeric + categorical
 predictors, interactions, coefficient table with CIs, estimated marginal means
 with letters, diagnostics + assumptions + VIF, odds ratios, model comparison,
@@ -284,7 +290,8 @@ package's `R/`:
 ```
 R/   the whole package
        helpers_*  pure, unit-tested data logic (io, clean, filter, stats, plot,
-                  model, reshape, combine, compare, lmer, map, report, state)
+                  model, reshape, combine, compare, lmer, glmm, map, report,
+                  state)
        mod_*      Shiny modules — thin wrappers over the helpers
        run_*      the app builders + launchers
             |  (a launcher assembles the modules into an app)

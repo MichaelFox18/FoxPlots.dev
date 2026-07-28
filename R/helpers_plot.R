@@ -121,7 +121,10 @@ chart_hint <- function(df, p) {
     # 50 real levels plus any NA lost its colouring with no explanation.
     n_cv <- dplyr::n_distinct(df[[cv]])
     if (n_cv > GROUP_MAX)
-      return(sprintf("<b>%s</b> has %s different values &mdash; too many to colour by (limit %d), so the colouring is turned off. Pick a column with fewer categories, or use it as a <b>facet</b> if you want one panel per value.",
+      # Do NOT suggest faceting here: the facet picker only offers columns with
+      # 30 or fewer levels (mod_visualize's cols_cat), so any column that trips
+      # this cap is not offered there either -- advice the user cannot follow.
+      return(sprintf("<b>%s</b> has %s different values &mdash; too many to colour by (limit %d), so the colouring is turned off. Pick a column with fewer categories, or use <b>Filter rows</b> on the Import tab to narrow the data first.",
                      cv, format(n_cv, big.mark = ","), GROUP_MAX))
   }
   barlim <- p$cat_limit %||% BAR_MAX

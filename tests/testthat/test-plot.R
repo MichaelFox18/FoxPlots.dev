@@ -369,7 +369,7 @@ test_that("chart_hint explains the dropped colour and names the limit", {
   expect_true(grepl("id", msg))
   expect_true(grepl("300", msg))                 # the actual count
   expect_true(grepl(as.character(GROUP_MAX), msg))
-  expect_true(grepl("facet", msg))               # the way out
+  expect_true(grepl("Filter rows", msg))         # the way out (must be followable)
   # silent for an ordinary grouping and for a continuous numeric colour
   expect_null(chart_hint(df, list(type = "density", x = "x", color = "few")))
   expect_null(chart_hint(df, list(type = "scatter", x = "x", y = "y", color = "y")))
