@@ -124,3 +124,4 @@ See `help(package = "foxplots")` for the full list.
 - **What each app and tab does:** see `README.md`.
 - **Architecture and conventions (for developers):** see `CLAUDE.md`.
 - **Run the test suite (from the source folder):** `R CMD check .`, or in R: `testthat::test_local()`.
+- **Testing an app by hand before a release:** see `TESTING_CHECKLIST.md` — a per-app list of things to click, including the edge cases that have broken before.

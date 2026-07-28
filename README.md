@@ -317,7 +317,7 @@ It's a standard R package. From the source folder:
 pkgload::load_all(".")
 run_data_explorer()
 
-# Run the full test suite (~940 checks):
+# Run the full test suite (1,600+ checks):
 testthat::test_local(".")
 ```
 
@@ -326,6 +326,11 @@ testthat::test_local(".")
 R CMD build .
 R CMD check foxplots_*.tar.gz
 ```
+
+The suite covers the helpers, each module's contract, and every launcher's
+wiring. What it cannot cover is whether the apps are pleasant to use or whether
+a real-world spreadsheet lands cleanly — `TESTING_CHECKLIST.md` is the manual
+pass for that, with a per-app list of edge cases and what good looks like.
 
 To add a feature, follow the path every existing one took: **pure helper + its
 test → a thin `mod_*` module that calls it → wire it into a launcher
