@@ -20,7 +20,19 @@ mapUI <- function(id) {
   ns <- NS(id)
   layout_sidebar(
     tags$script(HTML(copy_js)),
+    # The settings stack is long and the map card is a fixed 600px, so without
+    # this the whole page scrolls as one unit and reaching the bottom controls
+    # pushes the map off screen. Give the sidebar its own scroller and pin it.
+    # Desktop only -- bslib collapses the sidebar into an overlay on mobile,
+    # where a max-height would fight the overlay's own scrolling.
+    tags$style(HTML(sprintf("
+      @media (min-width: 576px) {
+        #%s { position: sticky; top: .5rem; align-self: flex-start; }
+        #%s > .sidebar-content { max-height: calc(100vh - 140px);
+                                 overflow-y: auto; overflow-x: hidden; }
+      }", ns("sidebar"), ns("sidebar")))),
     sidebar = sidebar(
+      id = ns("sidebar"),
       width = 320,
       h5("Map settings"),
       radioButtons(ns("map_type"),
@@ -60,14 +72,18 @@ mapUI <- function(id) {
                    class = "small mb-2")),
       uiOutput(ns("ui_hint")),
       hr(),
-      h6("Style"),
+      h6("Basemap"),
       selectInput(ns("basemap"),
                   tagList("Basemap", info_tip(
                     "The background map. Tiles load from the internet, so an ",
                     "offline machine shows a grey background.")),
                   choices = MAP_BASEMAPS),
+      # Every heading below that belongs to one mode lives INSIDE that mode's
+      # conditionalPanel, so the other mode never shows an empty section.
       conditionalPanel(
         sprintf("input['%s'] == 'points'", ns("map_type")),
+        hr(),
+        h6("Color"),
         uiOutput(ns("ui_color")),
         conditionalPanel(
           sprintf("!input['%s'] || input['%s'] == '__none__'",
@@ -80,6 +96,14 @@ mapUI <- function(id) {
           selectInput(ns("palette"), "Color palette", choices = PALETTES),
           uiOutput(ns("ui_scale")),
           checkboxInput(ns("legend"), "Show legend", TRUE)),
+        hr(),
+        h6("Markers"),
+        checkboxInput(ns("show_points"),
+          tagList("Show point markers", info_tip(
+            "Untick to hide the markers entirely - e.g. to view the density ",
+            "heatmap on its own. The HTML/PNG downloads and the generated ",
+            "code follow suit.")),
+          value = TRUE),
         # Size controls hide while combining by area: bubble size then always
         # encodes the per-area point count, not a chosen column.
         conditionalPanel(
@@ -102,17 +126,9 @@ mapUI <- function(id) {
             sprintf("!input['%s'] || input['%s'] == '__none__'",
                     ns("size_by"), ns("size_by")),
             sliderInput(ns("size"), "Point size", min = 2, max = 12, value = 6,
-                        step = 1)))),
-      sliderInput(ns("alpha"), "Opacity", min = 0.1, max = 1, value = 0.8,
-                  step = 0.05),
-      conditionalPanel(
-        sprintf("input['%s'] == 'points'", ns("map_type")),
-        checkboxInput(ns("show_points"),
-          tagList("Show point markers", info_tip(
-            "Untick to hide the markers entirely - e.g. to view the density ",
-            "heatmap on its own. The HTML/PNG downloads and the generated ",
-            "code follow suit.")),
-          value = TRUE),
+                        step = 1))),
+        hr(),
+        h6("Combine & cluster"),
         uiOutput(ns("ui_cluster_by")),
         # Point-level ideas (proximity clustering, heatmap, layer groups,
         # per-point popups/labels) hide while combining by area -- the
@@ -154,6 +170,16 @@ mapUI <- function(id) {
                    "Click a bubble for the area name and point count. ",
                    "Clustering, layer groups, the heatmap, and popups are ",
                    "set automatically while this is on."))),
+      hr(),
+      # Shared by both modes, so these stay OUTSIDE the points panel: alpha is
+      # the fill opacity of markers AND of shaded regions.
+      h6("Finishing touches"),
+      sliderInput(ns("alpha"),
+                  tagList("Opacity", info_tip(
+                    "Fill opacity of the point markers, or of the shaded ",
+                    "regions in choropleth mode. Lower values let overlapping ",
+                    "markers and the basemap show through.")),
+                  min = 0.1, max = 1, value = 0.8, step = 0.05),
       checkboxInput(ns("scalebar"), "Show distance scale bar", TRUE),
       textInput(ns("title"), "Map title", placeholder = "(optional)"),
       hr(),
