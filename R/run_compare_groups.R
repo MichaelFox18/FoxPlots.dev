@@ -26,14 +26,8 @@
 compare_groups_app <- function() {
   options(shiny.maxRequestSize = 250 * 1024^2)
 
-  # iris is the canonical 3-group ANOVA demo; mtcars gives 2- and 3-level groups
-  # plus categorical pairs. A custom list replaces mod_import's built-in
-  # fallback, so name both here.
-  ex <- list(iris = datasets::iris, mtcars = datasets::mtcars)
-  ex_choices <- c("iris (flowers, 3 species)" = "iris",
-                  "mtcars (cars)"             = "mtcars")
-
   ui <- page_navbar(
+    header       = uf_busy(),   # spinners on slow outputs (maps, big charts)
     title        = uf_title("Compare Groups"),
     window_title = "UF/IFAS Compare Groups",
     theme        = uf_theme(),
@@ -46,15 +40,25 @@ compare_groups_app <- function() {
             "Wilcoxon / Kruskal-Wallis), or two categorical variables",
             "(chi-square). You get assumption checks, effect sizes, post-hoc",
             "comparisons with connecting letters, and plain-English verdicts."),
-      c(paste("Import a CSV or Excel file on the Import tab (or load the",
-              "built-in iris / mtcars examples)."),
+      c(paste("Import a CSV or Excel file on the Import tab, or load one of",
+              "the built-in examples (iris, ToothGrowth, mpg, Titanic, and",
+              "more)."),
         paste("On Compare Groups, pick the outcome(s) and grouping",
               "variable(s). Pick several of either to test every combination",
               "at once and see them summarised in one table."),
         paste("Export the data, or download a full HTML / Word report of the",
-              "whole comparison."))),
+              "whole comparison.")),
+      tips = c(
+        paste("Two categorical variables? Variable 1 becomes the table ROWS,",
+              "Variable 2 the COLUMNS - the Swap button flips them."),
+        paste("Pick several outcomes and groups at once to grid-test every",
+              "combination with a corrected summary table."),
+        paste("Split by a third variable to run the whole analysis once per",
+              "stratum (e.g. separately for each Season)."),
+        paste("Titanic is the built-in chi-square demo: try Sex vs",
+              "Survived."))),
     nav_panel(tagList(icon("file-arrow-up"), " Import"),         value = "import",
-              importUI("imp", ex_choices)),
+              importUI("imp", examples = EXAMPLES_COMPARE)),
     nav_panel(tagList(icon("flask-vial"),    " Compare Groups"), value = "compare",
               compareUI("cmp")),
     nav_panel(tagList(icon("file-export"),   " Export & Report"),
@@ -64,7 +68,7 @@ compare_groups_app <- function() {
   )
 
   server <- function(input, output, session) {
-    imported   <- importServer("imp", examples = ex)   # -> reactive(data | NULL)
+    imported   <- importServer("imp", examples = EXAMPLES_COMPARE)   # -> reactive(data | NULL)
     comparison <- compareServer("cmp", imported)       # -> reactive(result list)
     exportServer("ex", imported)                       # data download
     reportServer("rep", imported, comparison = comparison,

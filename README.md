@@ -111,7 +111,11 @@ The package also exports the helper functions for use in your own scripts (e.g.
 ### Data Explorer — the full pipeline
 Tabs run **left → right**, each feeding the next:
 
-1. **Import** — upload CSV / Excel / TSV / RDS (or load a built-in example).
+1. **Import** — upload CSV / Excel / TSV / RDS, or load one of the ~30
+   built-in examples (`foxplots_examples()` lists them; each app's menu is
+   curated for its features — Titanic for chi-square and logistic, Daily
+   weather for date axes, a deliberately Messy field survey for Data
+   Health, ...).
    Then **Data Health** flags common problems (stray text-numbers, blank
    rows/cols, duplicates, whitespace, NA markers, extreme outliers) as opt-in,
    **reversible** fixes; **Change Variable Types** recasts a column (e.g. a
@@ -124,7 +128,7 @@ Tabs run **left → right**, each feeding the next:
    (pass-through)**, so by default your data flows on unchanged.
 3. **Summarize** — count / mean / median / mode / min / max / SD / SE / IQR by
    group, or category **proportions** with confidence intervals.
-4. **Visualize** — 1–4 charts side by side (scatter, line, bar, histogram,
+4. **Visualize** — 1–8 charts side by side (scatter, line, bar, histogram,
    density, box, violin, mean ± error, pie, hexbin, correlation heatmap), with
    styling and a **"copy the ggplot2 code"** panel for each. A scatter can be
    **sized by a variable** to make a bubble chart.
@@ -218,14 +222,20 @@ test), and a copy-paste R script for everything.
 Review's sibling for responses a normal distribution can't handle: counts,
 proportions, zero-heavy data, and presence/absence. Pick a response, a
 **distribution family** (Gaussian, Gamma, Poisson, negative binomial
-nbinom1/nbinom2, Tweedie, Beta — each with a live note on what values are
-valid, checked against your actual data *before* you fit), fixed effects and
+nbinom1/nbinom2, Tweedie, Beta, **ordered beta** for proportions that touch
+exactly 0 or 1 — each with a live note on what values are valid, checked
+against your actual data *before* you fit; pick Beta on boundary-touching
+data and the note names Ordered beta as the fix), fixed effects and
 grouping (random) factors from drop-downs — no `glmmTMB()` calls to write.
 
 - Optional **zero-inflation** (`ziformula`) and **dispersion**
   (`dispformula`) side-models, point-and-click.
 - **Binary (0/1) outcomes get their own tab** with a link-function picker
-  (logit / probit / cloglog / cauchit) and Bernoulli-specific guardrails.
+  (logit / probit / cloglog / cauchit) and Bernoulli-specific guardrails —
+  and a **grouped-counts mode**: pick a successes column and a total-trials
+  column and the failures are computed for you
+  (`cbind(successes, trials - successes)`), with an impossible pair refused
+  before and at fit time.
 - Diagnostics use **DHARMa simulated residuals** — the right tool for
   glmmTMB — with uniformity, overdispersion, zero-inflation and outlier
   tests, plus a classic Pearson chi-square/df cross-check.
@@ -233,8 +243,10 @@ grouping (random) factors from drop-downs — no `glmmTMB()` calls to write.
   (pairwise comparisons come out as ratios / odds ratios) with a compact
   letter display and plot, CSV/PNG downloads, and a copy-paste R script.
 - Built-in **field example** (`make_glmm_example_data()`): an overdispersed
-  count, a zero-heavy count, a proportion, and a 0/1 response — one column
-  per family worth demonstrating.
+  count, a zero-heavy count, a proportion, a 0/1 response, a
+  boundary-touching proportion (ordered beta's demo), and a
+  successes/trials pair — one column per family or mode worth
+  demonstrating.
 
 > Pulls in `glmmTMB` + `DHARMa` on top of the mixed-model stack, so the
 > first install is on the heavier side too.

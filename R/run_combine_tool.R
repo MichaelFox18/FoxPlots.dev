@@ -21,21 +21,8 @@
 combine_tool_app <- function() {
   options(shiny.maxRequestSize = 250 * 1024^2)
 
-  # Join-friendly built-in examples: band_members + band_instruments share
-  # `name` (the classic join demo); the two mtcars halves demo Concatenate.
-  mt <- as.data.frame(datasets::mtcars); mt$car <- rownames(mt); rownames(mt) <- NULL
-  combine_examples <- list(
-    band_members     = as.data.frame(dplyr::band_members),
-    band_instruments = as.data.frame(dplyr::band_instruments),
-    mtcars_top       = utils::head(mt, 16),
-    mtcars_bottom    = utils::tail(mt, 16)
-  )
-  ex_choices <- c("band_members (name, band)"      = "band_members",
-                  "band_instruments (name, plays)" = "band_instruments",
-                  "mtcars (rows 1\u201316)"             = "mtcars_top",
-                  "mtcars (rows 17\u201332)"            = "mtcars_bottom")
-
   ui <- page_navbar(
+    header       = uf_busy(),   # spinners on slow outputs (maps, big charts)
     title        = uf_title("Combine Tool"),
     window_title = "UF/IFAS Combine Tool",
     theme        = uf_theme(),
@@ -48,11 +35,18 @@ combine_tool_app <- function() {
       c("Import the first table on the Left table tab.",
         "Import the second on the Right table tab.",
         "Pick how to combine them on the Combine tab and preview the result.",
-        "Export the combined data as CSV, Excel, or RDS.")),
+        "Export the combined data as CSV, Excel, or RDS."),
+      tips = c(
+        paste("Join matches rows by a shared key column (band_members +",
+              "band_instruments share `name` - try it)."),
+        paste("Concatenate stacks rows; the two mtcars halves are a ready",
+              "demo."),
+        paste("Compare shows what changed between two versions of the same",
+              "table."))),
     nav_panel(tagList(icon("table-columns"), " Left table"),  value = "left",
-              importUI("left", ex_choices)),
+              importUI("left", examples = EXAMPLES_COMBINE)),
     nav_panel(tagList(icon("table-columns"), " Right table"), value = "right",
-              importUI("right", ex_choices)),
+              importUI("right", examples = EXAMPLES_COMBINE)),
     nav_panel(tagList(icon("object-group"),  " Combine"),     value = "combine",
               combineUI("cmb")),
     nav_panel(tagList(icon("file-export"),   " Export & Report"),
@@ -62,8 +56,8 @@ combine_tool_app <- function() {
   )
 
   server <- function(input, output, session) {
-    left_data  <- importServer("left",  examples = combine_examples)
-    right_data <- importServer("right", examples = combine_examples)
+    left_data  <- importServer("left",  examples = EXAMPLES_COMBINE)
+    right_data <- importServer("right", examples = EXAMPLES_COMBINE)
     combined   <- combineServer("cmb", left_data, right_data)
     exportServer("ex", combined)
     # The combined table is the result; its overview + column profile are

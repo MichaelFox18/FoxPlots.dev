@@ -141,3 +141,46 @@ test_that("do_subset's seed is reproducible without touching the session RNG", {
   s2 <- do_subset(df, sample = "n", size = 10, seed = 7)
   expect_identical(s1, s2)                            # still reproducible
 })
+
+# ---- reshape_hint: the cross-feature advisory --------------------------------
+# The report behind it: a user picked Subset expecting to keep rows by VALUE;
+# that filter lives on the Import tab, and nothing said so.
+
+test_that("reshape_hint points Subset users at the Import tab's row filter", {
+  df  <- data.frame(a = 1:3)
+  msg <- reshape_hint(df, "subset", list(subset_cols = "a",
+                                         subset_sample = "n"))
+  expect_true(grepl("Filter rows", msg))
+  expect_true(grepl("Import", msg))
+  expect_true(grepl("value", msg, ignore.case = TRUE))
+  # untouched subset = a silent pass-through; the hint must say so
+  idle <- reshape_hint(df, "subset", list(subset_cols = character(0),
+                                          subset_sample = "all"))
+  expect_true(grepl("passes through unchanged", idle))
+  expect_false(grepl("passes through unchanged", msg))
+})
+
+test_that("reshape_hint stays quiet when there is nothing to say", {
+  df <- data.frame(a = 1:3)
+  expect_null(reshape_hint(df, NULL))
+  expect_null(reshape_hint(df, "none"))
+  expect_null(reshape_hint(df, "sort"))
+  expect_null(reshape_hint(df, "transpose"))
+  expect_null(reshape_hint(df, "split"))
+  # stack/summary only speak while nothing is picked yet
+  expect_null(reshape_hint(df, "stack", list(stack_cols = c("a", "b"))))
+  expect_null(reshape_hint(df, "summary",
+                           list(summary_groups = "g", summary_vars = "a")))
+  expect_false(is.null(reshape_hint(df, "stack", list())))
+  expect_false(is.null(reshape_hint(df, "summary", list())))
+})
+
+test_that("reshape_hint never names a tab the hosting app might not have", {
+  # The module also ships in the standalone Reshape Tool, which has no
+  # Summarize tab -- advice must stay followable everywhere (chart_hint rule).
+  for (op in c("none", "stack", "split", "transpose", "sort", "subset",
+               "summary")) {
+    msg <- reshape_hint(data.frame(a = 1), op, list())
+    if (!is.null(msg)) expect_false(grepl("Summarize tab", msg), info = op)
+  }
+})

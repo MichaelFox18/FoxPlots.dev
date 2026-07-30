@@ -103,3 +103,35 @@ test_that("run_* launchers exist for every app and are exported", {
     expect_true(is.function(get(runner, envir = ns)), info = runner)
   }
 })
+
+test_that("every launcher's example menu resolves to real data frames", {
+  # The 0.10.0 failure mode this replaces: importUI's labels and
+  # importServer's data were two arguments kept in sync by hand, so a renamed
+  # key produced a menu entry that loaded nothing and still said "Loaded".
+  menus <- list(data_explorer_app   = EXAMPLES_EXPLORER,
+                reshape_tool_app    = EXAMPLES_RESHAPE,
+                combine_tool_app    = EXAMPLES_COMBINE,
+                compare_groups_app  = EXAMPLES_COMPARE,
+                lmer_tool_app       = EXAMPLES_LMER,
+                glmm_review_app     = EXAMPLES_GLMM,
+                map_tool_app        = EXAMPLES_MAP,
+                regression_tool_app = EXAMPLES_REGRESSION)
+  expect_setequal(names(menus), APP_BUILDERS)
+  for (nm in names(menus)) {
+    html <- app_page(do.call(nm, list()))$html
+    for (k in menus[[nm]]) {
+      expect_true(grepl(sprintf('value="%s"', k), html, fixed = TRUE),
+                  info = paste(nm, "menu is missing", k))
+      expect_s3_class(foxplots_example(k), "data.frame")
+    }
+  }
+})
+
+test_that("every app serves the busy-indicator activation (uf_busy header)", {
+  # header = uf_busy() in each launcher; a dropped header loses the spinner
+  # feedback on slow outputs (the choropleth build) with no other symptom.
+  for (nm in APP_BUILDERS) {
+    html <- app_page(do.call(nm, list()))$html
+    expect_true(grepl("shinyBusySpinners", html, fixed = TRUE), info = nm)
+  }
+})

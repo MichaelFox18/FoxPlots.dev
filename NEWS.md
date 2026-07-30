@@ -1,3 +1,146 @@
+# foxplots 0.12.0
+
+Four usability items from hands-on testing: the map finally *says* when it is
+working, shaded regions answer questions on hover and click, Visualize grows
+to eight plots while refusing the configs that used to freeze it, and columns
+can be renamed at import (which is how you fix a "Country" vs "country" join).
+
+- **Busy spinners in every app.** Any output that recalculates for more than a
+  moment now shows a spinner (UF blue), and downloads pulse the page. The
+  motivating case: a choropleth over US counties takes several seconds —
+  most of it *after* the render function returns, in widget serialization —
+  with no feedback at all. A note under the boundary picker also warns when a
+  boundary set is large enough (1,000+ features) to be slow. Needs shiny >=
+  1.11.0 (now the declared floor).
+- **Shaded regions are interactive.** Hovering a region shows its name and
+  shaded value (grey regions say "no data"); clicking opens the full summary
+  of your rows inside that border: rows, mean, median, sd, min, max. On by
+  default; a checkbox turns it off for very large maps. The exported R code
+  and the HTML download carry the same popups and tooltips; a deliberate
+  scope cut: stats cover the shaded value column only (no extra-columns
+  picker yet).
+- **Visualize: up to eight plots** (was four), two per row. And pathological
+  configs are now **blocked with an explanation** instead of rendered: a box
+  plot / violin / mean-error over an X with more than 100 distinct values —
+  or a bar chart over such a numeric X — used to draw one unreadable glyph
+  per value (a measured 1,500-level violin froze the app for a minute). The
+  plot pane now names the column, the count, and the ways out; the code
+  panel emits a comment instead of code that would reproduce the freeze.
+  Date axes are exempt, and discrete bar charts still lump to "Other".
+- **Rename columns at import.** A new card on every app's Import tab (both
+  tables in the Combine tool) renames a column — undoing read.csv's
+  `Country.Name` mangling, or making a join key's spelling match the other
+  table. Active row filters follow the renamed column automatically. The
+  Combine tool now also *flags* near-miss keys ("Country" vs "country")
+  under its key picker instead of showing a silently empty list.
+
+---
+
+# foxplots 0.11.0
+
+A usability release shaped by field testing (four reports from real sessions)
+plus the second absorption of Laina Edwards's standalone GLMM work -- thanks
+Laina! Readable date axes, a shared example-dataset registry with ~20 new
+built-in sets, row/column clarity in Compare Groups, cross-feature guidance,
+and two new GLMM capabilities.
+
+## Readable x axes (the smeared-date-axis fix)
+
+A line chart over a date column drew one tick label per distinct value --
+300 dates became an unreadable grey band. Root cause: nothing converts dates
+on import, so `2024-01-15` arrives as *text* and every distinct string is its
+own axis category. (A real `Date` axis was always fine: ggplot picks ~5
+pretty breaks there.)
+
+- **Crowded discrete axes now thin automatically** to ~12 evenly spaced
+  labels (30 when the chart is flipped -- horizontal charts exist to fit more
+  labels). The first and last label are always kept; every bar, point and
+  line is still drawn. Works through plotly, static plots, exports and the
+  report, because the decision is made at build time.
+- **A per-plot "X-axis tick labels" control** (Automatic / every label /
+  about 6-30) overrides the default on any axis kind, and a **date label
+  format picker** appears whenever the x column is a real Date -- its options
+  are previewed using a value from your own data.
+- **The chart hint names the root cause**: a date-stored-as-text column now
+  gets "convert it on the Import tab under Change variable types" instead of
+  the old (wrong) "try a box plot" advice.
+- The copy-ready ggplot2 code mirrors all of it.
+
+## Built-in example datasets: one registry, ~20 new sets
+
+The Import menu's labels and its data used to be two unconnected arguments --
+a mismatched key loaded *nothing* while still announcing "Loaded example".
+Both now come from one registry (`foxplots_examples()` lists it;
+`foxplots_example("titanic")` loads one in your own R code), so a menu entry
+that cannot load is impossible by construction, and a failed load reports an
+error instead of pretending.
+
+New sets, all derived from packages already installed (zero added install
+size): **Titanic** (2,201 person-rows -- the chi-square and logistic demo),
+**mpg**, **diamonds** (1-in-10 sample), **ToothGrowth**, **PlantGrowth**,
+**InsectSprays**, **warpbreaks**, **chickwts**, **npk**, **ChickWeight**,
+**CO2**, **starwars**, **airquality** (with a real assembled Date),
+**economics**, **txhousing** (6-city slice), **billboard**,
+**us_rent_income** (+ a map-ready wide version that joins the built-in US
+state boundaries -- the choropleth path's first built-in example), **Atlantic
+storm tracks** (2021-22), and two new generators:
+
+- **Daily weather** (3 stations x 365 days) -- a real `Date` column *and* the
+  same date as text, seasonal temperature/rain/NDVI: the demo for the new
+  date-axis features.
+- **Messy field survey** -- fires every one of Data Health's nine detectors
+  exactly as designed (blank header, padded categories, "N/A" markers,
+  currency-as-text, leading-zero IDs left as text, dates-as-text, an empty
+  column, an empty row, duplicates, extreme outliers), plus two problems the
+  engine deliberately does not fix.
+
+Each app's menu was chosen for its features (Compare Groups gets chi-square
+material, the lmer tool gets repeated-measures designs, ...).
+
+## Compare Groups says which variable is rows and which is columns
+
+The two pickers are now "Variable 1 - table rows" and "Variable 2 - table
+columns", with a one-click **Swap rows / columns** button. Every result table
+-- contingency, expected, residuals, percentages -- now carries the row
+variable's name as its leading column header (it was blank) and a caption
+naming both roles, in the app, the .txt export, and the HTML and Word
+reports. The interpretation text and the chart caption say it too.
+
+## Cross-feature guidance
+
+- **Reshape > Subset now explains itself**: an info strip says Subset keeps
+  columns and draws a *random* sample, and that keeping rows by *value*
+  (e.g. only Season = Spring) is the Import tab's Filter rows -- the exact
+  confusion a field tester hit.
+- New tooltips on the controls that had none (Subset's pickers, Stack, the
+  Import tab's filter builder), and **every mini-app's About tab now has a
+  Tips card** like the Data Explorer's.
+
+## GLMM Review: ordered beta + grouped binomial (Laina Edwards)
+
+- **Ordered beta family** (`glmmTMB::ordbeta`) on the General tab: proportions
+  on the closed interval [0,1] -- exact 0s and 1s allowed, which standard
+  Beta rejects. Picking Beta on boundary-touching data now gets a targeted
+  message naming Ordered beta *before* the fit (glmmTMB's own error,
+  "y values must be 0 < y < 1", tells you nothing actionable).
+- **Grouped binomial on the Binary tab**: a Response-format switch between
+  individual 0/1 rows and successes-out-of-trials counts. Failures are
+  computed for you (`cbind(successes, trials - successes)`); an impossible
+  pair (successes > trials, negative or fractional counts) is refused with
+  the row count, live before the fit and again at fit time -- one validator,
+  one message. EMMeans come back as probabilities; the zero-inflation test
+  (meaningful for grouped counts, unlike true 0/1 data) appears.
+- **No dispersion picker for grouped counts, on purpose**: measured on a real
+  fit, glmmTMB silently ignores `dispformula` for the binomial family
+  (identical AIC and parameter count with and without). Grouped counts CAN
+  still be overdispersed, so the fit notes and the DHARMa tab name the two
+  routes that work: `family = betabinomial()` or an observation-level random
+  effect.
+- The example data gains `cover_prop_ord` (hits both boundaries: 4 exact 0s,
+  6 exact 1s), `trials` and `successes` -- appended after the existing
+  columns so every pre-existing value stays bit-identical.
+- glmmTMB is now pinned `>= 1.1.5` (where `ordbeta` arrived, 2022).
+
 # foxplots 0.10.0
 
 Hardening pass from testing eight apps against real files (Kaggle sets, an

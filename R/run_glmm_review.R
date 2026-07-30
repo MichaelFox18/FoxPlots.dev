@@ -35,6 +35,7 @@ glmm_review_app <- function() {
   options(shiny.maxRequestSize = 250 * 1024^2)
 
   ui <- page_navbar(
+    header       = uf_busy(),   # spinners on slow outputs (maps, big charts)
     title        = uf_title("GLMM Review"),
     window_title = "UF/IFAS GLMM Review",
     theme        = uf_theme(),
@@ -46,13 +47,20 @@ glmm_review_app <- function() {
             "counts, proportions, zero-inflated and binary outcomes, with",
             "DHARMa simulation-based residual checks, Wald ANOVA, and",
             "EMMeans post-hoc comparisons with letter groupings."),
-      c("Import your data (or load the built-in field example) on the Import tab.",
-        "Pick a response, family, fixed and random effects on the General GLMM tab -- or use the Binary (0/1) tab for presence/absence outcomes -- then fit the model.",
-        "Check the DHARMa residuals tab before trusting the ANOVA or EMMeans results; export the augmented data on the Export tab.")),
+      c(paste("Import your data on the Import tab, or load a built-in",
+              "example (the field data, InsectSprays, warpbreaks, Titanic)."),
+        "Pick a response, family (including ordered beta for proportions that touch 0 or 1), fixed and random effects on the General GLMM tab -- or use the Binary (0/1) tab for presence/absence outcomes and grouped successes-out-of-trials counts -- then fit the model.",
+        "Check the DHARMa residuals tab before trusting the ANOVA or EMMeans results; export the augmented data on the Export tab."),
+      tips = c(
+        paste("Match the family to the response's valid range - the note",
+              "under the family picker updates live and flags mismatches",
+              "before you fit."),
+        paste("Counts with variance > mean want negative binomial, not",
+              "Poisson - the DHARMa dispersion test will tell you."),
+        paste("Lots of zeros? Try the zero-inflation model and compare AIC",
+              "with and without it."))),
     nav_panel(tagList(icon("file-arrow-up"), " Import"), value = "import",
-              importUI("imp",
-                       example_choices = c(
-                         "Field example (counts + proportion + binary)" = "glmm"))),
+              importUI("imp", examples = EXAMPLES_GLMM)),
     nav_panel(tagList(icon("chart-simple"), " General GLMM"), value = "general",
               glmmUI("g", binary = FALSE)),
     nav_panel(tagList(icon("toggle-on"), " Binary (0/1) GLMM"), value = "binary",
@@ -63,7 +71,7 @@ glmm_review_app <- function() {
   )
 
   server <- function(input, output, session) {
-    imported <- importServer("imp", examples = list(glmm = make_glmm_example_data()))
+    imported <- importServer("imp", examples = EXAMPLES_GLMM)
     g_data   <- glmmServer("g", imported, binary = FALSE)
     b_data   <- glmmServer("b", imported, binary = TRUE)
 

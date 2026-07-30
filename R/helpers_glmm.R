@@ -27,7 +27,8 @@ GLMM_FAMILY_CHOICES <- c(
   "Negative binomial, nbinom2 (log link) \u2013 overdispersed counts" = "nbinom2_log",
   "Negative binomial, nbinom1 (log link)"                           = "nbinom1_log",
   "Tweedie (log link) \u2013 zero-heavy continuous"                 = "tweedie_log",
-  "Beta (logit link) \u2013 proportions in (0,1)"                   = "beta_logit")
+  "Beta (logit link) \u2013 proportions in (0,1)"                   = "beta_logit",
+  "Ordered beta (logit link) \u2013 proportions in [0,1], incl. 0 and 1" = "ordbeta_logit")
 
 # Link choices for the binary (Bernoulli) tab, where the family is fixed.
 GLMM_BINARY_LINKS <- c("logit" = "logit", "probit" = "probit",
@@ -59,7 +60,11 @@ GLMM_FAMILY_NOTE <- c(
     "rainfall, biomass with true absences)."),
   "beta_logit"        = paste0(
     "Strictly between 0 and 1 \u2014 EXCLUDES exact 0 and exact 1. Rescale ",
-    "data that touches the boundaries, e.g. y' = (y*(n-1)+0.5)/n."))
+    "data that touches the boundaries, e.g. y' = (y*(n-1)+0.5)/n."),
+  "ordbeta_logit"     = paste0(
+    "The CLOSED interval [0,1] \u2014 CAN include exact 0s and exact 1s ",
+    "(that is the whole point of this family versus standard Beta). Use it ",
+    "instead of rescaling the boundary values away."))
 
 # Family key -> the glmmTMB/stats family object used for the fit.
 glmm_family <- function(key) {
@@ -72,6 +77,7 @@ glmm_family <- function(key) {
          "nbinom1_log"       = glmmTMB::nbinom1(link = "log"),
          "tweedie_log"       = glmmTMB::tweedie(link = "log"),
          "beta_logit"        = glmmTMB::beta_family(link = "logit"),
+         "ordbeta_logit"     = glmmTMB::ordbeta(link = "logit"),
          stats::gaussian())
 }
 
@@ -87,6 +93,7 @@ glmm_family_code <- function(key) {
          "nbinom1_log"       = "nbinom1(link = \"log\")",
          "tweedie_log"       = "tweedie(link = \"log\")",
          "beta_logit"        = "beta_family(link = \"logit\")",
+         "ordbeta_logit"     = "ordbeta(link = \"logit\")",
          "gaussian()")
 }
 
@@ -110,8 +117,16 @@ glmm_domain_check <- function(x, key) {
                 "nbinom1_log"  = any(x < 0 | x != round(x)),
                 "tweedie_log"  = any(x < 0),
                 "beta_logit"   = any(x <= 0 | x >= 1),
+                "ordbeta_logit" = any(x < 0 | x > 1),
                 FALSE)
   if (!isTRUE(bad)) return(NULL)
+  # Beta rejects only the boundaries: when that is the ONLY violation, name
+  # the family that accepts them -- glmmTMB's own error for this case is
+  # "y values must be 0 < y < 1", which does not tell a user what to do.
+  if (identical(key, "beta_logit") && all(x >= 0 & x <= 1))
+    return(paste0("The response includes exact 0 and/or 1, which the Beta ",
+                  "family excludes \u2014 use Ordered beta instead (or ",
+                  "rescale the boundary values away)."))
   if (identical(key, "binary"))
     return(paste0("The response contains values other than 0 and 1 \u2014 ",
                   "a binary model needs exactly 0/1 (or a two-level factor)."))
@@ -119,9 +134,84 @@ glmm_domain_check <- function(x, key) {
          "check the note under the family picker before fitting.")
 }
 
+# Columns that can serve as a binomial count: numeric, non-negative, whole.
+# Built on numeric_cols() (helpers_stats.R) so the Date/POSIXct exclusion is
+# not re-implemented here.
+glmm_count_cols <- function(df) {
+  if (is.null(df) || !ncol(df)) return(character(0))
+  nm <- numeric_cols(df)
+  nm[vapply(nm, function(v) {
+    x <- df[[v]][is.finite(df[[v]])]
+    length(x) > 0 && all(x >= 0 & x == round(x))
+  }, logical(1))]
+}
+
+# Validate a successes/total-trials pair for a grouped-binomial fit. Returns
+# NULL when the pair is usable, otherwise ONE plain-language message -- the
+# same NULL-or-string contract as glmm_domain_check(), so the module shows the
+# identical string as a live pre-fit warning AND glmm_fit() returns it as the
+# hard error. Unlike the domain check this one BLOCKS: a negative failure
+# count is not a modelling judgement call, it is broken data.
+glmm_trials_check <- function(df, successes, trials) {
+  ok_name <- function(v) !is.null(v) && length(v) == 1L && !is.na(v) &&
+    nzchar(v)
+  if (!ok_name(successes) || !ok_name(trials))
+    return("Choose both a successes column and a total-trials column.")
+  if (identical(successes, trials))
+    return("The successes and total-trials columns must be different.")
+  miss <- setdiff(c(successes, trials), names(df))
+  if (length(miss))
+    return(sprintf("Column(s) not found in the data: %s.",
+                   paste(miss, collapse = ", ")))
+  s <- df[[successes]]; n <- df[[trials]]
+  if (!is.numeric(s) || !is.numeric(n))
+    return(paste0("The successes and total-trials columns must both be ",
+                  "numeric counts."))
+  frac <- (is.finite(s) & s != round(s)) | (is.finite(n) & n != round(n))
+  if (any(frac, na.rm = TRUE))
+    return(sprintf(paste0("%d row(s) hold non-whole numbers \u2014 a binomial ",
+                          "count model needs whole-number successes and ",
+                          "trials."),
+                   sum(frac, na.rm = TRUE)))
+  bad <- (s < 0) | (n < 0) | (s > n)
+  if (any(bad, na.rm = TRUE))
+    return(sprintf(paste0("'%s' is greater than '%s', or a count is ",
+                          "negative, in %d row(s) \u2014 that would give ",
+                          "negative failures. Fix the data before fitting."),
+                   successes, trials, sum(bad, na.rm = TRUE)))
+  if (all(!is.finite(n) | n <= 0))
+    return(sprintf(
+      "Every value of '%s' is zero or missing \u2014 there is nothing to model.",
+      trials))
+  NULL
+}
+
+# Name-based default picks for the two grouped-binomial pickers. Without
+# this, "first two candidate columns" is the default -- on the built-in
+# example that lands on insect_count/seedling_count and the demo opens in a
+# warning state. Returns list(successes =, trials =); either may be NA when
+# nothing matches (the caller falls back to the candidate order).
+glmm_trials_guess <- function(cand) {
+  pick <- function(pattern, avoid = NA_character_) {
+    hit <- cand[grepl(pattern, cand, ignore.case = TRUE) &
+                  !cand %in% avoid]
+    if (length(hit)) hit[1] else NA_character_
+  }
+  succ <- pick("succ|event|positive|germin|surviv")
+  tot  <- pick("trial|total|out[_ ]?of|attempt|seeds|n_", avoid = succ)
+  list(successes = succ, trials = tot)
+}
+
 # ---------------------------------------------------------------------------
 #  Formula construction
 # ---------------------------------------------------------------------------
+
+# The two-column binomial response expression, e.g.
+# "cbind(`successes`, `trials` - `successes`)". ONE place builds it, so the
+# fit, the emitted code and the tests can never disagree.
+glmm_cbind_response <- function(successes, trials) {
+  sprintf("cbind(%s, %s - %s)", bq(successes), bq(trials), bq(successes))
+}
 
 # Zero-inflation / dispersion side formulas: character vector of predictor
 # names -> "~0" (off), "~1" (intercept only), or "~`v1` + `v2`".
@@ -136,8 +226,13 @@ build_side_formula <- function(vars, enabled = TRUE) {
 # Unlike the lmer builder there is no response transform (the family/link
 # plays that role) and the random part may be absent entirely -- glmmTMB
 # then fits an ordinary GLM (the fit wrapper notes this).
+# `response` is normally a bare column name (backtick-quoted here), but a
+# grouped-binomial caller passes an already-built expression from
+# glmm_cbind_response() and sets quote_response = FALSE so it is used as-is
+# instead of being wrapped in backticks.
 glmm_formula_string <- function(response, fixed, random, interactions = FALSE,
-                                slope = NULL, slope_group = NULL) {
+                                slope = NULL, slope_group = NULL,
+                                quote_response = TRUE) {
   fixed_part <- if (length(fixed) == 0) {
     "1"
   } else if (isTRUE(interactions) && length(fixed) > 1) {
@@ -147,7 +242,7 @@ glmm_formula_string <- function(response, fixed, random, interactions = FALSE,
   }
   random_part <- build_random_part(random, slope, slope_group)
   rhs <- paste(c(fixed_part, random_part), collapse = " + ")
-  paste(bq(response), "~", rhs)
+  paste(if (isTRUE(quote_response)) bq(response) else response, "~", rhs)
 }
 
 # ---------------------------------------------------------------------------
@@ -156,7 +251,13 @@ glmm_formula_string <- function(response, fixed, random, interactions = FALSE,
 
 # Fit a glmmTMB model from a spec list. Returns a structured list; on failure
 # `ok = FALSE` with an `error` message instead of throwing. Spec fields:
-#   response      response column name (required)
+#   response      response column name (required unless resp_mode = "grouped")
+#   resp_mode     "single" (default) or "grouped" -- binary tab only.
+#                 "grouped" means the response is a successes/trials count
+#                 pair and the model's LHS becomes
+#                 cbind(successes, trials - successes).
+#   successes     column of success counts   (resp_mode = "grouped")
+#   trials        column of total trials     (resp_mode = "grouped")
 #   fixed, random character vectors (either may be empty, not both -- the
 #                 caller guards; an empty spec still fits an intercept model)
 #   interactions  cross the fixed effects with `*`
@@ -167,22 +268,51 @@ glmm_formula_string <- function(response, fixed, random, interactions = FALSE,
 #   family_key    general tab family key (GLMM_FAMILY_CHOICES)
 #   zi_on, zi_vars       zero-inflation model -> ziformula ~0 / ~1 / ~vars
 #   disp_vars     dispersion model predictors -> dispformula ~1 / ~vars
-#                 (ignored on the binary tab: Bernoulli data has no free
-#                 dispersion parameter)
+#                 (ignored on the binary tab: glmmTMB has no free dispersion
+#                 parameter for the binomial family)
 glmm_fit <- function(df, spec) {
-  response <- spec$response
-  if (is.null(response) || !response %in% names(df))
-    return(list(ok = FALSE, mod = NULL, error = "Choose a response variable."))
-  fixed  <- spec$fixed  %||% character(0)
-  random <- spec$random %||% character(0)
-  binary <- isTRUE(spec$binary)
+  binary  <- isTRUE(spec$binary)
+  grouped <- binary && identical(spec$resp_mode %||% "single", "grouped")
+  fixed   <- spec$fixed  %||% character(0)
+  random  <- spec$random %||% character(0)
+
+  notes <- character(0)
+  success_level <- NULL
+  succ <- tot <- NULL
+
+  if (grouped) {
+    succ <- spec$successes; tot <- spec$trials
+    bad  <- glmm_trials_check(df, succ, tot)
+    if (!is.null(bad)) return(list(ok = FALSE, mod = NULL, error = bad))
+    response   <- sprintf("%s / %s", succ, tot)  # display label, not a column
+    resp_expr  <- glmm_cbind_response(succ, tot)
+    quote_resp <- FALSE
+    resp_vars  <- c(succ, tot)
+  } else {
+    response <- spec$response
+    if (is.null(response) || !response %in% names(df))
+      return(list(ok = FALSE, mod = NULL,
+                  error = "Choose a response variable."))
+    resp_expr  <- response
+    quote_resp <- TRUE
+    resp_vars  <- response
+  }
 
   model_df <- df
   for (g in random) model_df[[g]] <- factor(model_df[[g]])
 
-  notes <- character(0)
-  success_level <- NULL
-  if (binary) {
+  if (grouped) {
+    notes <- c(notes,
+      sprintf(paste0("Grouped binomial: each row is %s successes out of %s ",
+                     "trials; failures are computed as %s - %s."),
+              succ, tot, tot, succ),
+      paste0("Unlike individual 0/1 rows, grouped counts CAN be ",
+             "overdispersed. Check the DHARMa dispersion test; if it flags, ",
+             "refit with family = betabinomial() or add an observation-",
+             "level random effect. (glmmTMB's dispformula has no effect for ",
+             "the binomial family, which is why no dispersion picker is ",
+             "offered here.)"))
+  } else if (binary) {
     y <- model_df[[response]]
     if (is.logical(y)) {
       model_df[[response]] <- as.integer(y)
@@ -220,9 +350,10 @@ glmm_fit <- function(df, spec) {
     if (length(g)) g else random
   } else NULL
 
-  fml_str  <- glmm_formula_string(response, fixed, random,
+  fml_str  <- glmm_formula_string(resp_expr, fixed, random,
                                   isTRUE(spec$interactions),
-                                  use_slope, use_slope_group)
+                                  use_slope, use_slope_group,
+                                  quote_response = quote_resp)
   zi_str   <- build_side_formula(spec$zi_vars %||% character(0),
                                  isTRUE(spec$zi_on))
   disp_str <- if (binary) "~1"
@@ -289,7 +420,19 @@ glmm_fit <- function(df, spec) {
        family_key = if (binary) "binary" else spec$family_key %||% "gaussian_identity",
        link = if (binary) spec$link %||% "logit" else NULL,
        binary = binary, success_level = success_level,
-       response = response, fixed = fixed, random = random,
+       # `bernoulli` is the flag that actually means "no estimable
+       # zero-inflation or dispersion"; `binary` no longer implies it (a
+       # grouped binomial is binary but NOT Bernoulli). Statistical consumers
+       # (which DHARMa tests to run/emit) read bernoulli; layout consumers
+       # (which formulas to print) keep reading binary.
+       resp_mode = if (grouped) "grouped" else "single",
+       successes = succ, trials = tot,
+       bernoulli = binary && !grouped,
+       # `response` is a display label in grouped mode ("successes / trials");
+       # `resp_vars` always holds the actual column name(s) for complete-case
+       # logic (glmm_emmeans) and anything else that must touch the data.
+       response = response, resp_vars = resp_vars,
+       fixed = fixed, random = random,
        slope = use_slope, slope_group = use_slope_group,
        cat_fixed = cat_fixed, sum_contrasts = apply_sum,
        spec = spec, data = model_df)
@@ -348,7 +491,11 @@ glmm_anova <- function(model) {
 # (e.g. families without Pearson residuals).
 glmm_pearson_ratio <- function(model) {
   tryCatch({
-    pr  <- stats::residuals(model, type = "pearson")
+    # suppressWarnings: ordbeta's variance function is flagged "untested" by
+    # glmmTMB, so residuals() warns on every call; the ratio already degrades
+    # to NA when unavailable, and a warning we cannot act on would leak into
+    # the module render and the report payload.
+    pr  <- suppressWarnings(stats::residuals(model, type = "pearson"))
     rdf <- stats::df.residual(model)
     if (!is.finite(rdf) || rdf <= 0) return(NA_real_)
     round(sum(pr^2, na.rm = TRUE) / rdf, 3)
@@ -467,7 +614,10 @@ glmm_emmeans <- function(fit, emmvars, by = NULL,
                                             conditionMessage(e))))
 
   used <- fit$data
-  mv   <- unique(c(fit$response, fit$fixed, fit$random,
+  # resp_vars, not response: in grouped-binomial mode `response` is a display
+  # label ("successes / trials"), not a column -- intersect() would silently
+  # drop it and the cell counts would stop excluding rows the model dropped.
+  mv   <- unique(c(fit$resp_vars %||% fit$response, fit$fixed, fit$random,
                    if (!is.null(fit$slope)) fit$slope))
   mv   <- intersect(mv, names(used))
   used <- used[stats::complete.cases(used[, mv, drop = FALSE]), , drop = FALSE]
@@ -505,11 +655,13 @@ glmm_code <- function(fit) {
     contr_line,
     "  data = your_data)\n\n",
     "summary(mod)\n\n",
-    glmm_dharma_code(fit$binary),
+    glmm_dharma_code(isTRUE(fit$bernoulli %||% fit$binary)),
     "\n# Type III Wald chi-square tests\ncar::Anova(mod, type = 3)\n")
 }
 
-# The DHARMa diagnostic block of the emitted script.
+# The DHARMa diagnostic block of the emitted script. `binary` here means
+# BERNOULLI (individual 0/1 rows): only then is testZeroInflation dropped --
+# a grouped binomial genuinely can be zero-inflated.
 glmm_dharma_code <- function(binary = FALSE) {
   paste0(
     "# quick manual overdispersion check (Pearson chi-sq / residual df; ~1 is fine)\n",
@@ -543,14 +695,18 @@ glmm_emm_code <- function(emmvars, by = NULL, adjust = "tukey",
 #'
 #' A seeded field-style dataset used as the demo for the GLMM Review app.
 #' Eight sites (the random / grouping factor) crossed with a three-level
-#' Treatment and a two-level Season, three replicates per cell. Four
-#' responses each exercise a different family: \code{insect_count}
-#' (overdispersed counts; negative binomial), \code{seedling_count}
-#' (zero-heavy counts; a zero-inflation candidate), \code{cover_prop}
-#' (a proportion strictly inside (0,1); Beta), and \code{present}
-#' (0/1 presence; the binary tab).
+#' Treatment and a two-level Season, three replicates per cell. Seven
+#' response columns each exercise a different family or mode:
+#' \code{insect_count} (overdispersed counts; negative binomial),
+#' \code{seedling_count} (zero-heavy counts; a zero-inflation candidate),
+#' \code{cover_prop} (a proportion strictly inside (0,1); Beta),
+#' \code{present} (0/1 presence; the binary tab),
+#' \code{cover_prop_ord} (a proportion on the closed interval 0..1 that
+#' touches both boundaries; Ordered beta), and the pair \code{trials} /
+#' \code{successes} (a grouped-binomial count pair for the binary tab's
+#' grouped-counts mode).
 #'
-#' @return A data frame with Site, Treatment, Season and the four response
+#' @return A data frame with Site, Treatment, Season and the seven response
 #'   columns (144 rows).
 #' @examples
 #' d <- make_glmm_example_data()
@@ -591,6 +747,23 @@ make_glmm_example_data <- function() {
   peta <- -0.3 + 0.9 * (d$Treatment == "Fertilized") -
     0.6 * (d$Treatment == "Grazed") + b
   d$present <- stats::rbinom(n, 1, stats::plogis(peta))
+
+  # The 0.11.0 columns are APPENDED, never inserted mid-stream: each rnorm/
+  # rbinom below consumes RNG draws, so an insertion before `present` would
+  # silently change every column after it (the v0.5.0 RNG lesson again --
+  # test-glmm.R pins the column order for exactly this reason).
+
+  # proportion on the CLOSED interval [0,1] -> ordered beta target. Shifted
+  # and noisier than cover_prop on purpose: the point of this column is that
+  # it LANDS on the boundaries (exact 0s and exact 1s) where Beta cannot go --
+  # fitting it with plain Beta is the live demo of the domain-check message.
+  d$cover_prop_ord <- pmin(pmax(stats::plogis(eta - 0.6) +
+                                  stats::rnorm(n, 0, 0.3), 0), 1)
+
+  # grouped binomial: successes out of a per-row number of trials (the binary
+  # tab's "grouped counts" mode; failures = trials - successes are computed).
+  d$trials    <- sample(8:15, n, replace = TRUE)
+  d$successes <- stats::rbinom(n, d$trials, stats::plogis(peta))
 
   d
 }

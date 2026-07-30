@@ -31,11 +31,20 @@ reshapeUI <- function(id) {
         selected = "none"
       ),
 
+      # Advisory strip (reshape_hint): cross-feature pointers such as
+      # "value-based row filtering lives on the Import tab".
+      uiOutput(ns("op_hint")),
+
       # ---- Stack controls ----
       conditionalPanel(
         condition = sprintf("input['%s'] == 'stack'", ns("op")),
         selectizeInput(
-          ns("stack_cols"), "Columns to stack", choices = NULL, multiple = TRUE,
+          ns("stack_cols"),
+          tagList("Columns to stack", info_tip(
+            "The columns whose values get collapsed into one \u2014 typically ",
+            "repeated measurements stored side by side, e.g. week1, week2, ",
+            "week3.")),
+          choices = NULL, multiple = TRUE,
           options = list(placeholder = "pick one or more columns")
         ),
         textInput(ns("label_to"), "New label column", value = "Label"),
@@ -103,10 +112,20 @@ reshapeUI <- function(id) {
       conditionalPanel(
         condition = sprintf("input['%s'] == 'subset'", ns("op")),
         selectizeInput(
-          ns("subset_cols"), "Columns to keep", choices = NULL, multiple = TRUE,
+          ns("subset_cols"),
+          tagList("Columns to keep", info_tip(
+            "Only the columns picked here survive; leave blank to keep them ",
+            "all. To keep ROWS by value (e.g. only Season = Spring), use ",
+            "Filter rows on the Import tab \u2014 it runs before this stage.")),
+          choices = NULL, multiple = TRUE,
           options = list(placeholder = "leave blank = keep all")
         ),
-        radioButtons(ns("subset_sample"), "Rows",
+        radioButtons(ns("subset_sample"),
+                     tagList("Rows", info_tip(
+                       "Draws a RANDOM sample \u2014 a fixed number (Random N) or ",
+                       "a fraction (Random %) of the rows. This is sampling, ",
+                       "not value-based filtering; for \u201conly rows where ",
+                       "X = Y\u201d use Filter rows on the Import tab.")),
                      choices = c("All rows"  = "all",
                                  "Random N"  = "n",
                                  "Random %"  = "prop"),
@@ -175,6 +194,23 @@ reshapeUI <- function(id) {
 
 reshapeServer <- function(id, data_in, store = NULL) {
   moduleServer(id, function(input, output, session) {
+
+    # Cross-feature advisory under the operation picker (reshape_hint is the
+    # pure, tested half -- the map_no_coord_advice pattern). Informational,
+    # not a warning: the data is fine, another feature may fit better.
+    output$op_hint <- renderUI({
+      df  <- data_in()
+      msg <- reshape_hint(if (is.data.frame(df)) df else NULL,
+                          input$op,
+                          list(subset_cols    = input$subset_cols,
+                               subset_sample  = input$subset_sample,
+                               stack_cols     = input$stack_cols,
+                               summary_groups = input$summary_groups,
+                               summary_vars   = input$summary_vars))
+      if (is.null(msg)) return(NULL)
+      div(class = "alert alert-info py-1 px-2 small mb-2", role = "alert",
+          icon("circle-info"), HTML(paste0(" ", msg)))
+    })
 
     # Keep the column pickers in sync with whatever data flows in. On a session
     # restore, the app stages the saved settings in store$pending_reshape; this

@@ -3,8 +3,9 @@
 # ============================================================
 # Upload a file (CSV / Excel / TSV / RDS) or load a built-in example, with the
 # text-file parse options and an Excel worksheet picker -- plus a Data Health
-# panel (diagnose + opt-in reversible fixes), a Change-Variable-Types tool, an
-# at-a-glance summary, and a per-column profile. Pattern A: importServer()
+# panel (diagnose + opt-in reversible fixes), a Change-Variable-Types tool, a
+# Rename-Columns tool, an at-a-glance summary, and a per-column profile.
+# Pattern A: importServer()
 # RETURNS the working data as a reactive (NULL until loaded) for the next stage.
 # Fixes/conversions mutate the working copy; the originally-loaded data is kept
 # so "Revert to original" can restore it.
@@ -13,11 +14,14 @@
 # convert_column, ...), and R/helpers_stats.R (friendly_type, column_profile,
 # data_glance).
 
-importUI <- function(id,
-                     example_choices = c("mtcars (cars)"          = "mtcars",
-                                         "relig_income (wide)"    = "relig_income",
-                                         "fish_encounters (long)" = "fish_encounters")) {
+# `examples` names the built-in datasets this app's Import menu offers --
+# registry keys (see EXAMPLE_SETS in helpers_examples.R), or a named list of
+# data frames for ad-hoc use. importUI and importServer must receive the SAME
+# value; both resolve it through as_example_spec(), so the menu labels and the
+# loadable data come from one lookup and cannot drift apart.
+importUI <- function(id, examples = EXAMPLES_DEFAULT) {
   ns <- NS(id)
+  example_choices <- example_menu(as_example_spec(examples))
   layout_sidebar(
     sidebar = sidebar(
       width = 290,
@@ -54,6 +58,10 @@ importUI <- function(id,
       uiOutput(ns("convert_ui"))
     ),
     card(
+      card_header(icon("pen-to-square"), " Rename columns"),
+      uiOutput(ns("rename_ui"))
+    ),
+    card(
       card_header(icon("filter"), " Filter rows"),
       uiOutput(ns("filter_builder")),
       uiOutput(ns("filter_active"))
@@ -84,19 +92,14 @@ importUI <- function(id,
   )
 }
 
-importServer <- function(id, examples = NULL, store = NULL) {
+importServer <- function(id, examples = EXAMPLES_DEFAULT, store = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Built-in sample datasets. mtcars carries its row names into a column so
-    # nothing is lost; the tidyr sets give a wide and a long shape to reshape.
-    examples <- examples %||% list(
-      mtcars = local({
-        d <- as.data.frame(datasets::mtcars); d$car <- rownames(d); rownames(d) <- NULL; d
-      }),
-      relig_income    = as.data.frame(tidyr::relig_income),
-      fish_encounters = as.data.frame(tidyr::fish_encounters)
-    )
+    # Built-in sample datasets: one lookup serves both the menu (importUI) and
+    # the data (the load handler below). Resolved once -- an unknown key stops
+    # here, at server init, not at click time.
+    example_spec <- as_example_spec(examples)
 
     # data     = working copy (after Health fixes / type conversions)
     # data_raw = exactly as loaded, so "Revert to original" can restore it
@@ -172,11 +175,24 @@ importServer <- function(id, examples = NULL, store = NULL) {
 
     observeEvent(input$load_example, {
       req(input$example)
-      d <- examples[[input$example]]
+      # example_build() refuses a broken/unknown entry, so a failed load can
+      # never announce success (the pre-0.11.0 bug: a mistyped key loaded
+      # nothing and still notified "Loaded example: <key>").
+      d <- tryCatch(example_build(example_spec, input$example),
+                    error = function(e) e)
+      if (inherits(d, "error")) {
+        showNotification(paste("Couldn't load that example -",
+                               conditionMessage(d)),
+                         type = "error", duration = 8)
+        return()
+      }
       rv$data <- d; rv$data_raw <- d; rv$filters <- list()
       rv$upload <- NULL; rv$sheets <- NULL; rv$loaded_sheet <- NULL
       rv$source <- paste0("example: ", input$example)
-      showNotification(paste("Loaded example:", input$example), type = "message")
+      showNotification(sprintf("Loaded example: %s (%s rows x %d columns)",
+                               input$example,
+                               format(nrow(d), big.mark = ","), ncol(d)),
+                       type = "message")
     })
 
     observeEvent(input$clear_data, {
@@ -289,6 +305,66 @@ importServer <- function(id, examples = NULL, store = NULL) {
                        duration = 6)
     })
 
+    # -- Rename columns (fix a mangled header, or make a join key's spelling
+    # -- match the other table's in the combine tool) --
+    output$rename_ui <- renderUI({
+      if (is.null(rv$data))
+        return(helpText("Load a dataset to rename its columns."))
+      cols    <- names(rv$data)
+      types   <- vapply(rv$data, friendly_type, character(1))
+      choices <- stats::setNames(cols, sprintf("%s  (%s)", cols, types))
+      tagList(
+        tags$p(class = "mb-2",
+          "Give a column a better name \u2014 handy when a header arrives mangled ",
+          "(", tags$code("Country.Name"), ") or when two files spell the same ",
+          "column differently (", tags$code("Country"), " vs ",
+          tags$code("country"), "), which blocks joining on it."),
+        layout_columns(
+          col_widths = c(6, 6),
+          selectInput(ns("rn_col"), "Column",   choices = choices),
+          textInput(ns("rn_new"),   "New name", placeholder = "new column name")
+        ),
+        actionButton(ns("rn_apply"), "Rename",
+                     class = "btn-primary btn-sm", icon = icon("pen-to-square")),
+        tags$div(class = "form-text mt-2",
+          "Filters on the renamed column follow it automatically. Use Data ",
+          "Health's \u201cRevert to original\u201d to undo all changes.")
+      )
+    })
+
+    observeEvent(input$rn_apply, {
+      req(rv$data, input$rn_col)
+      from <- input$rn_col
+      to   <- trimws(input$rn_new %||% "")
+      if (!from %in% names(rv$data)) return()
+      if (!nzchar(to)) {
+        showNotification("Type a new name first.", type = "warning"); return()
+      }
+      if (identical(from, to)) {
+        showNotification(sprintf("\u201c%s\u201d is already called that.", from),
+                         type = "warning"); return()
+      }
+      res <- tryCatch(rename_column(rv$data, from, to), error = function(e) e)
+      if (inherits(res, "error")) {
+        showNotification(sprintf("Couldn't rename \u201c%s\u201d: %s", from,
+                                 conditionMessage(res)),
+                         type = "error", duration = 8); return()
+      }
+      # Filters store bare column names (list(col, op, value)); point any that
+      # referenced the old name at the new one. Without this, filter_mask's
+      # unknown-column no-op silently UN-filters while the chip still shows
+      # the old name. Filters are value-based, so a renamed condition stays
+      # semantically valid.
+      if (length(rv$filters))
+        rv$filters <- lapply(rv$filters, function(cond) {
+          if (identical(cond$col, from)) cond$col <- to
+          cond
+        })
+      rv$data <- res
+      showNotification(sprintf("Renamed \u201c%s\u201d to \u201c%s\u201d.", from, to),
+                       type = "message")
+    })
+
     # -- Filter rows (value-based; multiple conditions AND'd) --
     # filtered() = the working copy with the active conditions applied. This is
     # what flows downstream and what the preview/summary/profile below describe.
@@ -302,12 +378,21 @@ importServer <- function(id, examples = NULL, store = NULL) {
       if (is.null(rv$data))
         return(helpText("Load a dataset to filter its rows."))
       tagList(
+        # No pointer at Reshape > Subset here: mod_import ships in all eight
+        # apps and only two of them have a Reshape tab -- advice must stay
+        # followable everywhere this module appears (the chart_hint rule).
         tags$p(class = "mb-2",
           "Keep only the rows that match your conditions \u2014 add as many as you ",
           "like and they combine with ", tags$b("AND"), "."),
         layout_columns(
           col_widths = c(4, 4, 4),
-          selectInput(ns("filter_col"), "Column", choices = names(rv$data)),
+          selectInput(ns("filter_col"),
+                      tagList("Column", info_tip(
+                        "The column the condition tests. The condition list ",
+                        "adapts to its type \u2014 numeric columns get ranges ",
+                        "and comparisons, categories get pick-lists, dates ",
+                        "get a date range.")),
+                      choices = names(rv$data)),
           uiOutput(ns("ui_filter_op")),
           uiOutput(ns("ui_filter_val"))
         ),

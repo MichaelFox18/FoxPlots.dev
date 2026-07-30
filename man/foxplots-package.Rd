@@ -24,5 +24,10 @@ Authors:
   \item Michael Fox \email{michaelfox0418@gmail.com}
 }
 
+Other contributors:
+\itemize{
+  \item Laina Edwards (GLMM Review app: original standalone version, ordered beta family, grouped binomial mode) [contributor]
+}
+
 }
 \keyword{internal}

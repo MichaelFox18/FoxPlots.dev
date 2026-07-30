@@ -56,6 +56,9 @@ MAP_CHORO_BINS   <- 5      # quantile bins for a choropleth colour scale
 # DOES bite, build_choropleth reports it in choro_diag rather than quietly
 # dropping regions.
 MAP_CHORO_MAX    <- 4000
+MAP_CHORO_SLOW   <- 1000   # at/above this many features ui_choro shows the
+                           # slow-draw note (the note is mod_map's job; this
+                           # file just owns the number)
 MAP_POPUP_MAX    <- 5      # the module preselects at most this many popup columns
 MAP_PNG_W        <- 1200   # fixed PNG snapshot size -- no extra inputs in v1
 MAP_PNG_H        <- 800
@@ -433,6 +436,16 @@ map_palette <- function(df, cv, palette = "auto", color_scale = "linear") {
   }
 }
 
+# Numbers shown to users, as text: rounded to 3 digits, comma-grouped, NA ->
+# "". The ONE formatter for every number a map popup or hover label carries
+# (popup_html and choro_region_info both call it), so point popups and region
+# stats can never format the same value two ways.
+map_num_chr <- function(x) {
+  out <- format(round(x, 3), trim = TRUE, big.mark = ",")
+  out[is.na(x)] <- ""
+  out
+}
+
 # One HTML popup string per row: "<b>col:</b> value" lines. Everything is
 # escaped -- popups render raw HTML, and column names / values come from user
 # files. NULL when no columns are chosen.
@@ -440,8 +453,7 @@ popup_html <- function(df, cols) {
   cols <- intersect(cols %||% character(0), names(df))
   if (!length(cols)) return(NULL)
   fmt <- function(x) {
-    out <- if (is.numeric(x)) format(round(x, 3), trim = TRUE, big.mark = ",")
-           else as.character(x)
+    out <- if (is.numeric(x)) map_num_chr(x) else as.character(x)
     out[is.na(x)] <- ""
     htmltools::htmlEscape(out)
   }
@@ -787,13 +799,79 @@ choro_palette <- function(vals, palette = "auto", color_scale = "linear") {
   list(pal = pal, scale = scale)
 }
 
+# Aggregate the value column per region AND (optionally) build the hover
+# label and click-popup HTML for each region, in ONE pass over df. Returns
+# list(vals = named numeric, label = named chr | NULL, popup = named chr |
+# NULL); names are the exact as.character() region keys (build_choropleth's
+# join contract). Groups whose aggregate is non-finite are dropped, exactly
+# as the old tapply + is.finite() filter did -- note sum(na.rm) of an all-NA
+# group is 0 (finite, kept, "rows: 0" popup) while its mean is NaN (dropped).
+# Everything user-visible is escaped: region keys and the column name come
+# from user files, and popups render raw HTML.
+choro_region_info <- function(df, key, val, agg = "mean", stats = TRUE) {
+  fn <- switch(agg,
+               sum    = function(x) sum(x, na.rm = TRUE),
+               median = function(x) stats::median(x, na.rm = TRUE),
+               function(x) mean(x, na.rm = TRUE))
+  groups <- split(df[[val]], as.character(df[[key]]))
+  vals   <- vapply(groups, fn, numeric(1))
+  keep   <- is.finite(vals)
+  vals   <- vals[keep]
+  if (!isTRUE(stats) || !length(vals))
+    return(list(vals = vals, label = NULL, popup = NULL))
+  groups  <- groups[keep]
+  agg_lab <- switch(agg, sum = "total", median = "median", "mean")
+  esc_reg <- htmltools::htmlEscape(names(vals))
+  esc_val <- htmltools::htmlEscape(val)
+  label <- stats::setNames(sprintf("%s %s %s %s: %s",
+    esc_reg, SYM_MDASH, agg_lab, esc_val, map_num_chr(vals)), names(vals))
+  popup <- stats::setNames(vapply(seq_along(groups), function(i) {
+    x  <- groups[[i]]; xs <- x[!is.na(x)]
+    if (!length(xs))
+      return(sprintf("<b>%s</b><br/><b>rows:</b> 0 (%d missing)",
+                     esc_reg[i], length(x)))
+    miss <- length(x) - length(xs)
+    sd_c <- if (length(xs) > 1) map_num_chr(stats::sd(xs)) else SYM_MDASH
+    paste0("<b>", esc_reg[i], "</b><br/>",
+      "<b>", agg_lab, " ", esc_val, ":</b> ", map_num_chr(vals[[i]]), "<br/>",
+      "<b>rows:</b> ", length(xs),
+      # bare `if (miss) sprintf(...)` without else would be character(0) and
+      # collapse this whole paste0 element to "" -- the else "" is load-bearing
+      if (miss) sprintf(" (%d missing)", miss) else "", "<br/>",
+      "<b>mean:</b> ",   map_num_chr(mean(xs)),          "<br/>",
+      "<b>median:</b> ", map_num_chr(stats::median(xs)), "<br/>",
+      "<b>sd:</b> ",     sd_c,                           "<br/>",
+      "<b>min:</b> ",    map_num_chr(min(xs)),
+      " \u00b7 <b>max:</b> ", map_num_chr(max(xs)))
+  }, character(1)), names(vals))
+  list(vals = vals, label = label, popup = popup)
+}
+
+# Hover tooltips for the choropleth. leaflet's addGeoJSON auto-binds
+# feature.properties.popup (click) but has NO label equivalent, so this hook
+# binds feature.properties.fox_label as a tooltip after render. Every access
+# is guarded so a feature without the property -- or a non-path layer without
+# bindTooltip (tiles, controls) -- is skipped, and a headless webshot render
+# can never throw.
+CHORO_TOOLTIP_JS <- paste0(
+  "function(el, x) {",
+  " var map = this;",
+  " map.eachLayer(function(l) {",
+  "  var p = l.feature && l.feature.properties;",
+  "  if (p && p.fox_label && l.bindTooltip)",
+  "   l.bindTooltip(String(p.fox_label), {sticky: true});",
+  " });",
+  "}")
+
 #' Build a choropleth (shaded regions) from uploaded GeoJSON joined to the data.
 #'
 #' p needs: geojson (text/list), region_key (data column), region_prop (GeoJSON
 #' property matching region_key), region_value (numeric column to shade),
-#' region_agg ("mean"/"sum"/"median", default mean). Optional: palette,
-#' color_scale, basemap, legend, title, scalebar, view/view_bounds. The map's
-#' match diagnostics are attached as attr(., "choro_diag").
+#' region_agg ("mean"/"sum"/"median", default mean). Optional: region_info
+#' (default TRUE -- per-region hover labels + click popups with the matching
+#' rows' stats), palette, color_scale, basemap, legend, title, scalebar,
+#' view/view_bounds. The map's match diagnostics are attached as
+#' attr(., "choro_diag").
 #' @noRd
 build_choropleth <- function(df, p) {
   gj <- parse_geojson(p$geojson)
@@ -805,12 +883,9 @@ build_choropleth <- function(df, p) {
   if (!is.data.frame(df) || !all(c(key, val) %in% names(df))) return(NULL)
   if (!is.numeric(df[[val]])) return(NULL)
 
-  fn <- switch(p$region_agg %||% "mean",
-               sum = function(x) sum(x, na.rm = TRUE),
-               median = function(x) stats::median(x, na.rm = TRUE),
-               function(x) mean(x, na.rm = TRUE))
-  vals_by <- tapply(df[[val]], as.character(df[[key]]), fn)
-  vals_by <- vals_by[is.finite(vals_by)]
+  info <- choro_region_info(df, key, val, p$region_agg %||% "mean",
+                            stats = isTRUE(p$region_info %||% TRUE))
+  vals_by <- info$vals
   if (!length(vals_by)) return(NULL)
 
   cp <- choro_palette(as.numeric(vals_by), p$palette %||% "auto",
@@ -832,6 +907,22 @@ build_choropleth <- function(df, p) {
     gj$features[[i]]$properties$style <- list(
       fillColor = col, weight = 1, color = "#ffffff",
       fillOpacity = if (is.finite(v)) (p$alpha %||% 0.75) else 0.35, opacity = 1)
+    # Popups only for MATCHED features, so the serialization cost scales with
+    # the user's data, not the boundary file. Unmatched regions get a cheap
+    # name-only hover, and any stale `popup` property an uploaded file carried
+    # is scrubbed so file popups and ours never mix. With region_info off,
+    # info$popup is NULL and nothing is touched -- today's path, byte-identical.
+    if (!is.null(info$popup)) {
+      if (is.finite(v)) {
+        gj$features[[i]]$properties$popup     <- unname(info$popup[[rk]])
+        gj$features[[i]]$properties$fox_label <- unname(info$label[[rk]])
+      } else {
+        gj$features[[i]]$properties$popup <- NULL
+        if (nzchar(rk))
+          gj$features[[i]]$properties$fox_label <-
+            paste0(htmltools::htmlEscape(rk), " (no data)")
+      }
+    }
   }
 
   m <- leaflet::leaflet()
@@ -850,6 +941,12 @@ build_choropleth <- function(df, p) {
     m <- leaflet::addControl(m, position = "topright", html = sprintf(
       "<div style='font-weight:600; font-size:1.1em; padding:2px 6px;'>%s</div>",
       htmltools::htmlEscape(ttl)))
+
+  # info$popup is NULL both when region_info is off AND when the stats came
+  # back empty -- either way there is no fox_label anywhere, so skip the hook
+  # rather than pay an eachLayer pass that can bind nothing.
+  if (isTRUE(p$region_info %||% TRUE) && !is.null(info$popup))
+    m <- htmlwidgets::onRender(m, CHORO_TOOLTIP_JS)
 
   vb <- p$view_bounds
   if (!is.null(vb) && all(c("north", "south", "east", "west") %in% names(vb))) {
@@ -1105,6 +1202,11 @@ generate_choropleth_code <- function(p, df = NULL) {
   val  <- map_col(p$region_value)
   agg  <- p$region_agg %||% "mean"
   if (is.null(key) || is.null(val)) return("# Choose the join key and value.")
+  # Region stats (hover label + click popup) are emitted only when the builder
+  # draws them -- same default, same aggregate label, same fox_label property.
+  region_info <- isTRUE(p$region_info %||% TRUE)
+  agg_lab <- switch(agg, sum = "total", median = "median", "mean")
+  esc_val <- htmltools::htmlEscape(val)
 
   # Decide the palette exactly as the builder will, using the real values.
   cols  <- map_palette_colors(p$palette %||% "auto", TRUE, MAP_CHORO_BINS)
@@ -1136,7 +1238,10 @@ generate_choropleth_code <- function(p, df = NULL) {
     if (isTRUE(p$legend %||% TRUE) && !identical(scale, "constant")) sprintf(
       'addLegend(position = "bottomright", pal = pal, values = vals[is.finite(vals)], title = %s)',
       qq(val)),
-    if (isTRUE(p$scalebar %||% TRUE)) 'addScaleBar(position = "bottomleft")')
+    if (isTRUE(p$scalebar %||% TRUE)) 'addScaleBar(position = "bottomleft")',
+    # The tooltip hook is the SAME string the builder uses (CHORO_TOOLTIP_JS,
+    # embedded here as a literal), so the script and the app cannot drift.
+    if (region_info) sprintf("htmlwidgets::onRender(%s)", qq(CHORO_TOOLTIP_JS)))
   pipe_txt <- paste0(pipe[1], " |>\n  ",
                      paste(pipe[-1], collapse = " |>\n  "))
 
@@ -1165,12 +1270,26 @@ generate_choropleth_code <- function(p, df = NULL) {
   paste(c(
     "library(leaflet)",
     "library(jsonlite)",
+    if (region_info) "library(htmlwidgets)",
     "",
     geo_lines,
     "",
     sprintf("# %s of %s within each %s", agg, bq(val), bq(key)),
     sprintf("vals <- tapply(df$%s, as.character(df$%s), %s, na.rm = TRUE)",
             bq(val), bq(key), agg),
+    if (region_info) c(
+      "",
+      "# Hover label + click popup (rows / mean / median / sd / min / max) per region",
+      'fmtn <- function(v) format(round(v, 3), trim = TRUE, big.mark = ",")',
+      sprintf("grp  <- split(df$%s, as.character(df$%s))", bq(val), bq(key)),
+      "pops <- vapply(names(grp), function(k) {",
+      "  xs <- grp[[k]][!is.na(grp[[k]])]",
+      sprintf('  paste0("<b>", htmltools::htmlEscape(k), "</b><br/><b>%s %s:</b> ", fmtn(vals[[k]]),',
+              agg_lab, esc_val),
+      '         "<br/><b>rows:</b> ", length(xs), "<br/><b>mean:</b> ", fmtn(mean(xs)),',
+      '         "<br/><b>median:</b> ", fmtn(median(xs)), "<br/><b>sd:</b> ", fmtn(sd(xs)),',
+      '         "<br/><b>min:</b> ", fmtn(min(xs)), " - <b>max:</b> ", fmtn(max(xs)))',
+      "}, character(1))"),
     pal_line,
     "",
     "# Colour each region by writing its style into the feature properties",
@@ -1182,6 +1301,17 @@ generate_choropleth_code <- function(p, df = NULL) {
     '    fillColor = if (is.finite(v)) pal(v) else "#dddddd",',
     '    weight = 1, color = "#ffffff",',
     "    fillOpacity = if (is.finite(v)) 0.75 else 0.35)",
+    if (region_info) c(
+      "  # stats popup for matched regions; a name-only hover for the rest",
+      "  if (is.finite(v)) {",
+      "    gj$features[[i]]$properties$popup     <- pops[[k]]",
+      sprintf('    gj$features[[i]]$properties$fox_label <- paste0(htmltools::htmlEscape(k), " - %s %s: ", fmtn(v))',
+              agg_lab, esc_val),
+      "  } else {",
+      "    gj$features[[i]]$properties$popup <- NULL   # scrub any popup the file carried",
+      "    if (!is.null(k) && nzchar(k))",
+      '      gj$features[[i]]$properties$fox_label <- paste0(htmltools::htmlEscape(k), " (no data)")',
+      "  }"),
     "}",
     "",
     pipe_txt),

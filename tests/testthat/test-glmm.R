@@ -35,8 +35,15 @@ test_that("glmm_domain_check flags out-of-range responses", {
   expect_match(glmm_domain_check(c(1, 2.5), "poisson_log"), "valid range")
   expect_null(glmm_domain_check(c(0, 1, 2), "nbinom2_log"))
   expect_match(glmm_domain_check(c(-0.1, 3), "tweedie_log"), "valid range")
-  expect_match(glmm_domain_check(c(0, 0.5), "beta_logit"), "valid range")
+  # Beta with data INSIDE [0,1] but touching a boundary: the one ambiguous
+  # case gets a targeted message naming the family that accepts boundaries
+  # (glmmTMB's own error, "y values must be 0 < y < 1", is not actionable).
+  expect_match(glmm_domain_check(c(0, 0.5), "beta_logit"), "Ordered beta")
+  expect_match(glmm_domain_check(c(-0.1, 0.5), "beta_logit"), "valid range")
   expect_null(glmm_domain_check(c(0.001, 0.999), "beta_logit"))
+  expect_null(glmm_domain_check(c(0, 0.5, 1), "ordbeta_logit"))
+  expect_match(glmm_domain_check(c(-0.2, 0.5), "ordbeta_logit"), "valid range")
+  expect_match(glmm_domain_check(c(0.5, 1.4), "ordbeta_logit"), "valid range")
   expect_match(glmm_domain_check(c(0, 1, 2), "binary"), "0 and 1")
   expect_null(glmm_domain_check(c(0, 1, NA), "binary"))
   expect_null(glmm_domain_check(letters, "Gamma_log"))   # non-numeric: NULL
@@ -77,14 +84,24 @@ test_that("glmm_formula_string handles fixed/random/interactions/slope", {
 test_that("make_glmm_example_data is seeded, well-shaped, and in-domain", {
   d <- make_glmm_example_data()
   expect_equal(nrow(d), 144L)                     # 8 sites x 3 trt x 2 seasons x 3 reps
+  # Column ORDER is pinned deliberately: the 0.11.0 columns are appended
+  # after `present`, so every pre-existing column stays bit-identical (an
+  # insertion mid-generator would shift the RNG stream and silently rewrite
+  # them -- the v0.5.0 lesson).
   expect_named(d, c("Site", "Treatment", "Season", "insect_count",
-                    "seedling_count", "cover_prop", "present"))
+                    "seedling_count", "cover_prop", "present",
+                    "cover_prop_ord", "trials", "successes"))
   expect_s3_class(d$Site, "factor")
   expect_true(all(d$insect_count >= 0 & d$insect_count == round(d$insect_count)))
   expect_true(all(d$seedling_count >= 0))
   expect_gt(mean(d$seedling_count == 0), 0.05)    # genuinely zero-heavy
   expect_true(all(d$cover_prop > 0 & d$cover_prop < 1))
   expect_true(all(d$present %in% c(0, 1)))
+  expect_true(all(d$cover_prop_ord >= 0 & d$cover_prop_ord <= 1))
+  expect_true(any(d$cover_prop_ord == 0))   # the whole point of ordbeta:
+  expect_true(any(d$cover_prop_ord == 1))   # boundaries actually occur
+  expect_true(all(d$trials > 0 & d$trials == round(d$trials)))
+  expect_true(all(d$successes >= 0 & d$successes <= d$trials))
   expect_identical(d, make_glmm_example_data())   # seeded -> reproducible
 })
 
@@ -458,4 +475,187 @@ test_that("glmm_report_payload summarises a fit for the report", {
   expect_equal(plb$title, "GLMM: binary (0/1) outcome")
   expect_false("dispformula" %in% names(plb$formulas))
   expect_null(glmm_report_payload(list(ok = FALSE)))
+})
+
+# ---- grouped binomial (0.11.0, contributed by Laina Edwards) ---------------
+
+test_that("glmm_count_cols finds non-negative whole-number columns", {
+  d <- data.frame(a = c(0, 3, 12), b = c(1.5, 2, 3), c = c(-1, 2, 3),
+                  d = letters[1:3], e = c(2L, NA, 5L))
+  expect_setequal(glmm_count_cols(d), c("a", "e"))
+  expect_equal(glmm_count_cols(data.frame()), character(0))
+  expect_true(all(c("trials", "successes", "present") %in%
+                    glmm_count_cols(make_glmm_example_data())))
+})
+
+test_that("glmm_trials_check accepts a valid pair and names every failure", {
+  d <- data.frame(s = c(0, 5, 10), n = c(4, 8, 12), bad = c(9, 1, 1),
+                  frac = c(0.5, 1, 2), chr = letters[1:3])
+  expect_null(glmm_trials_check(d, "s", "n"))
+  expect_match(glmm_trials_check(d, NULL, "n"), "both")
+  expect_match(glmm_trials_check(d, "s", ""), "both")
+  expect_match(glmm_trials_check(d, "n", "n"), "different")
+  expect_match(glmm_trials_check(d, "s", "nope"), "not found")
+  expect_match(glmm_trials_check(d, "s", "chr"), "numeric")
+  expect_match(glmm_trials_check(d, "frac", "n"), "whole")
+  expect_match(glmm_trials_check(d, "bad", "n"), "1 row")   # counts the rows
+  expect_match(glmm_trials_check(d, "n", "s"), "3 row")     # all three swapped
+  expect_match(glmm_trials_check(data.frame(s = c(0, 0), n = c(0, NA)),
+                                 "s", "n"), "nothing to model")
+})
+
+test_that("glmm_cbind_response and quote_response build a grouped LHS", {
+  expect_equal(glmm_cbind_response("succ", "tot"), "cbind(succ, tot - succ)")
+  expect_equal(glmm_cbind_response("my s", "my t"),
+               "cbind(`my s`, `my t` - `my s`)")
+  f <- glmm_formula_string(glmm_cbind_response("my s", "my t"), "A", "G",
+                           quote_response = FALSE)
+  expect_equal(f, "cbind(`my s`, `my t` - `my s`) ~ A + (1 | G)")
+  expect_silent(stats::as.formula(f))
+  # the default path is unchanged: a bare name is still backtick-quoted
+  expect_match(glmm_formula_string("my y", "A", "G"), "^`my y` ~")
+})
+
+test_that("glmm_fit grouped binomial matches a direct cbind glmmTMB call", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  fit <- glmm_fit(d, list(binary = TRUE, resp_mode = "grouped",
+                          successes = "successes", trials = "trials",
+                          fixed = "Treatment", random = "Site",
+                          link = "logit"))
+  expect_true(fit$ok)
+  expect_false(fit$bernoulli)                       # grouped != Bernoulli
+  expect_equal(fit$resp_mode, "grouped")
+  expect_equal(fit$resp_vars, c("successes", "trials"))
+  expect_match(fit$fml_str, "cbind\\(")
+  expect_true(any(grepl("failures are computed", fit$notes)))
+  expect_true(any(grepl("betabinomial", fit$notes)))
+  ref <- suppressWarnings(glmmTMB::glmmTMB(
+    cbind(successes, trials - successes) ~ Treatment + (1 | Site),
+    family = stats::binomial(link = "logit"), data = d))
+  expect_equal(stats::AIC(fit$mod), stats::AIC(ref), tolerance = 1e-6)
+  expect_equal(unname(glmmTMB::fixef(fit$mod)$cond),
+               unname(glmmTMB::fixef(ref)$cond), tolerance = 1e-6)
+  expect_equal(stats::nobs(fit$mod), nrow(d))       # rows, not total trials
+})
+
+test_that("glmm_fit rejects an impossible successes/trials pair", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  bad <- glmm_fit(d, list(binary = TRUE, resp_mode = "grouped",
+                          successes = "trials", trials = "successes",
+                          fixed = "Treatment", random = "Site"))
+  expect_false(bad$ok)
+  expect_match(bad$error, "negative failures")
+  none <- glmm_fit(d, list(binary = TRUE, resp_mode = "grouped",
+                           fixed = "Treatment"))
+  expect_false(none$ok)
+  expect_match(none$error, "both")
+  # a grouped fit needs NO single response column, so the single-response
+  # guard must not fire (the glmm_fit guard restructure)
+  expect_true(glmm_fit(d, list(binary = TRUE, resp_mode = "grouped",
+                               successes = "successes", trials = "trials",
+                               fixed = "Treatment"))$ok)
+})
+
+test_that("grouped binomial EMMeans come back as probabilities", {
+  skip_if_not_installed("glmmTMB"); skip_if_not_installed("emmeans")
+  skip_if_not_installed("multcomp"); skip_if_not_installed("multcompView")
+  d <- make_glmm_example_data()
+  # An NA in the successes column: the model drops that row (na.omit), and
+  # the EMMeans cell counts must drop it too. This is what fit$resp_vars is
+  # FOR -- in grouped mode fit$response is a display label, not a column, so
+  # complete.cases built from it would silently keep the dropped row.
+  d$successes[1] <- NA
+  fit <- glmm_fit(d, list(binary = TRUE, resp_mode = "grouped",
+                          successes = "successes", trials = "trials",
+                          fixed = "Treatment", random = "Site"))
+  expect_equal(stats::nobs(fit$mod), nrow(d) - 1L)
+  em <- glmm_emmeans(fit, "Treatment")
+  expect_true(em$ok)
+  expect_true("prob" %in% names(em$cld))
+  expect_true(all(em$emm_df$prob > 0 & em$emm_df$prob < 1))
+  expect_equal(sum(em$counts$n), nrow(d) - 1L)  # counts exclude the NA row
+  expect_s3_class(lmer_emm_plot(em, fit$response, "none"), "ggplot")
+})
+
+test_that("grouped binomial code reproduces the cbind and keeps the zi test", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  fit <- glmm_fit(d, list(binary = TRUE, resp_mode = "grouped",
+                          successes = "successes", trials = "trials",
+                          fixed = "Treatment", random = "Site",
+                          link = "logit"))
+  code <- glmm_code(fit)
+  expect_match(code, "cbind\\(successes, trials - successes\\)")
+  expect_match(code, "binomial\\(link = \"logit\"\\)")
+  expect_match(code, "testZeroInflation")        # grouped != Bernoulli
+  expect_silent(parse(text = code))
+  # individual 0/1 still drops it
+  b <- glmm_fit(d, list(response = "present", fixed = "Treatment",
+                        random = "Site", binary = TRUE, link = "logit"))
+  expect_true(b$bernoulli)
+  expect_false(grepl("testZeroInflation", glmm_code(b)))
+})
+
+# ---- ordered beta (0.11.0, contributed by Laina Edwards) -------------------
+
+test_that("glmm_family and glmm_family_code know the ordered beta family", {
+  skip_if_not_installed("glmmTMB")
+  expect_equal(glmm_family("ordbeta_logit")$family, "ordbeta")
+  expect_equal(glmm_family("ordbeta_logit")$link, "logit")
+  expect_match(glmm_family_code("ordbeta_logit"), "ordbeta\\(link = ")
+})
+
+test_that("glmm_fit fits the ordered beta family on boundary data", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  # the demo column really does hit both boundaries (see the generator test)
+  fit <- glmm_fit(d, list(response = "cover_prop_ord", fixed = "Treatment",
+                          random = "Site", family_key = "ordbeta_logit"))
+  expect_true(fit$ok)
+  ref <- suppressWarnings(glmmTMB::glmmTMB(
+    cover_prop_ord ~ Treatment + (1 | Site),
+    family = glmmTMB::ordbeta(link = "logit"), data = d))
+  expect_equal(stats::AIC(fit$mod), stats::AIC(ref), tolerance = 1e-6)
+  expect_match(glmm_code(fit), "ordbeta\\(link = \"logit\"\\)")
+  # and standard Beta genuinely cannot: the engine surfaces glmmTMB's refusal
+  # (the pre-fit note already named Ordered beta -- asserted in the domain
+  # tests above)
+  bad <- glmm_fit(d, list(response = "cover_prop_ord", fixed = "Treatment",
+                          random = "Site", family_key = "beta_logit"))
+  expect_false(bad$ok)
+  expect_match(bad$error, "Model failed to fit")
+})
+
+test_that("glmmServer grouped mode fits without any 0/1 column present", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()[c("Site", "Treatment", "trials", "successes")]
+  shiny::testServer(glmmServer, args = list(data_in = shiny::reactive(d),
+                                            binary = TRUE), {
+    session$setInputs(resp_type = "grouped", success = "successes",
+                      trials = "trials", link = "logit",
+                      fixed = "Treatment", random = "Site",
+                      interactions = FALSE, zi_on = FALSE,
+                      adjust = "tukey", conf = 0.95, emm_by = "", run = 1)
+    expect_true(rv$fit$ok)
+    expect_equal(rv$fit$resp_mode, "grouped")
+    expect_match(rv$fit$fml_str, "cbind\\(")
+    expect_false(rv$fit$bernoulli)
+  })
+})
+
+test_that("glmmServer surfaces an impossible successes/trials pair as error", {
+  skip_if_not_installed("glmmTMB")
+  d <- make_glmm_example_data()
+  shiny::testServer(glmmServer, args = list(data_in = shiny::reactive(d),
+                                            binary = TRUE), {
+    session$setInputs(resp_type = "grouped", success = "trials",
+                      trials = "successes", link = "logit",
+                      fixed = "Treatment", random = "Site",
+                      interactions = FALSE, zi_on = FALSE, run = 1)
+    expect_null(rv$fit)
+    expect_equal(rv$message$type, "error")
+    expect_match(paste(rv$message$text, collapse = " "), "negative failures")
+  })
 })

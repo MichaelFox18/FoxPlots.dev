@@ -47,7 +47,8 @@ combineUI <- function(id) {
             tagList("Join by (key columns)", info_tip(
               "Columns present in both tables, used to match rows.")),
             choices = NULL, multiple = TRUE,
-            options = list(placeholder = "shared column(s)"))),
+            options = list(placeholder = "shared column(s)")),
+          uiOutput(ns("join_hint"))),
         helpText("Adds the right table's columns to the left, matching rows by ",
                  "the chosen key(s).")
       ),
@@ -60,6 +61,7 @@ combineUI <- function(id) {
             "matched values are then updated.")),
           choices = NULL, multiple = TRUE,
           options = list(placeholder = "shared column(s)")),
+        uiOutput(ns("update_hint")),
         radioButtons(ns("update_mode"), "How to update",
           choices = c("Overwrite matching values" = "overwrite",
                       "Only fill blanks (NA)"      = "fill")),
@@ -94,6 +96,29 @@ combineServer <- function(id, left, right) {
       if (!is.data.frame(l) || !is.data.frame(r)) return(character(0))
       intersect(names(l), names(r))
     })
+
+    # "Country" vs "country" leaves the key pickers empty with no explanation
+    # -- flag near-miss names and point at Import's Rename card. Shown
+    # whenever near-matches exist, not only when shared() is empty.
+    near <- reactive({
+      l <- left(); r <- right()
+      if (!is.data.frame(l) || !is.data.frame(r)) return(NULL)
+      nm <- near_match_columns(names(l), names(r))
+      if (nrow(nm)) nm else NULL
+    })
+    key_hint <- function() {
+      nm <- near()
+      if (is.null(nm)) return(NULL)
+      pairs <- sprintf("\u201c%s\u201d / \u201c%s\u201d", nm$left, nm$right)
+      div(class = "alert alert-warning py-2 px-3 mt-1 small",
+          icon("triangle-exclamation"), " ",
+          sprintf(paste0("%s differ only by case or spacing, so they can't ",
+                         "be used as a key \u2014 rename one on its Import ",
+                         "tab (Rename columns) to make them match."),
+                  paste(pairs, collapse = ", ")))
+    }
+    output$join_hint   <- renderUI(key_hint())
+    output$update_hint <- renderUI(key_hint())
 
     observeEvent(shared(), {
       sh <- shared()

@@ -112,3 +112,21 @@ compare_tables <- function(left, right) {
                stringsAsFactors = FALSE)
   }))
 }
+
+# near_match_columns -- flag column names that ALMOST match across tables.
+# Pairs like "Country" / "country" differ only by case or whitespace --
+# almost certainly an intended join key -- so the combine UI can explain an
+# empty key picker instead of leaving it silently blank. Exact shared names
+# are excluded first; matching is case/whitespace only, NO fuzzy/edit-distance
+# matching. Returns a zero-row data frame when there is nothing to flag.
+# Internal (not exported).
+near_match_columns <- function(left_names, right_names) {
+  stopifnot(is.character(left_names), is.character(right_names))
+  shared <- intersect(left_names, right_names)
+  l <- setdiff(left_names, shared)
+  r <- setdiff(right_names, shared)
+  norm <- function(x) tolower(trimws(x))
+  hit  <- match(norm(l), norm(r))
+  keep <- !is.na(hit)
+  data.frame(left = l[keep], right = r[hit[keep]], stringsAsFactors = FALSE)
+}

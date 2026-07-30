@@ -28,6 +28,56 @@ BAR_MAX    <- 30   # bars beyond this are grouped into "Other"
 # scale and stay fast at any cardinality.
 GROUP_MAX  <- 50
 
+# Distinct x values beyond this BLOCK the charts that draw one glyph per value
+# (box / violin / mean-error for any x; bar for a numeric x, which lump_bar_x
+# never lumps). Two failure modes, measured on 10,000 rows: a 1,500-level
+# violin costs 22.4s to build plus 40.2s in ggplotly -- a one-minute freeze of
+# the single-threaded app -- and even the fast cases are meaningless: 1,500
+# boxes in a ~700px pane is under half a pixel per box, with axis labels
+# already thinned to 12. At 100 levels everything renders in under half a
+# second and each glyph still gets ~7px. Legitimate use stays clear of it:
+# Compare Groups offers only groupable_cols() columns (<= 30 levels), and
+# 100 = 2x GROUP_MAX, the measured colour-cap precedent. Enforced early in
+# build_full_plot() via plot_block_reason(); chart_hint() explains the block
+# and generate_code() refuses to emit the pathological snippet.
+X_LEVELS_MAX <- 100L
+
+# Discrete x-axis tick labels beyond this are thinned to an evenly spaced
+# subset. ggplot draws ONE tick label per level, so 300 categories (or 300
+# dates that arrived as text) smear into an unreadable grey band. Only the
+# LABELS are thinned -- every bar, point and line segment is still drawn.
+#
+# Continuous and true Date/POSIXct axes are deliberately NOT thinned: ggplot's
+# own defaults already pick ~5-7 pretty breaks there (measured: 2,000 numerics
+# -> 5 labels; 501 daily Dates -> 5). Touching them would be fighting a scale
+# that is already right.
+#
+# 12 upright labels fit the plot pane. A FLIPPED chart stacks its labels
+# vertically, where far more fit -- and "Horizontal orientation" is the control
+# users reach for BECAUSE they have many long category names, so thinning a
+# flipped chart at 12 would take away the thing they asked for.
+AXIS_LABEL_MAX      <- 12L
+AXIS_LABEL_MAX_FLIP <- 30L
+
+# Steps a date axis may use, with the label format that suits each. The format
+# never implies more precision than the step: a yearly step is labelled "2024",
+# a monthly one "Jan 2024". Sub-day rungs are offered only for POSIXct.
+DATE_BREAK_LADDER <- list(
+  list(days = 1 / 24,   step = "1 hour",   fmt = "%H:%M"),
+  list(days = 1 / 4,    step = "6 hours",  fmt = "%b %d %H:%M"),
+  list(days = 1 / 2,    step = "12 hours", fmt = "%b %d %H:%M"),
+  list(days = 1,        step = "1 day",    fmt = "%b %d"),
+  list(days = 2,        step = "2 days",   fmt = "%b %d"),
+  list(days = 7,        step = "1 week",   fmt = "%b %d"),
+  list(days = 14,       step = "2 weeks",  fmt = "%b %d"),
+  list(days = 30.44,    step = "1 month",  fmt = "%b %Y"),
+  list(days = 91.31,    step = "3 months", fmt = "%b %Y"),
+  list(days = 182.62,   step = "6 months", fmt = "%b %Y"),
+  list(days = 365.25,   step = "1 year",   fmt = "%Y"),
+  list(days = 730.5,    step = "2 years",  fmt = "%Y"),
+  list(days = 1826.25,  step = "5 years",  fmt = "%Y"),
+  list(days = 3652.5,   step = "10 years", fmt = "%Y"))
+
 # Maps the 0.5-5 size slider onto a sensible 0.2-0.9 bar width.
 bar_width <- function(size) 0.2 + (size - 0.5) / 4.5 * 0.7
 
@@ -49,6 +99,27 @@ theme_call <- function(name, base_size = 13) {
 is_discrete_col <- function(x) is.character(x) || is.factor(x) || is.logical(x)
 is_date_col     <- function(x) inherits(x, c("Date", "POSIXct", "POSIXt"))
 
+# TRUE when a character/factor column is really ISO dates stored as TEXT. That
+# is the usual root cause of a smeared x axis: nothing converts dates on import
+# (helpers_io.R reads stringsAsFactors = FALSE), the Data Health "dates" fix is
+# opt-in (clean_specs()$dates, default FALSE), so "2024-01-15" arrives as
+# character and every distinct string becomes its own axis category. Cheap by
+# design: dates_from_text() parses the WHOLE column, so screen with a regex on
+# a 200-value sample first and only confirm on that sample -- this runs on
+# every hint re-render. Confirming via dates_from_text() keeps this predicate
+# in step with the Data Health detector and convert_column(x, "date"), so the
+# hint never promises a conversion the Import tab then refuses.
+looks_like_text_date <- function(x) {
+  if (!(is.character(x) || is.factor(x))) return(FALSE)
+  v <- as.character(x)
+  v <- v[!is.na(v) & nzchar(trimws(v))]
+  if (!length(v)) return(FALSE)
+  s <- if (length(v) > 200L)
+    v[unique(round(seq(1L, length(v), length.out = 200L)))] else v
+  if (mean(grepl("^\\s*\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}", s)) < 0.9) return(FALSE)
+  !is.null(dates_from_text(s))
+}
+
 # A discrete x-axis with many or long labels gets its ticks angled so they stay
 # legible instead of overlapping into mush.
 needs_x_rotation <- function(df, pt, xv) {
@@ -57,6 +128,126 @@ needs_x_rotation <- function(df, pt, xv) {
   if (!(pt %in% c("bar", "boxplot") || is_discrete_col(x))) return(FALSE)
   uvals <- unique(as.character(x))
   length(uvals) > 8 || max(nchar(uvals), 0L) > 10
+}
+
+# --- X-axis tick labels ------------------------------------------------------
+
+# The levels a discrete x axis will actually draw, in the order ggplot draws
+# them: a factor's (used) levels, or sorted unique values for character /
+# logical. Matches ggplot's own discrete limits, so "an evenly spaced subset of
+# these" really is evenly spaced on screen.
+x_levels <- function(v) {
+  if (is.factor(v)) return(levels(droplevels(v)))
+  sort(unique(as.character(v[!is.na(v)])))
+}
+
+# An evenly spaced subset of about `target` levels, ALWAYS including the first
+# and the last so the axis still says where the data starts and ends.
+# seq(length.out =) (rather than "every Nth") guarantees both ends and never
+# leaves two kept labels crammed side by side at the tail.
+thin_levels <- function(lv, target) {
+  n <- length(lv)
+  if (n <= target) return(lv)
+  lv[unique(round(seq(1L, n, length.out = target)))]
+}
+
+# Smallest DATE_BREAK_LADDER rung whose step is at least span/target, so the
+# axis never draws MORE labels than asked for (overshoot is the bug being
+# fixed).
+date_rung <- function(span_days, target, allow_subday = FALSE) {
+  lad <- if (allow_subday) DATE_BREAK_LADDER
+         else Filter(function(r) r$days >= 1, DATE_BREAK_LADDER)
+  if (!is.finite(span_days) || span_days <= 0) return(lad[[1]])
+  need <- span_days / max(target, 2L)
+  for (r in lad) if (r$days >= need) return(r)
+  lad[[length(lad)]]
+}
+
+# Decide what the x axis's tick labels should be. PURE, and the single source
+# of truth: build_full_plot() turns the spec into a scale (x_axis_scale) and
+# generate_code() turns the SAME spec into a string (x_axis_code), so the chart
+# and the emitted snippet cannot drift.
+#
+#   v            the PLOTTED x vector -- after lump_bar_x() and after the
+#                boxplot/violin/meanerror as.factor() coercion. Type matters:
+#                a discrete scale on a continuous axis silently draws NO labels
+#                and a date scale on a discrete axis errors (both verified).
+#   flip         isTRUE(p$flip); raises the discrete cap and suppresses angling.
+#   want         NULL/""/"auto" = thin only a crowded DISCRETE axis;
+#                "all" = never thin; "6".."30" = aim for about that many labels
+#                on ANY axis kind.
+#   date_format  NULL/"auto" = let the ladder choose; a strftime string = use
+#                it (only meaningful for a real Date/POSIXct x).
+#
+# Returns NULL when no scale should be added at all (the common case).
+x_break_spec <- function(v, flip = FALSE, want = NULL, date_format = NULL) {
+  if (is.null(v) || !length(v)) return(NULL)
+  want <- if (is.null(want) || !nzchar(want)) "auto" else want
+  dfmt <- if (is.null(date_format) || !nzchar(date_format)) "auto"
+          else date_format
+  n_want <- suppressWarnings(as.integer(want))   # NA for "auto" / "all"
+  if (!is.na(n_want)) n_want <- max(2L, n_want)
+
+  if (is_date_col(v)) {
+    dt <- inherits(v, "POSIXt")                  # Date does not inherit POSIXt
+    # ggplot's own date breaks are already good (501 daily dates -> 5 pretty
+    # labels), so on full auto we add nothing and let it do its job.
+    if (identical(dfmt, "auto") && is.na(n_want)) return(NULL)
+    step <- NULL
+    fmt  <- if (identical(dfmt, "auto")) NULL else dfmt
+    if (!is.na(n_want)) {
+      rng <- suppressWarnings(range(as.numeric(v), na.rm = TRUE))
+      if (all(is.finite(rng))) {
+        span <- (rng[2] - rng[1]) / (if (dt) 86400 else 1)   # in days
+        r    <- date_rung(span, n_want, allow_subday = dt)
+        step <- r$step
+        if (is.null(fmt)) fmt <- r$fmt
+      }
+    }
+    if (is.null(step) && is.null(fmt)) return(NULL)
+    # A hand-picked long format ("2024-01-15" = 10 chars) overlaps where the
+    # ladder's own choices ("Jan 2024" = 8) do not, so angle those. Carried in
+    # the spec so the emitted code angles them too, for free. Never when
+    # flipped -- the labels are stacked vertically there.
+    ex  <- v[which(!is.na(v))[1]]
+    ang <- if (!isTRUE(flip) && !identical(dfmt, "auto") &&
+               length(ex) == 1L && !is.na(ex) &&
+               nchar(format(ex, fmt)) > 8) 40L else 0L
+    return(list(kind = if (dt) "datetime" else "date",
+                date_breaks = step, date_labels = fmt, angle = ang))
+  }
+
+  if (is.numeric(v)) {
+    # Same story: 2,000 numerics get 5 pretty breaks by default. Manual only.
+    if (is.na(n_want)) return(NULL)
+    return(list(kind = "continuous", n_breaks = n_want, angle = 0L))
+  }
+
+  # Discrete: character / factor / logical -- INCLUDING dates stored as text,
+  # which is the case this whole block exists for. An NA level (ggplot draws
+  # one, na.translate = TRUE) is never in `breaks`, so it renders unlabelled --
+  # desirable: an unlabelled gap beats "NA" eating one of 12 label slots.
+  if (identical(want, "all")) return(NULL)
+  lv     <- x_levels(v)
+  target <- if (!is.na(n_want)) n_want
+            else if (isTRUE(flip)) AXIS_LABEL_MAX_FLIP else AXIS_LABEL_MAX
+  if (length(lv) <= target) return(NULL)
+  list(kind = "discrete", breaks = thin_levels(lv, target), angle = 0L)
+}
+
+# The ggplot scale for a spec (NULL for NULL). Mirrors x_axis_code() exactly.
+x_axis_scale <- function(spec) {
+  if (is.null(spec)) return(NULL)
+  g  <- if (isTRUE(spec$angle > 0)) guide_axis(angle = spec$angle) else waiver()
+  da <- list()
+  if (!is.null(spec$date_breaks)) da$date_breaks <- spec$date_breaks
+  if (!is.null(spec$date_labels)) da$date_labels <- spec$date_labels
+  switch(spec$kind,
+    discrete   = scale_x_discrete(breaks = spec$breaks, guide = g),
+    continuous = scale_x_continuous(n.breaks = spec$n_breaks, guide = g),
+    date       = do.call(scale_x_date,     c(da, list(guide = g))),
+    datetime   = do.call(scale_x_datetime, c(da, list(guide = g))),
+    NULL)
 }
 
 # Keep the top `n_keep` categories (by count, or by summed weight `w` when a Y
@@ -69,6 +260,43 @@ lump_bar_x <- function(df, xv, w, n_keep) {
   x[!x %in% keep] <- "Other"
   df[[xv]] <- factor(x, levels = unique(c(keep, "Other")))
   df
+}
+
+# The one condition that BLOCKS a chart outright (vs. the advisory hints in
+# chart_hint below): a per-value chart asked to draw more than X_LEVELS_MAX
+# glyphs. Returns NULL when the config is fine, else a plain-text explanation
+# ready for validate(need()) in the plot pane. build_full_plot() enforces it,
+# chart_hint() explains it in HTML, generate_code() refuses the snippet -- all
+# keyed on this ONE function so they cannot drift. Must tolerate the short
+# lists mod_compare passes (absent fields mean "not blocked"; its group
+# pickers offer only groupable_cols() columns, <= 30 levels).
+plot_block_reason <- function(df, p) {
+  pt <- p$type
+  if (is.null(df) || is.null(pt) || is.null(p$x) || !nzchar(p$x)) return(NULL)
+  if (!p$x %in% names(df)) return(NULL)
+  x <- df[[p$x]]
+  if (is_date_col(x)) return(NULL)   # a date axis picks ~5 pretty breaks
+  per_value <- pt %in% c("boxplot", "violin", "meanerror") ||
+               (identical(pt, "bar") && is.numeric(x))
+  if (!per_value) return(NULL)
+  n <- dplyr::n_distinct(x)          # na.rm = FALSE: NA draws its own glyph
+  if (n <= X_LEVELS_MAX) return(NULL)
+  if (identical(pt, "bar")) {
+    sprintf(paste0("%s has %s distinct values, so this bar chart would draw ",
+                   "%s hairline bars (limit %d). A histogram is the right ",
+                   "chart for a continuous X, or use Filter rows on the ",
+                   "Import tab to narrow the data first."),
+            p$x, format(n, big.mark = ","), format(n, big.mark = ","),
+            X_LEVELS_MAX)
+  } else {
+    what <- c(boxplot = "box plot", violin = "violin plot",
+              meanerror = "mean-error chart")[[pt]]
+    sprintf(paste0("%s has %s distinct values -- too many for a %s, which ",
+                   "draws one group per value (limit %d). Pick a categorical ",
+                   "X with fewer values, or use Filter rows on the Import ",
+                   "tab to narrow the data first."),
+            p$x, format(n, big.mark = ","), what, X_LEVELS_MAX)
+  }
 }
 
 # Returns an HTML warning when the chosen variable doesn't suit the chosen chart
@@ -92,6 +320,37 @@ chart_hint <- function(df, p) {
   x  <- df[[xv]]
   n_x    <- dplyr::n_distinct(x, na.rm = TRUE)
   cont_x <- is.numeric(x) && !is_date_col(x) && n_x > 10
+
+  # A date column that arrived as TEXT is the usual reason an x axis smears:
+  # nothing converts dates on import, so every distinct "2024-01-15" string
+  # becomes its own axis category. build_full_plot() now thins the labels so
+  # the chart stays readable, but that treats the symptom -- name the cause and
+  # the one-click cure, the way the GROUP_MAX hint below points at Filter rows.
+  # Deliberately not gated on the distinct count: the advice is correct at any
+  # size, and it must fire BEFORE the generic "categorical X" clause below,
+  # which would otherwise steer a date column toward a box plot.
+  if (pt %in% c("scatter", "line", "bar", "boxplot", "violin", "meanerror") &&
+      looks_like_text_date(x))
+    return(sprintf("<b>%s</b> looks like dates stored as <b>text</b>, so every date becomes its own category%s. Convert it on the Import tab under <b>Change variable types</b> &rarr; <i>Date (ISO yyyy-mm-dd)</i> and the chart will use a real time axis.",
+                   xv,
+                   if (n_x > AXIS_LABEL_MAX)
+                     sprintf(" (%s of them) and the axis labels crowd together",
+                             format(n_x, big.mark = ","))
+                   else ""))
+
+  # Past X_LEVELS_MAX the chart is BLOCKED, not just warned about --
+  # build_full_plot() returns NULL and the plot pane shows the same reason.
+  # Placed AFTER the text-date clause (that advice names the root cause and
+  # its cure, and a real Date axis is exempt from the cap, so converting
+  # un-blocks) and BEFORE the advisory continuous-x clauses it supersedes.
+  if (!is.null(plot_block_reason(df, p)))
+    return(sprintf("<b>%s</b> has %s distinct values &mdash; too many to draw (limit %d), so this chart is not rendered. %s",
+                   xv, format(dplyr::n_distinct(x), big.mark = ","),
+                   X_LEVELS_MAX,
+                   if (identical(pt, "bar"))
+                     "A <b>histogram</b> is the right chart for a continuous X, or use <b>Filter rows</b> on the Import tab to narrow the data first."
+                   else
+                     "Pick a <b>categorical</b> X with fewer values, or use <b>Filter rows</b> on the Import tab to narrow the data first."))
 
   if (pt %in% c("scatter", "line") && is_discrete_col(x))
     return(sprintf("<b>%s</b> is categorical. %s charts read best with a numeric or date X &mdash; a <b>box plot</b> or <b>bar chart</b> may show this better.",
@@ -310,15 +569,20 @@ build_means_letters_plot <- function(means, cld = NULL, ylab = NULL) {
 
 # --- Plot builder -----------------------------------------------------------
 # p is a plain list of settings:
-#   type, x, y, color, title, xlab, ylab, theme, color_hex, size, bins,
-#   bar_agg, cat_limit, reg_overlay, reg_type, reg_deg, reg_ci, reg_col,
-#   trend_label, palette, alpha, jitter, logscale, facet, legend_pos,
-#   gridlines, flip, corr_vars, corr_method, corr_label
+#   type, x, y, color, size_by, title, xlab, ylab, theme, color_hex, size,
+#   bins, bar_agg, bar_line, line_agg, err_type, cat_limit, reg_overlay,
+#   reg_type, reg_deg, reg_ci, reg_col, trend_label, palette, alpha, jitter,
+#   logscale, x_labels, x_date_format, facet, legend_pos, gridlines, flip,
+#   corr_vars, corr_method, corr_label
 build_full_plot <- function(df, p) {
   if (is.null(df) || is.null(p$type)) return(NULL)
   if (identical(p$type, "heatmap")) return(build_corr_heatmap(df, p))
   if (is.null(p$x) || !nzchar(p$x)) return(NULL)
   if (!p$x %in% names(df)) return(NULL)
+  # A pathological per-value config is blocked outright -- see X_LEVELS_MAX.
+  # NULL here means every caller (render, export, report, compare) skips the
+  # slot; mod_visualize shows the specific reason via plot_block_reason().
+  if (!is.null(plot_block_reason(df, p))) return(NULL)
 
   pt <- p$type
   xv <- p$x
@@ -651,16 +915,35 @@ build_full_plot <- function(df, p) {
   # Axis transform: "none", or <log|sqrt><x|y|both>. Applied only to continuous
   # axes (x only where x is numeric).
   ls <- p$logscale %||% "none"
+  x_transformed <- FALSE
   if (ls != "none") {
     is_sqrt <- startsWith(ls, "sqrt")
     axis    <- sub("^(log|sqrt)", "", ls)
     if (axis %in% c("x", "both") && is.numeric(df[[xv]]) &&
-        pt %in% c("scatter", "line", "histogram", "density", "hexbin"))
+        pt %in% c("scatter", "line", "histogram", "density", "hexbin")) {
       p_obj <- p_obj + (if (is_sqrt) scale_x_sqrt() else scale_x_log10())
+      x_transformed <- TRUE
+    }
     if (axis %in% c("y", "both") &&
         pt %in% c("scatter", "line", "bar", "histogram", "boxplot",
                   "violin", "meanerror", "hexbin"))
       p_obj <- p_obj + (if (is_sqrt) scale_y_sqrt() else scale_y_log10())
+  }
+
+  # X-axis tick labels. Reads df[[xv]] HERE, after the chart branches, so it
+  # sees the column the chart actually plots: lump_bar_x() reassigned df in the
+  # bar branch (last level "Other"), and boxplot/violin/meanerror coerced a
+  # numeric x with as.factor() in place. The line branch plots pdat, but its
+  # group_by/summarise preserves the exact distinct x set and type, so
+  # df[[xv]] decides identically there. Skipped when a log/sqrt transform
+  # already owns the x scale -- adding a second one prints "Scale for x is
+  # already present" and replaces it (x_transformed can only be TRUE for a
+  # numeric x, so a date or discrete spec is never suppressed by it).
+  if (!x_transformed) {
+    xs <- x_axis_scale(x_break_spec(df[[xv]], flip = isTRUE(p$flip),
+                                    want = p$x_labels,
+                                    date_format = p$x_date_format))
+    if (!is.null(xs)) p_obj <- p_obj + xs
   }
 
   faceted <- !is.null(facet_v)   # the >30-panel cap already applied up top
@@ -709,6 +992,31 @@ bq <- function(n) {
 }
 qq <- function(s) sprintf('"%s"', gsub('"', '\\\\"', s))
 
+# The code string for an x_break_spec(), mirroring x_axis_scale() line for
+# line. No scales:: anywhere -- scale_x_date/_datetime/_discrete/_continuous
+# and guide_axis are all ggplot2 exports, so assemble_code() needs no extra
+# library() line.
+x_axis_code <- function(spec) {
+  if (is.null(spec)) return(NULL)
+  g <- if (isTRUE(spec$angle > 0))
+    sprintf("guide = guide_axis(angle = %d)", spec$angle) else NULL
+  switch(spec$kind,
+    discrete = sprintf("scale_x_discrete(breaks = c(%s)%s)",
+                       paste(vapply(spec$breaks, qq, character(1)),
+                             collapse = ", "),
+                       if (is.null(g)) "" else paste0(", ", g)),
+    continuous = sprintf("scale_x_continuous(n.breaks = %d%s)", spec$n_breaks,
+                         if (is.null(g)) "" else paste0(", ", g)),
+    date = ,
+    datetime = sprintf("scale_x_%s(%s)", spec$kind, paste(c(
+      if (!is.null(spec$date_breaks))
+        sprintf("date_breaks = %s", qq(spec$date_breaks)),
+      if (!is.null(spec$date_labels))
+        sprintf("date_labels = %s", qq(spec$date_labels)),
+      g), collapse = ", ")),
+    NULL)
+}
+
 generate_corr_code <- function(df, p) {
   allnum <- names(df)[vapply(df, is.numeric, logical(1))]
   num    <- intersect(p$corr_vars %||% character(0), allnum)
@@ -742,6 +1050,13 @@ generate_code <- function(df, p) {
   if (identical(p$type, "heatmap")) return(generate_corr_code(df, p))
   if (is.null(p$x) || !nzchar(p$x))
     return("# Choose a chart type and an X variable to generate R code.")
+  # Mirror the X_LEVELS_MAX block: the app refused to draw this chart, so the
+  # snippet must not reproduce it either (1,500 boxes freezes an R session).
+  block <- plot_block_reason(df, p)
+  if (!is.null(block))
+    return(paste0("# This chart is not drawn in the app:\n# ",
+                  gsub("\n", "\n# ", block, fixed = TRUE),
+                  "\n# Narrow the data or pick a different X, then copy the code again."))
 
   pt <- p$type
   xv <- p$x
@@ -986,16 +1301,44 @@ generate_code <- function(df, p) {
   }
 
   ls <- p$logscale %||% "none"
+  x_transformed <- FALSE
   if (ls != "none") {
     is_sqrt <- startsWith(ls, "sqrt")
     axis    <- sub("^(log|sqrt)", "", ls)
     if (axis %in% c("x", "both") && is.numeric(df[[xv]]) &&
-        pt %in% c("scatter", "line", "histogram", "density", "hexbin"))
+        pt %in% c("scatter", "line", "histogram", "density", "hexbin")) {
       lines <- c(lines, if (is_sqrt) "scale_x_sqrt()" else "scale_x_log10()")
+      x_transformed <- TRUE
+    }
     if (axis %in% c("y", "both") &&
         pt %in% c("scatter", "line", "bar", "histogram", "boxplot",
                   "violin", "meanerror", "hexbin"))
       lines <- c(lines, if (is_sqrt) "scale_y_sqrt()" else "scale_y_log10()")
+  }
+
+  # Same x-axis decision as build_full_plot, made on the vector the SNIPPET
+  # plots. Two deliberate mirrors of pre-existing policy: the
+  # boxplot/violin/meanerror as.factor() coercion is emitted as a `pre` line
+  # rather than applied to df here, so apply it by hand; and the bar lumping is
+  # only SUGGESTED in a comment above, so the emitted code really does plot
+  # every category -- deciding breaks on the lumped column would bake in an
+  # "Other" level the user's data does not contain, and those labels would
+  # silently vanish from the snippet's axis.
+  if (!x_transformed) {
+    xdat <- df[[xv]]
+    if (pt %in% c("boxplot", "violin", "meanerror") && is.numeric(xdat))
+      xdat <- as.factor(xdat)
+    xspec <- x_break_spec(xdat, flip = isTRUE(p$flip),
+                          want = p$x_labels, date_format = p$x_date_format)
+    xl <- x_axis_code(xspec)
+    if (!is.null(xl)) {
+      lines <- c(lines, xl)
+      if (identical(xspec$kind, "discrete"))
+        pre <- c(pre, sprintf(
+          "# The X axis prints %d evenly spaced labels out of %d categories so they stay readable;",
+          length(xspec$breaks), length(x_levels(xdat))),
+          "# every bar / point / line is still drawn.")
+    }
   }
 
   if (!is.null(facet_v)) lines <- c(lines, sprintf("facet_wrap(vars(%s))", bq(facet_v)))

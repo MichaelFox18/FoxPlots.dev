@@ -1336,3 +1336,136 @@ test_that("code-gen mirrors the builder's choropleth gate (release-review findin
   expect_match(code2, "addPolygons|addGeoJSON")
   expect_false(grepl("addCircleMarkers", code2, fixed = TRUE))
 })
+
+# ---- region stats (hover/click) ----------------------------------------------
+# The choropleth's per-region hover label + click popup: one split() pass
+# builds the aggregate AND the stats, matched regions get the full popup,
+# unmatched ones a cheap name-only hover, and region_info = FALSE restores
+# the pre-stats widget byte for byte.
+
+test_that("choro_region_info aggregates and builds stats popups in one pass", {
+  d <- data.frame(county = c("Alpha", "Alpha", "Beta"), yield = c(10, 20, 50))
+  # $vals must be exactly what the old tapply join produced, for every summary
+  for (agg in c("mean", "sum", "median")) {
+    info <- choro_region_info(d, "county", "yield", agg)
+    ref  <- tapply(d$yield, as.character(d$county), match.fun(agg), na.rm = TRUE)
+    expect_equal(unname(info$vals), as.vector(ref), info = agg)
+    expect_equal(names(info$vals), names(ref), info = agg)
+  }
+  info <- choro_region_info(d, "county", "yield")
+  expect_match(info$popup[["Alpha"]], "rows:</b> 2", fixed = TRUE)
+  expect_match(info$popup[["Alpha"]], "<b>mean:</b> 15", fixed = TRUE)
+  expect_match(info$label[["Alpha"]], "Alpha", fixed = TRUE)
+  expect_match(info$label[["Alpha"]], "15", fixed = TRUE)
+  # stats = FALSE: same join, no HTML built at all
+  off <- choro_region_info(d, "county", "yield", stats = FALSE)
+  expect_equal(off$vals, info$vals)
+  expect_null(off$label)
+  expect_null(off$popup)
+})
+
+test_that("choro_region_info handles NAs, one-row groups and all-NA groups", {
+  d <- data.frame(g = c("A", "A", "B", "C", "C"),
+                  v = c(1, NA, 5, NA, NA))
+  info <- choro_region_info(d, "g", "v", "mean")
+  expect_match(info$popup[["A"]], "(1 missing)", fixed = TRUE)      # NA counted
+  expect_match(info$popup[["B"]], paste0("<b>sd:</b> ", SYM_MDASH),
+               fixed = TRUE)                                        # 1 row: no sd
+  expect_false("C" %in% names(info$vals))          # all-NA mean = NaN -> dropped
+  # ...but sum(na.rm) of all-NA is 0 (finite), so under sum C stays, honestly
+  # labelled as holding no usable rows
+  info_s <- choro_region_info(d, "g", "v", "sum")
+  expect_true("C" %in% names(info_s$vals))
+  expect_equal(info_s$vals[["C"]], 0)
+  expect_match(info_s$popup[["C"]], "rows:</b> 0 (2 missing)", fixed = TRUE)
+})
+
+test_that("choro_region_info escapes hostile region and column names", {
+  d <- data.frame(a = c("<img src=x>", "<img src=x>", "ok"),
+                  b = c(1, 3, 5))
+  names(d) <- c("region", "y<b>")
+  info <- choro_region_info(d, "region", "y<b>")
+  txt <- c(info$label, info$popup)
+  expect_false(any(grepl("<img", txt, fixed = TRUE)))         # never raw
+  expect_true(any(grepl("&lt;img src=x&gt;", txt, fixed = TRUE)))
+  expect_true(any(grepl("y&lt;b&gt;", txt, fixed = TRUE)))
+})
+
+test_that("build_choropleth writes popups for matched regions only and labels for all", {
+  dat <- data.frame(county = c("Alpha", "Alpha", "Beta"), yield = c(10, 20, 50))
+  w <- build_leaflet_map(dat, list(geojson = choro_gj(), region_key = "county",
+                                   region_prop = "NAME", region_value = "yield"))
+  gj <- map_get_call(w, "addGeoJSON")$args[[1]]
+  props <- lapply(gj$features, `[[`, "properties")
+  names(props) <- vapply(props, function(p) geojson_prop_chr(p, "NAME"),
+                         character(1))
+  expect_match(props$Alpha$popup, "<b>rows:", fixed = TRUE)
+  expect_match(props$Alpha$popup, "rows:</b> 2", fixed = TRUE)
+  expect_match(props$Alpha$fox_label, "Alpha", fixed = TRUE)
+  expect_match(props$Beta$popup, "<b>rows:", fixed = TRUE)
+  expect_match(props$Beta$fox_label, "Beta", fixed = TRUE)
+  expect_null(props$Gamma$popup)                     # unmatched: no popup
+  expect_equal(props$Gamma$fox_label, "Gamma (no data)")
+  # the tooltip hook rode along, exactly once
+  expect_length(w$jsHooks$render, 1L)
+  expect_true(grepl("bindTooltip", w$jsHooks$render[[1]]$code, fixed = TRUE))
+})
+
+test_that("region_info = FALSE builds exactly the old widget", {
+  dat <- data.frame(county = c("Alpha", "Alpha", "Beta"), yield = c(10, 20, 50))
+  w <- build_leaflet_map(dat, list(geojson = choro_gj(), region_key = "county",
+                                   region_prop = "NAME", region_value = "yield",
+                                   region_info = FALSE))
+  gj <- map_get_call(w, "addGeoJSON")$args[[1]]
+  for (f in gj$features) {
+    expect_null(f$properties$popup)
+    expect_null(f$properties$fox_label)
+  }
+  expect_length(w$jsHooks$render, 0L)                # no tooltip hook either
+  diag <- attr(w, "choro_diag")                      # join semantics unchanged
+  expect_equal(diag$n_matched, 2L)
+  expect_equal(diag$n_features, 3L)
+  expect_equal(diag$unmatched_geo, "Gamma")
+  expect_equal(diag$unmatched_data, character(0))
+})
+
+test_that("choropleth code-gen mirrors the region stats popup", {
+  dat  <- data.frame(county = c("Alpha", "Beta"), yield = c(10, 50))
+  base <- list(geojson = choro_gj(), region_key = "county",
+               region_prop = "NAME", region_value = "yield")
+  code <- generate_map_code(dat, base)               # region_info defaults on
+  for (tok in c("fox_label", "bindTooltip", "pops"))
+    expect_match(code, tok, fixed = TRUE)
+  expect_silent(parse(text = code))
+  off <- generate_map_code(dat, c(base, list(region_info = FALSE)))
+  for (tok in c("fox_label", "bindTooltip", "pops"))
+    expect_no_match(off, tok, fixed = TRUE)
+  expect_silent(parse(text = off))
+})
+
+test_that("region stats fit the counties-set time budget", {
+  # Guard the same regression class as the geojson_bounds bar: a per-feature
+  # pass gone quadratic (the old version froze for ~13 s). An absolute bar is
+  # flaky under full-suite load (measured 0.7 s alone, 5.7 s with the whole
+  # suite competing for the machine), so the primary assertion is RELATIVE --
+  # the stats pass must not multiply the no-stats build -- with a loose
+  # absolute ceiling that still catches the freeze class.
+  gj <- parse_geojson(builtin_boundary_text("us_counties"))
+  keys <- vapply(gj$features, function(f)
+    geojson_prop_chr(f$properties, "county_state"), character(1))
+  d <- data.frame(k = rep(keys, each = 2L), v = seq_len(2L * length(keys)))
+  p_off <- list(geojson = gj, region_prop = "county_state",
+                region_key = "k", region_value = "v", region_info = FALSE)
+  t0 <- Sys.time()
+  m_off <- build_choropleth(d, p_off)
+  el_off <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  p_on <- p_off; p_on$region_info <- TRUE
+  t0 <- Sys.time()
+  m <- build_choropleth(d, p_on)
+  el <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  expect_lt(el, 3 * el_off + 2)
+  expect_lt(el, 12)
+  expect_s3_class(m_off, "leaflet")
+  expect_s3_class(m, "leaflet")
+  expect_equal(attr(m, "choro_diag")$n_matched, 3222L)
+})

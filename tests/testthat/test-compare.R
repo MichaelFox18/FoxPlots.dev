@@ -482,6 +482,30 @@ test_that("compareServer maps the __none__ sentinel to an unsplit analysis", {
   })
 })
 
+test_that("compareServer cat mode names the row variable in every table", {
+  # 0.11.0: which picker becomes the rows and which the columns was stated
+  # only in two hover tooltips, and the rendered matrices had a BLANK leading
+  # header (table() is called with calls, so names(dimnames()) is c("","")).
+  # Now the leading column is headed by the ROW variable (cat1) everywhere.
+  shiny::testServer(compareServer,
+                    args = list(data_in = shiny::reactive(mtcars)), {
+    session$setInputs(mode = "cat", cat1 = "cyl", cat2 = "gear",
+                      pcts = character(0))
+    r <- session$returned()
+    expect_equal(r$mode, "cat")
+    expect_equal(r$var1, "cyl")                 # rows
+    expect_equal(r$var2, "gear")                # columns
+    # the DT payload's header carries the row variable's name
+    payload <- jsonlite::fromJSON(output$contingency)
+    expect_true(grepl("cyl", payload$x$container))
+    # swap flips the roles: cat1 takes gear, cat2 takes cyl
+    session$setInputs(cat1 = "gear", cat2 = "cyl")
+    r2 <- session$returned()
+    expect_equal(r2$var1, "gear")
+    expect_equal(dim(r2$table), rev(dim(r$table)))
+  })
+})
+
 # ---- capacity: the 24-combination cap (0.8.0) -----------------------------
 
 test_that("the combination cap is 24 and a full 6x4 grid computes under it", {

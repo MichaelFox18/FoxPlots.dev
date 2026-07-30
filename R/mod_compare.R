@@ -151,13 +151,20 @@ compareUI <- function(id) {
       conditionalPanel(
         sprintf("input['%s'] == 'cat'", ns("mode")),
         selectInput(ns("cat1"),
-          tagList("Variable 1 (category)", info_tip(
-            "First categorical variable - its levels become the table rows.")),
+          tagList("Variable 1 - table rows", info_tip(
+            "First categorical variable - its levels become the ROWS of ",
+            "every result table (contingency, expected, residuals, ",
+            "percentages).")),
           choices = NULL),
         selectInput(ns("cat2"),
-          tagList("Variable 2 (category)", info_tip(
-            "Second categorical variable - its levels become the table columns.")),
+          tagList("Variable 2 - table columns", info_tip(
+            "Second categorical variable - its levels become the COLUMNS ",
+            "of every result table. The chi-square itself is symmetric: ",
+            "swapping the two changes the table layout, not the p-value.")),
           choices = NULL),
+        actionButton(ns("swap_cats"), "Swap rows / columns",
+                     icon = icon("right-left"),
+                     class = "btn-outline-secondary btn-sm w-100 mb-3"),
         checkboxGroupInput(ns("pcts"),
           tagList("Show percentages", info_tip(
             "Adds a table per selection. Row % sums to 100 across each row, ",
@@ -200,6 +207,16 @@ compareServer <- function(id, data_in) {
                                                      groupable_cols(df)),
                         selected = "")
     }, ignoreNULL = TRUE)
+
+    # One click turns "which one was it again?" into a non-question: swap
+    # which variable defines the rows and which the columns. The chi-square
+    # itself is transpose-invariant, so only the table layout changes.
+    observeEvent(input$swap_cats, {
+      v1 <- input$cat1; v2 <- input$cat2
+      req(nzchar(v1 %||% ""), nzchar(v2 %||% ""))
+      updateSelectInput(session, "cat1", selected = v2)
+      updateSelectInput(session, "cat2", selected = v1)
+    })
 
     # Live pre-run feedback under the pickers: what the chosen split will do,
     # and how many tests the current selection fires -- BEFORE result() runs,
@@ -533,6 +550,9 @@ compareServer <- function(id, data_in) {
         tags$p("Strength of association (", CRAMERS_V, "): ",
                tags$b(round(r$cramers_v, 3)),
                sprintf(" - %s.", effect_magnitude(CRAMERS_V, r$cramers_v))),
+        tags$p(class = "text-muted small",
+               sprintf("In every table below, %s defines the rows and %s the columns.",
+                       r$var1, r$var2)),
         if (r$low_expected > 0)
           tags$p(class = "text-warning small",
                  icon("triangle-exclamation"),
@@ -549,26 +569,31 @@ compareServer <- function(id, data_in) {
                                       palette = "auto", legend_pos = "right"))
     }, bg = "white")
 
-    # A count/percentage matrix rendered with its row names promoted to a column.
-    mat_dt <- function(m) {
+    # A count/percentage matrix rendered with its row names promoted to a
+    # column. `row_var` names that leading column (the ROW variable, i.e.
+    # cat1) -- table() is called with calls, not symbols, so the matrix itself
+    # carries no dimension names and the header would otherwise be blank.
+    mat_dt <- function(m, row_var = " ") {
       d <- as.data.frame.matrix(m)
-      d <- cbind(` ` = rownames(d), d)
+      d <- cbind(stats::setNames(data.frame(rownames(d),
+                                            stringsAsFactors = FALSE),
+                                 row_var), d)
       DT::datatable(d, rownames = FALSE, class = "compact stripe hover",
                     options = list(scrollX = TRUE, dom = "t"))
     }
 
     output$contingency   <- DT::renderDT({
-      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$table) })
+      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$table, r$var1) })
     output$expected_tbl  <- DT::renderDT({
-      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$expected) })
+      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$expected, r$var1) })
     output$residuals_tbl <- DT::renderDT({
-      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$stdres) })
+      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$stdres, r$var1) })
     output$rowpct_tbl    <- DT::renderDT({
-      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$row_pct) })
+      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$row_pct, r$var1) })
     output$colpct_tbl    <- DT::renderDT({
-      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$col_pct) })
+      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$col_pct, r$var1) })
     output$totalpct_tbl  <- DT::renderDT({
-      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$total_pct) })
+      r <- result(); req(identical(r$mode, "cat")); mat_dt(r$total_pct, r$var1) })
 
     # ---- assembled results layout --------------------------------------------
     output$results_ui <- renderUI({
@@ -579,32 +604,41 @@ compareServer <- function(id, data_in) {
                     uiOutput(ns("result_card_1"))))
 
       if (identical(r$mode, "cat")) {
+        # Every table caption names both variables and their roles -- the
+        # matrices themselves have no dimension names (table() was called
+        # with calls, not symbols), so this is the only place the user can
+        # read which variable went where.
+        rc <- sprintf(" (rows: %s, columns: %s)", r$var1, r$var2)
         cards <- list(
           card(card_header(icon("flask-vial"), " Result"),
                uiOutput(ns("cat_result_card"))),
           card(card_header(icon("lightbulb"), " Interpretation"),
                uiOutput(ns("cat_interp"))),
           card(card_header(icon("chart-column"), " Chart"),
+               helpText(sprintf(
+                 "Bars: %s (the row variable). Fill colour: %s (the column variable).",
+                 r$var1, r$var2)),
                plotOutput(ns("cat_plot"), height = "330px")),
-          card(card_header(icon("table-cells"), " Contingency table"),
+          card(card_header(icon("table-cells"), " Contingency table", rc),
                DT::DTOutput(ns("contingency"))),
-          card(card_header(icon("border-all"), " Expected counts"),
+          card(card_header(icon("border-all"), " Expected counts", rc),
                DT::DTOutput(ns("expected_tbl"))),
           card(card_header(icon("magnifying-glass-chart"),
-                           " Standardized residuals"),
+                           " Standardized residuals", rc),
                helpText("Standardized (Pearson) residuals; cells with |z| > 2 ",
                         "stand out as the drivers of the association."),
                DT::DTOutput(ns("residuals_tbl"))))
         pcts <- r$pcts %||% character(0)
         if ("row" %in% pcts)
-          cards <- c(cards, list(card(card_header(icon("percent"), " Row %"),
-            helpText("Each row sums to 100%."), DT::DTOutput(ns("rowpct_tbl")))))
+          cards <- c(cards, list(card(card_header(icon("percent"), " Row %", rc),
+            helpText(sprintf("Each row (each %s level) sums to 100%%.", r$var1)),
+            DT::DTOutput(ns("rowpct_tbl")))))
         if ("col" %in% pcts)
-          cards <- c(cards, list(card(card_header(icon("percent"), " Column %"),
-            helpText("Each column sums to 100%."),
+          cards <- c(cards, list(card(card_header(icon("percent"), " Column %", rc),
+            helpText(sprintf("Each column (each %s level) sums to 100%%.", r$var2)),
             DT::DTOutput(ns("colpct_tbl")))))
         if ("total" %in% pcts)
-          cards <- c(cards, list(card(card_header(icon("percent"), " Total %"),
+          cards <- c(cards, list(card(card_header(icon("percent"), " Total %", rc),
             helpText("The whole table sums to 100%."),
             DT::DTOutput(ns("totalpct_tbl")))))
         return(do.call(layout_columns, c(list(col_widths = 6), cards)))
@@ -667,9 +701,16 @@ compareServer <- function(id, data_in) {
         tbl <- function(x, rn = FALSE) utils::write.table(
           x, con, quote = FALSE, sep = "\t",
           row.names = FALSE, col.names = if (rn) NA else TRUE)
-        mat <- function(m) utils::write.table(as.data.frame.matrix(m), con,
-                                              quote = FALSE, sep = "\t",
-                                              col.names = NA)
+        # `row_var` labels the leading column (the matrix carries no dimnames
+        # -- table() was called with calls, not symbols).
+        mat <- function(m, row_var = "") {
+          d <- as.data.frame.matrix(m)
+          d <- cbind(stats::setNames(data.frame(rownames(d),
+                                                stringsAsFactors = FALSE),
+                                     row_var), d)
+          utils::write.table(d, con, quote = FALSE, sep = "\t",
+                             row.names = FALSE, col.names = TRUE)
+        }
         # One numeric combination, written in full.
         num_block <- function(r) {
           wl("Outcome: ", r$outcome, "   Groups: ", r$group,
@@ -705,22 +746,34 @@ compareServer <- function(id, data_in) {
         wl("UF/IFAS Data Explorer ", SYM_TIMES, " Compare Groups")
         wl("Generated: ", as.character(Sys.time())); wl("")
         if (identical(r$mode, "cat")) {
+          rc <- paste0(" (rows: ", r$var1, ", columns: ", r$var2, ")")
           wl("Mode: association between two categorical variables")
-          wl("Variables: ", r$var1, " ", SYM_TIMES, " ", r$var2)
+          wl("Variables: ", r$var1, " ", SYM_TIMES, " ", r$var2,
+             "  -- ", r$var1, " defines the rows, ", r$var2, " the columns")
           wl("Chi-square = ", round(r$statistic, 4), ", df = ", r$df,
              ", ", fmt_p(r$p_value))
           wl(CRAMERS_V, " = ", round(r$cramers_v, 4),
              " (", effect_magnitude(CRAMERS_V, r$cramers_v), ")")
           if (!is.na(r$fisher_p))
             wl("Fisher's exact (fallback): ", fmt_p(r$fisher_p))
-          wl(""); wl("Contingency table:");                  mat(r$table)
-          wl(""); wl("Expected counts:");                    mat(r$expected)
-          wl(""); wl("Standardized residuals (|z| > 2 flags a driver cell):")
-          mat(r$stdres)
+          wl(""); wl("Contingency table", rc, ":");   mat(r$table, r$var1)
+          wl(""); wl("Expected counts", rc, ":");     mat(r$expected, r$var1)
+          wl(""); wl("Standardized residuals", rc,
+                     " (|z| > 2 flags a driver cell):")
+          mat(r$stdres, r$var1)
           pcts <- r$pcts %||% character(0)
-          if ("row" %in% pcts)   { wl(""); wl("Row % (each row sums to 100):");        mat(r$row_pct) }
-          if ("col" %in% pcts)   { wl(""); wl("Column % (each column sums to 100):");  mat(r$col_pct) }
-          if ("total" %in% pcts) { wl(""); wl("Total % (whole table sums to 100):");   mat(r$total_pct) }
+          if ("row" %in% pcts) {
+            wl(""); wl("Row %", rc, " (each row sums to 100):")
+            mat(r$row_pct, r$var1)
+          }
+          if ("col" %in% pcts) {
+            wl(""); wl("Column %", rc, " (each column sums to 100):")
+            mat(r$col_pct, r$var1)
+          }
+          if ("total" %in% pcts) {
+            wl(""); wl("Total %", rc, " (whole table sums to 100):")
+            mat(r$total_pct, r$var1)
+          }
         } else if (identical(r$mode, "num")) {
           wl("Mode: numeric outcome by group"); wl("")
           num_block(r)

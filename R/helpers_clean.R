@@ -258,3 +258,32 @@ convert_column <- function(x, to) {
                         tryFormats = c("%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%d/%m/%Y")),
     x)
 }
+
+# --- Column renaming ---------------------------------------------------------
+# Rename one column. Import-stage helper behind the Rename card; validates its
+# arguments like the do_* verbs. A collision with an existing name is an ERROR
+# rather than a make.unique() repair -- a silent "Country_1" would recreate
+# exactly the join confusion this helper exists to fix. Renaming a column to
+# its own name is a no-op so the module can treat it as "nothing to do". No
+# make.names() mangling: any non-blank name is allowed, because undoing
+# read.csv's check.names damage ("Country.Name" back to "Country Name") is a
+# use case.
+rename_column <- function(data, from, to) {
+  stopifnot(is.data.frame(data), is.character(from), length(from) == 1L,
+            is.character(to), length(to) == 1L)
+  if (!from %in% names(data)) {
+    stop("Columns not found in data: ", from)
+  }
+  to <- trimws(to)
+  if (is.na(to) || !nzchar(to)) {
+    stop("The new name can't be blank.")
+  }
+  if (identical(from, to)) {
+    return(data)
+  }
+  if (to %in% names(data)) {
+    stop("A column named '", to, "' already exists.")
+  }
+  names(data)[match(from, names(data))] <- to
+  data
+}

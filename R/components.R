@@ -120,16 +120,42 @@ info_tip <- function(..., placement = "right") {
   )
 }
 
+# App-wide busy indicators, mounted by every launcher (header = uf_busy()).
+# Shows a spinner on any output that recalculates for more than a moment --
+# the choropleth map's multi-second rebuilds were invisible before -- plus a
+# page-level pulse during downloads. The spinner stays up until the new value
+# reaches the client, which is what covers the map's htmlwidgets
+# serialization (it runs AFTER the render expression returns, so
+# withProgress could never see it). Needs shiny >= 1.11.0: that release adds
+# spinners on htmlwidgets recovering from a validate() message -- exactly
+# the map pane's state before its first choropleth build. Internal (not
+# exported); the default ~1s delay means fast recalcs never flash a spinner.
+uf_busy <- function() {
+  shiny::tagList(
+    shiny::useBusyIndicators(),
+    shiny::busyIndicatorOptions(spinner_color = UF_BLUE)
+  )
+}
+
 # A compact "About" landing panel for the standalone mini-apps, mirroring the
 # Data Explorer's About tab. `steps` is a character vector rendered as a
-# numbered list. Internal (not exported).
-about_nav_panel <- function(title, lead, steps) {
+# numbered list; `tips` (optional) is a character vector rendered as a Tips
+# card beside it, mirroring the Explorer's own Tips card. Internal (not
+# exported).
+about_nav_panel <- function(title, lead, steps, tips = NULL) {
+  main <- bslib::card(
+    bslib::card_header(shiny::icon("circle-info"), " ", title),
+    shiny::tags$p(lead),
+    shiny::tags$ol(lapply(steps, shiny::tags$li)),
+    shiny::tags$p(class = "text-muted small",
+      "Hover the grey ? icons for inline help on any control."))
+  body <- if (is.null(tips)) main else bslib::layout_columns(
+    col_widths = c(7, 5),
+    main,
+    bslib::card(
+      bslib::card_header(shiny::icon("lightbulb"), " Tips"),
+      shiny::tags$ul(class = "px-3", lapply(tips, shiny::tags$li))))
   bslib::nav_panel(
     shiny::tagList(shiny::icon("circle-info"), " About"), value = "about",
-    bslib::card(
-      bslib::card_header(shiny::icon("circle-info"), " ", title),
-      shiny::tags$p(lead),
-      shiny::tags$ol(lapply(steps, shiny::tags$li)),
-      shiny::tags$p(class = "text-muted small",
-        "Hover the grey ? icons for inline help on any control.")))
+    body)
 }

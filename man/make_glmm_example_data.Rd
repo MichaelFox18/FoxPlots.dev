@@ -7,18 +7,22 @@
 make_glmm_example_data()
 }
 \value{
-A data frame with Site, Treatment, Season and the four response
+A data frame with Site, Treatment, Season and the seven response
   columns (144 rows).
 }
 \description{
 A seeded field-style dataset used as the demo for the GLMM Review app.
 Eight sites (the random / grouping factor) crossed with a three-level
-Treatment and a two-level Season, three replicates per cell. Four
-responses each exercise a different family: \code{insect_count}
-(overdispersed counts; negative binomial), \code{seedling_count}
-(zero-heavy counts; a zero-inflation candidate), \code{cover_prop}
-(a proportion strictly inside (0,1); Beta), and \code{present}
-(0/1 presence; the binary tab).
+Treatment and a two-level Season, three replicates per cell. Seven
+response columns each exercise a different family or mode:
+\code{insect_count} (overdispersed counts; negative binomial),
+\code{seedling_count} (zero-heavy counts; a zero-inflation candidate),
+\code{cover_prop} (a proportion strictly inside (0,1); Beta),
+\code{present} (0/1 presence; the binary tab),
+\code{cover_prop_ord} (a proportion on the closed interval 0..1 that
+touches both boundaries; Ordered beta), and the pair \code{trials} /
+\code{successes} (a grouped-binomial count pair for the binary tab's
+grouped-counts mode).
 }
 \examples{
 d <- make_glmm_example_data()

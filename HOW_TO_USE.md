@@ -96,6 +96,9 @@ library(foxplots)
 do_stack(my_data, c("q1", "q2", "q3"))        # reshape wide → tall
 grouped_summary(my_data, vars = "score", groups = "group")
 fit_model(my_data, response = "y", predictors = c("x1", "x2"))
+
+foxplots_examples()                # catalogue of every built-in dataset
+d <- foxplots_example("titanic")   # load one without opening an app
 ```
 
 See `help(package = "foxplots")` for the full list.

@@ -27,6 +27,7 @@ lmer_tool_app <- function() {
   options(shiny.maxRequestSize = 250 * 1024^2)
 
   ui <- page_navbar(
+    header       = uf_busy(),   # spinners on slow outputs (maps, big charts)
     title        = uf_title("Mixed Model Review"),
     window_title = "UF/IFAS Mixed Model Review",
     theme        = uf_theme(),
@@ -37,12 +38,19 @@ lmer_tool_app <- function() {
       paste("Fit and review linear mixed models (lmerTest / emmeans): ANOVA,",
             "variance components, residual diagnostics, estimated marginal means",
             "with letter groupings, interaction tests, and model comparison."),
-      c("Import your data (or load the built-in RCBD example) on the Import tab.",
+      c(paste("Import your data on the Import tab, or load a built-in",
+              "repeated-measures example (RCBD, ChickWeight, CO2, npk)."),
         "Specify the response, fixed effects, and random effects on the Mixed Model tab, then run the analysis.",
-        "Review the ANOVA, EMMeans, and diagnostics; export the augmented data on the Export tab.")),
+        "Review the ANOVA, EMMeans, and diagnostics; export the augmented data on the Export tab."),
+      tips = c(
+        paste("The grouping factor (Block, Chick, Plant) goes in RANDOM",
+              "effects; treatments go in fixed effects."),
+        paste("ChickWeight is the classic growth curve: weight ~ Time * Diet",
+              "with Chick as the random factor."),
+        paste("A treatment stored as a number (Nitrogen 0/100/200) should be",
+              "recast to a factor on the Import tab before EMMeans."))),
     nav_panel(tagList(icon("file-arrow-up"),   " Import"),      value = "import",
-              importUI("imp",
-                       example_choices = c("RCBD example (3-factor)" = "rcbd"))),
+              importUI("imp", examples = EXAMPLES_LMER)),
     nav_panel(tagList(icon("diagram-project"), " Mixed Model"), value = "model",
               lmerUI("lmer")),
     nav_panel(tagList(icon("file-export"),     " Export & Report"),
@@ -52,7 +60,7 @@ lmer_tool_app <- function() {
   )
 
   server <- function(input, output, session) {
-    imported <- importServer("imp", examples = list(rcbd = make_example_data()))
+    imported <- importServer("imp", examples = EXAMPLES_LMER)
     lmer_out <- lmerServer("lmer", imported)   # -> list(data =, report =)
     exportServer("ex", lmer_out$data, preview = FALSE)  # one preview, in Import
     # NULL-safe: the module dataset req()s, and a silent error there would

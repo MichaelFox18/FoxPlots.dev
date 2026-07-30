@@ -313,11 +313,18 @@ test_that("build_full_plot keeps a discrete colour at the cap and drops it past"
   df <- data.frame(x = rnorm(n), y = rnorm(n))
   df$at  <- sprintf("g%03d", rep_len(seq_len(GROUP_MAX),     n))   # exactly 50
   df$ovr <- sprintf("g%03d", rep_len(seq_len(GROUP_MAX + 1L), n))  # 51
+  # A small categorical X for the box family: since X_LEVELS_MAX (0.12.0) a
+  # 400-distinct numeric X blocks those charts outright, and this test is
+  # about the COLOUR cap, not the x cap.
+  df$g <- rep_len(c("a", "b", "c", "d"), n)
   expect_equal(dplyr::n_distinct(df$at),  GROUP_MAX)
   expect_equal(dplyr::n_distinct(df$ovr), GROUP_MAX + 1L)
 
   for (ty in c("density", "boxplot", "violin", "histogram", "meanerror", "scatter", "line")) {
-    p <- list(type = ty, x = if (ty %in% c("density", "histogram")) "x" else "y",
+    p <- list(type = ty,
+              x = if (ty %in% c("density", "histogram")) "x"
+                  else if (ty %in% c("boxplot", "violin", "meanerror")) "g"
+                  else "y",
               y = "y", color = "at")
     if (ty %in% c("scatter", "line")) p$x <- "x"
     expect_false(is.null(colour_var(build_full_plot(df, p))),
@@ -395,4 +402,314 @@ test_that("the hint and the cap agree on how NA counts (release-review finding)"
                     stringsAsFactors = FALSE)
   expect_false(is.null(colour_var(build_full_plot(df2, p))))
   expect_null(chart_hint(df2, p))
+})
+
+# ---- crowded x axes: automatic label thinning + the manual override ----------
+# The report: a line chart over a date column that arrived as TEXT drew one
+# tick label per distinct value (300+) and smeared into an unreadable band.
+# A real Date or numeric x already gets ~5 pretty default breaks (measured),
+# so thinning is a DISCRETE-axis feature; dates/numerics get manual control.
+
+# The x scale build_full_plot ended up with, or NULL if it added none.
+x_scale_of <- function(p_obj) {
+  s <- Filter(function(z) "x" %in% z$aesthetics, p_obj$scales$scales)
+  if (!length(s)) NULL else s[[1]]
+}
+text_dates <- function() sprintf("2024-%02d-%02d", rep(1:12, each = 25),
+                                 rep(1:25, 12))
+
+test_that("auto leaves numeric and real-date axes to ggplot's own breaks", {
+  expect_null(x_break_spec(seq(0, 2e5, length.out = 2000)))
+  expect_null(x_break_spec(as.Date("2020-01-01") + 0:500))
+  expect_null(x_break_spec(as.POSIXct("2020-01-01", tz = "UTC") + 0:2000 * 3600))
+  expect_null(x_break_spec(letters[1:8]))          # discrete, under the cap
+})
+
+test_that("x_break_spec thins a crowded discrete axis and keeps both ends", {
+  lv <- text_dates()
+  s  <- x_break_spec(lv)
+  expect_identical(s$kind, "discrete")
+  expect_lte(length(s$breaks), AXIS_LABEL_MAX)
+  expect_true(all(s$breaks %in% lv))
+  expect_identical(s$breaks[1], min(lv))
+  expect_identical(s$breaks[length(s$breaks)], max(lv))
+})
+
+test_that("a flipped chart keeps far more labels (that is why users flip)", {
+  lv <- sprintf("cat%02d", 1:25)
+  expect_null(x_break_spec(lv, flip = TRUE))              # 25 <= the flip cap
+  expect_false(is.null(x_break_spec(lv, flip = FALSE)))   # thinned upright
+})
+
+test_that("the manual override wins on every axis kind", {
+  many <- sprintf("c%03d", 1:300)
+  expect_null(x_break_spec(many, want = "all"))
+  expect_equal(length(x_break_spec(many, want = "20")$breaks), 20L)
+  n <- x_break_spec(1:2000, want = "10")
+  expect_identical(n$kind, "continuous")
+  expect_equal(n$n_breaks, 10L)
+  d <- x_break_spec(as.Date("2020-01-01") + 0:1000, want = "8")
+  expect_identical(d$kind, "date")
+  expect_identical(d$date_breaks, "6 months")
+})
+
+test_that("the date ladder scales step AND label format with the span", {
+  ten <- x_break_spec(as.Date("2024-01-01") + 0:9,    want = "6")
+  yr  <- x_break_spec(as.Date("2010-01-01") + 0:5000, want = "6")
+  hr  <- x_break_spec(as.POSIXct("2024-01-01", tz = "UTC") + 0:200 * 3600,
+                      want = "8")
+  expect_identical(c(ten$date_breaks, ten$date_labels), c("2 days", "%b %d"))
+  expect_match(yr$date_breaks, "year")
+  expect_identical(yr$date_labels, "%Y")     # never more precise than the step
+  expect_identical(hr$kind, "datetime")
+})
+
+test_that("a hand-picked date format is honoured, and long ones get angled", {
+  d <- as.Date("2020-01-01") + 0:500
+  expect_identical(x_break_spec(d, date_format = "%Y-%m-%d")$date_labels,
+                   "%Y-%m-%d")
+  expect_equal(x_break_spec(d, date_format = "%Y-%m-%d")$angle, 40L) # 10 chars
+  expect_equal(x_break_spec(d, date_format = "%b %Y")$angle,     0L) # 8 chars
+  # never angled when flipped -- the labels are stacked vertically there
+  expect_equal(x_break_spec(d, date_format = "%Y-%m-%d", flip = TRUE)$angle, 0L)
+})
+
+test_that("build_full_plot thins a text-date line chart and 'all' undoes it", {
+  d <- data.frame(day = text_dates(), y = rnorm(300), stringsAsFactors = FALSE)
+  p <- build_full_plot(d, list(type = "line", x = "day", y = "y"))
+  expect_error(ggplot2::ggplot_build(p), NA)
+  expect_lte(length(x_scale_of(p)$breaks), AXIS_LABEL_MAX)
+  p2 <- build_full_plot(d, list(type = "line", x = "day", y = "y",
+                                x_labels = "all"))
+  expect_null(x_scale_of(p2))
+  expect_error(ggplot2::ggplot_build(p2), NA)
+})
+
+test_that("a real Date x gets no scale on auto, a date scale on request", {
+  d <- data.frame(day = as.Date("2020-01-01") + 0:500, y = rnorm(501))
+  p <- build_full_plot(d, list(type = "line", x = "day", y = "y"))
+  expect_null(x_scale_of(p))
+  expect_error(ggplot2::ggplot_build(p), NA)
+  p2 <- build_full_plot(d, list(type = "line", x = "day", y = "y",
+                                x_date_format = "%Y-%m-%d"))
+  expect_false(is.null(x_scale_of(p2)))
+  expect_error(ggplot2::ggplot_build(p2), NA)
+})
+
+test_that("the log/sqrt x transform still owns the x scale (no double scale)", {
+  # A second x scale prints "Scale for x is already present" at + time.
+  d <- data.frame(x = seq(1, 1000, length.out = 300), y = rnorm(300))
+  pr <- list(type = "scatter", x = "x", y = "y", logscale = "logx",
+             x_labels = "20")
+  expect_silent(p <- build_full_plot(d, pr))
+  expect_equal(length(Filter(function(z) "x" %in% z$aesthetics,
+                             p$scales$scales)), 1L)
+  expect_error(ggplot2::ggplot_build(p), NA)
+})
+
+test_that("bar lumping and label thinning compose, and 'Other' survives", {
+  # lump_bar_x puts "Other" last; thin_levels always keeps the last level, so
+  # the user can still see where the tail went.
+  d <- data.frame(g = sprintf("c%03d", 1:300), v = runif(300),
+                  stringsAsFactors = FALSE)
+  p <- build_full_plot(d, list(type = "bar", x = "g", y = "v",
+                               bar_agg = "sum"))
+  expect_error(ggplot2::ggplot_build(p), NA)
+  br <- x_scale_of(p)$breaks
+  expect_lte(length(br), AXIS_LABEL_MAX)
+  expect_true("Other" %in% br)
+})
+
+test_that("boxplot's numeric->factor coercion yields a thinned discrete axis", {
+  d <- data.frame(x = rep(1:40, each = 3), y = rnorm(120))
+  s <- x_scale_of(build_full_plot(d, list(type = "boxplot", x = "x",
+                                          y = "y")))
+  expect_false(is.null(s))
+  expect_lte(length(s$breaks), AXIS_LABEL_MAX)
+  expect_identical(s$breaks[1], "1")     # factor(1:40) sorts numerically
+})
+
+test_that("a minimal p list (the mod_compare contract) still builds", {
+  # mod_compare passes lists with no x_labels/x_date_format at all; absent
+  # fields must mean "auto".
+  d <- data.frame(g = rep(sprintf("grp%02d", 1:60), each = 3),
+                  y = rnorm(180), stringsAsFactors = FALSE)
+  p <- build_full_plot(d, list(type = "boxplot", x = "g", y = "y",
+                               color = "g", palette = "auto",
+                               legend_pos = "none"))
+  expect_error(ggplot2::ggplot_build(p), NA)
+  expect_lte(length(x_scale_of(p)$breaks), AXIS_LABEL_MAX)
+})
+
+test_that("generate_code mirrors the thinned axis and needs no new library", {
+  d <- data.frame(day = text_dates(), y = rnorm(300), stringsAsFactors = FALSE)
+  code <- generate_code(d, list(type = "line", x = "day", y = "y"))
+  expect_true(grepl("scale_x_discrete(breaks = c(", code, fixed = TRUE))
+  expect_error(parse(text = code), NA)
+  expect_false(grepl("scales::",        code, fixed = TRUE))
+  expect_false(grepl("library(scales)", code, fixed = TRUE))
+  # the snippet's breaks are EXACTLY the ones the chart drew
+  for (b in x_break_spec(d$day)$breaks)
+    expect_true(grepl(b, code, fixed = TRUE))
+  expect_false(grepl("scale_x_discrete",
+    generate_code(d, list(type = "line", x = "day", y = "y",
+                          x_labels = "all")),
+    fixed = TRUE))
+})
+
+test_that("generate_code emits a date scale only when the user asks for one", {
+  d <- data.frame(day = as.Date("2020-01-01") + 0:500, y = rnorm(501))
+  expect_false(grepl("scale_x_date",
+    generate_code(d, list(type = "line", x = "day", y = "y")), fixed = TRUE))
+  code <- generate_code(d, list(type = "line", x = "day", y = "y",
+                                x_date_format = "%Y-%m-%d", x_labels = "8"))
+  expect_true(grepl('date_labels = "%Y-%m-%d"', code, fixed = TRUE))
+  expect_true(grepl("guide_axis(angle = 40)", code, fixed = TRUE))
+  expect_error(parse(text = code), NA)
+})
+
+test_that("generate_code adds no x scale when log/sqrt already owns it", {
+  d <- data.frame(x = seq(1, 1000, length.out = 300), y = rnorm(300))
+  code <- generate_code(d, list(type = "scatter", x = "x", y = "y",
+                                logscale = "logx", x_labels = "20"))
+  expect_true(grepl("scale_x_log10()",     code, fixed = TRUE))
+  expect_false(grepl("scale_x_continuous", code, fixed = TRUE))
+  expect_error(parse(text = code), NA)
+})
+
+test_that("chart_hint names the real cause when dates arrive as text", {
+  d <- data.frame(day = text_dates(), y = rnorm(300), stringsAsFactors = FALSE)
+  msg <- chart_hint(d, list(type = "line", x = "day", y = "y"))
+  expect_true(grepl("text", msg))
+  expect_true(grepl("Change variable types", msg))   # followable, like the
+  expect_true(grepl("Import", msg))                  # Filter rows precedent
+  expect_false(grepl("box plot", msg))               # NOT the generic advice
+  # a real Date column says nothing at all
+  d2 <- data.frame(day = as.Date("2024-01-01") + 0:299, y = rnorm(300))
+  expect_null(chart_hint(d2, list(type = "line", x = "day", y = "y")))
+  # an ordinary category column still gets the ordinary hint
+  d3 <- data.frame(g = rep(letters[1:5], 60), y = rnorm(300))
+  expect_true(grepl("categorical",
+                    chart_hint(d3, list(type = "line", x = "g", y = "y"))))
+})
+
+test_that("looks_like_text_date agrees with the Import tab's own detector", {
+  expect_false(looks_like_text_date(letters))
+  expect_false(looks_like_text_date(c("12345", "67890")))          # zip-like
+  expect_false(looks_like_text_date(1:10))
+  expect_false(looks_like_text_date(as.Date("2024-01-01") + 0:5))  # real Date
+  expect_true(looks_like_text_date(c("2024-01-01", "2024-02-15", "2024-03-09")))
+  expect_true(looks_like_text_date(c("2024/01/01", "2024/02/15", "2024/03/09")))
+  # whatever it claims, the Data Health dates fix must be able to deliver
+  v <- c("2024-01-01", "2024-02-15", "2024-03-09")
+  expect_false(is.null(dates_from_text(v)))
+})
+
+# ---- X_LEVELS_MAX: the per-value-chart x cap ----------------------------------
+# Regression guard for the 0.12.0 block: a box plot over a ~1,500-distinct
+# numeric X used to draw one box per value (measured: a 1,500-level violin cost
+# 22.4s to build plus 40.2s in ggplotly -- a one-minute freeze). Past the cap
+# the builder refuses, the hint explains, and the emitted code is a comment.
+
+test_that("per-value charts draw at X_LEVELS_MAX x levels and block one past", {
+  n  <- 3L * (X_LEVELS_MAX + 1L)
+  df <- data.frame(y = rnorm(n))
+  df$at  <- rep_len(seq_len(X_LEVELS_MAX),      n)
+  df$ovr <- rep_len(seq_len(X_LEVELS_MAX + 1L), n)
+  expect_equal(dplyr::n_distinct(df$at),  as.integer(X_LEVELS_MAX))
+  expect_equal(dplyr::n_distinct(df$ovr), X_LEVELS_MAX + 1L)
+  for (ty in c("boxplot", "violin", "meanerror", "bar")) {
+    expect_s3_class(build_full_plot(df, list(type = ty, x = "at", y = "y")),
+                    "ggplot")
+    expect_null(build_full_plot(df, list(type = ty, x = "ovr", y = "y")))
+  }
+  # A DISCRETE x past the cap blocks the box family too (an ID column is the
+  # same one-glyph-per-value pathology) -- but a discrete BAR still lumps to
+  # "Other" via BAR_MAX instead of blocking.
+  df$id <- sprintf("id%04d", df$ovr)
+  expect_null(build_full_plot(df, list(type = "boxplot", x = "id", y = "y")))
+  expect_s3_class(build_full_plot(df, list(type = "bar", x = "id")), "ggplot")
+})
+
+test_that("the x cap leaves per-row charts, dates, and histograms alone", {
+  df <- data.frame(x = rep(seq_len(2000), each = 2))
+  df$y <- rnorm(nrow(df))
+  # one mark per ROW, not per level -- must stay available at any cardinality
+  expect_s3_class(build_full_plot(df, list(type = "scatter", x = "x", y = "y")),
+                  "ggplot")
+  expect_s3_class(build_full_plot(df, list(type = "line", x = "x", y = "y")),
+                  "ggplot")
+  # histogram is the escape hatch the bar message advises -- it must work
+  expect_s3_class(build_full_plot(df, list(type = "histogram", x = "x")),
+                  "ggplot")
+  # a real Date axis picks its own pretty breaks; never blocked
+  dd <- data.frame(day = as.Date("2020-01-01") + seq_len(1500), y = rnorm(1500))
+  expect_s3_class(build_full_plot(dd, list(type = "line", x = "day", y = "y")),
+                  "ggplot")
+  expect_s3_class(build_full_plot(dd, list(type = "boxplot", x = "day", y = "y")),
+                  "ggplot")
+  expect_null(plot_block_reason(dd, list(type = "boxplot", x = "day", y = "y")))
+})
+
+test_that("plot_block_reason names the column, the count, and the way out", {
+  df <- data.frame(x = rep(seq_len(1500), 2), y = rnorm(3000))
+  r  <- plot_block_reason(df, list(type = "boxplot", x = "x", y = "y"))
+  expect_true(grepl("x has", r, fixed = TRUE))
+  expect_true(grepl("1,500", r, fixed = TRUE))
+  expect_true(grepl(as.character(X_LEVELS_MAX), r))
+  expect_true(grepl("Filter rows", r, fixed = TRUE))
+  rb <- plot_block_reason(df, list(type = "bar", x = "x"))
+  expect_true(grepl("istogram", rb))
+  # benign / short-list (mod_compare) shapes never error and never block
+  expect_null(plot_block_reason(df, list(type = "scatter", x = "x", y = "y")))
+  expect_null(plot_block_reason(df, list(type = "boxplot", x = "nope")))
+  expect_null(plot_block_reason(df, list(type = "boxplot")))
+  expect_null(plot_block_reason(df, list(x = "x")))
+})
+
+test_that("the x cap counts NA as a level, like GROUP_MAX does", {
+  n  <- 2L * X_LEVELS_MAX
+  df <- data.frame(x = rep_len(seq_len(X_LEVELS_MAX), n), y = rnorm(n))
+  expect_s3_class(build_full_plot(df, list(type = "boxplot", x = "x", y = "y")),
+                  "ggplot")
+  df$x[1] <- NA  # X_LEVELS_MAX real levels + NA = one past the cap
+  expect_null(build_full_plot(df, list(type = "boxplot", x = "x", y = "y")))
+  expect_false(is.null(plot_block_reason(df, list(type = "boxplot", x = "x",
+                                                  y = "y"))))
+})
+
+test_that("generate_code refuses a blocked chart with a parseable comment", {
+  df <- data.frame(x = rep(seq_len(1500), 2), y = rnorm(3000))
+  code <- generate_code(df, list(type = "boxplot", x = "x", y = "y"))
+  expect_false(grepl("geom_boxplot", code, fixed = TRUE))
+  expect_true(grepl(as.character(X_LEVELS_MAX), code))
+  expect_silent(parse(text = code))
+  # an at-cap config still emits real chart code
+  d2 <- data.frame(x = rep(seq_len(X_LEVELS_MAX), 2),
+                   y = rnorm(2L * X_LEVELS_MAX))
+  expect_true(grepl("geom_boxplot",
+                    generate_code(d2, list(type = "boxplot", x = "x", y = "y")),
+                    fixed = TRUE))
+})
+
+test_that("chart_hint explains the block and keeps its advisory layering", {
+  df <- data.frame(x = rep(seq_len(1500), 2), y = rnorm(3000))
+  h  <- chart_hint(df, list(type = "boxplot", x = "x", y = "y"))
+  expect_true(grepl("<b>x</b>", h, fixed = TRUE))
+  expect_true(grepl("1,500", h, fixed = TRUE))
+  expect_true(grepl(as.character(X_LEVELS_MAX), h))
+  expect_true(grepl("Filter rows", h, fixed = TRUE))
+  expect_true(grepl("istogram", chart_hint(df, list(type = "bar", x = "x"))))
+  # the 11-100 band keeps the OLD advisory wording (warn, still draw)
+  d2 <- data.frame(x = rep(seq_len(40), 2), y = rnorm(80))
+  h2 <- chart_hint(d2, list(type = "boxplot", x = "x", y = "y"))
+  expect_true(grepl("one group per value", h2, fixed = TRUE))
+  expect_false(grepl("not rendered", h2, fixed = TRUE))
+  # a text-date column past the cap still gets the CONVERSION advice first --
+  # converting to a real Date un-blocks, so that clause must win
+  days <- format(as.Date("2018-01-01") + seq_len(200), "%Y-%m-%d")
+  d3 <- data.frame(x = rep(days, 2), y = rnorm(400))
+  expect_true(grepl("Change variable types",
+                    chart_hint(d3, list(type = "boxplot", x = "x", y = "y")),
+                    fixed = TRUE))
 })

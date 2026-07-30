@@ -26,11 +26,14 @@ glmmUI <- function(id, binary = FALSE) {
     sidebar = sidebar(
       width = 340,
       if (binary) helpText(
-        tags$b("Binary outcomes are handled separately."),
-        " The response must be numeric 0/1 or a two-level factor; the family",
-        " is fixed to a Bernoulli (binomial) distribution. No dispersion",
-        " model is offered here because true 0/1 data has no free dispersion",
-        " parameter."),
+        tags$b("Binary and binomial-count outcomes are handled separately."),
+        " Use individual 0/1 rows, or grouped successes-out-of-trials counts;",
+        " the family is fixed to a Bernoulli/binomial distribution. No",
+        " dispersion model is offered here because glmmTMB has no free",
+        " dispersion parameter for the binomial family. If your outcome is a",
+        " continuous PROPORTION that can equal exactly 0 or 1 (not a",
+        " successes/trials count), use the ", tags$b("Ordered beta"),
+        " family on the General GLMM tab instead."),
       tags$details(open = NA,
         tags$summary(tags$b("Create combined variable (interaction)")),
         helpText("Paste 2+ columns into one new factor (e.g. ",
@@ -43,8 +46,29 @@ glmmUI <- function(id, binary = FALSE) {
         uiOutput(ns("combo_list_ui"))
       ),
       tags$hr(),
-      uiOutput(ns("response_ui")),
-      if (binary) uiOutput(ns("level_note_ui")),
+      if (binary) radioButtons(ns("resp_type"),
+        tagList("Response format", info_tip(
+          "Individual rows: one 0/1 outcome per row. Grouped counts: each ",
+          "row holds a number of successes out of a number of trials (e.g. ",
+          "12 germinated out of 20 seeds) \u2014 the failures are computed ",
+          "for you as trials minus successes.")),
+        choices = c("Individual rows (0/1 outcome per row)"          = "single",
+                    "Grouped counts (successes out of total trials)" = "grouped"),
+        selected = "single"),
+      if (binary) conditionalPanel(
+        sprintf("input['%s'] == 'single'", ns("resp_type")),
+        uiOutput(ns("response_ui")),
+        uiOutput(ns("level_note_ui"))),
+      if (binary) conditionalPanel(
+        sprintf("input['%s'] == 'grouped'", ns("resp_type")),
+        helpText("Pick a column of success counts and a column of total ",
+                 "trials. Failures are calculated automatically as ",
+                 tags$b("total \u2212 successes"), " \u2014 you do not need ",
+                 "a separate failures column."),
+        uiOutput(ns("success_ui")),
+        uiOutput(ns("trials_ui")),
+        uiOutput(ns("grouped_note_ui"))),
+      if (!binary) uiOutput(ns("response_ui")),
       if (binary) selectInput(ns("link"),
         tagList("Link function", info_tip(
           "logit: symmetric, most common, coefficients are log-odds. ",
@@ -58,9 +82,16 @@ glmmUI <- function(id, binary = FALSE) {
           "Choose the distribution that matches your response's valid ",
           "range (e.g. counts, positive continuous, or a proportion). ",
           "The note below the box updates for whatever family is selected ",
-          "and lists exactly what values are valid.")),
+          "and lists exactly what values are valid. If your proportion ",
+          "data includes exact 0s or 1s, use Ordered beta rather than ",
+          "standard Beta.")),
         choices = GLMM_FAMILY_CHOICES, selected = "nbinom2_log"),
       if (!binary) uiOutput(ns("family_note_ui")),
+      if (!binary) helpText(
+        "Counting successes out of a number of trials (e.g. 12 of 20)? ",
+        "That is a grouped binomial, not a proportion \u2014 use the ",
+        "Binary (0/1) GLMM tab and switch its Response format to ",
+        "\"Grouped counts\"."),
       uiOutput(ns("fixed_ui")),
       checkboxInput(ns("interactions"),
                     "Include interactions among fixed effects", FALSE),
@@ -71,12 +102,14 @@ glmmUI <- function(id, binary = FALSE) {
         uiOutput(ns("slope_group_ui")),
         tags$hr(),
         checkboxInput(ns("zi_on"), tagList(
-          if (binary) "Zero-inflation term (rare for true 0/1 data)"
-          else        "Zero-inflation model (ziformula)",
+          "Zero-inflation model (ziformula)",
           info_tip(
             "Models the probability of a structural extra zero on top of ",
             "the count/response distribution. Leave the predictor picker ",
-            "empty for an intercept-only zero-inflation model (~1).")),
+            "empty for an intercept-only zero-inflation model (~1). Rare ",
+            "for individual 0/1 rows; meaningful for grouped counts, where ",
+            "a site can land on zero successes out of many trials more ",
+            "often than the model expects.")),
           value = FALSE),
         uiOutput(ns("zi_vars_ui")),
         if (!binary) uiOutput(ns("disp_vars_ui")),
@@ -144,8 +177,13 @@ glmmUI <- function(id, binary = FALSE) {
 
       nav_panel("DHARMa residuals",
         helpText(if (binary) paste0(
-          "For 0/1 data the DHARMa QQ/residual plot is naturally grainy; ",
-          "focus on the formal tests below rather than the visual pattern.")
+          "For individual 0/1 data the DHARMa QQ/residual plot is naturally ",
+          "grainy; focus on the formal tests below rather than the visual ",
+          "pattern. For grouped counts the plot is informative, and the ",
+          "dispersion test matters: grouped binomial data CAN be ",
+          "overdispersed \u2014 if it flags, refit with family = ",
+          "betabinomial() or an observation-level random effect (glmmTMB's ",
+          "dispformula has no effect for the binomial family).")
         else paste0(
           "Simulation-based residuals \u2014 the right tool for glmmTMB ",
           "(ordinary Pearson/deviance residuals from a GLMM are not ",
@@ -160,6 +198,10 @@ glmmUI <- function(id, binary = FALSE) {
         verbatimTextOutput(ns("disp_test")),
         if (!binary) h4("Zero inflation"),
         if (!binary) verbatimTextOutput(ns("zi_test")),
+        if (binary) conditionalPanel(
+          sprintf("input['%s'] == 'grouped'", ns("resp_type")),
+          h4("Zero inflation"),
+          verbatimTextOutput(ns("zi_test"))),
         h4("Outliers"),
         verbatimTextOutput(ns("outlier_test")),
         glmm_code_panel(ns, "code_dharma", "DHARMa code")),
@@ -237,6 +279,24 @@ glmmServer <- function(id, data_in, binary = FALSE) {
 
     observeEvent(data_in(), { rv$fit <- NULL }, ignoreNULL = FALSE)
 
+    # ONE token set: the radio, this reactive and spec$resp_mode all use
+    # "single" / "grouped". NULL (before the radio renders, or on the general
+    # tab) means "single" -- what every pre-0.11.0 spec meant.
+    resp_mode <- reactive({
+      if (!binary) return("single")
+      if (identical(input$resp_type, "grouped")) "grouped" else "single"
+    })
+
+    # "Bernoulli" = the case with no estimable zero-inflation or dispersion.
+    # A grouped binomial is binary but NOT Bernoulli. Prefer the fitted
+    # model's own flag so the diagnostics describe the fit on screen, not
+    # whatever the radio says right now.
+    bernoulli <- reactive({
+      f <- rv$fit
+      if (!is.null(f) && isTRUE(f$ok)) isTRUE(f$bernoulli)
+      else binary && identical(resp_mode(), "single")
+    })
+
     # -- Combined-variable builder ------------------------------------------
     output$combo_vars_ui <- renderUI({
       df <- base_data(); req(df); rv$reset
@@ -283,6 +343,10 @@ glmmServer <- function(id, data_in, binary = FALSE) {
     output$response_ui <- renderUI({
       df <- dataset(); req(df); rv$reset
       if (binary) {
+        # conditionalPanel only hides client-side; without this req the
+        # "no 0/1 column" validate() would still fire (invisibly) while the
+        # user is in grouped mode -- where no 0/1 column is needed at all.
+        req(identical(resp_mode(), "single"))
         cand <- names(df)[vapply(df, function(x)
           (is.numeric(x) && all(x[is.finite(x)] %in% c(0, 1))) ||
             is.logical(x) ||
@@ -304,11 +368,58 @@ glmmServer <- function(id, data_in, binary = FALSE) {
 
     output$level_note_ui <- renderUI({
       df <- dataset(); r <- input$response
-      req(binary, df, r, r %in% names(df))
+      req(binary, identical(resp_mode(), "single"), df, r, r %in% names(df))
       if (is.factor(df[[r]]))
         helpText(sprintf(
           "Modeling P(%s = \"%s\") \u2014 the second factor level counts as \"success\".",
           r, levels(df[[r]])[2]))
+    })
+
+    # -- Grouped-binomial pickers -------------------------------------------
+    # BOTH pickers get the same candidate list: making the trials picker
+    # depend on input$success would re-render it on every successes change
+    # and silently discard the user's trials selection (the picker-repopulate
+    # bug class). The same-column case is caught by glmm_trials_check().
+    count_cands <- reactive({
+      df <- dataset(); req(df)
+      glmm_count_cols(df)
+    })
+
+    output$success_ui <- renderUI({
+      req(binary); cand <- count_cands(); rv$reset
+      validate(need(length(cand) > 0, paste0(
+        "No non-negative whole-number columns found to use as a successes ",
+        "count. Recast the column on the Import tab first.")))
+      guess <- glmm_trials_guess(cand)$successes
+      selectInput(ns("success"), "Successes column (count)", choices = cand,
+                  selected = if (!is.na(guess)) guess else cand[1])
+    })
+
+    output$trials_ui <- renderUI({
+      req(binary); cand <- count_cands(); rv$reset
+      validate(need(length(cand) > 1, paste0(
+        "Grouped counts need two whole-number columns: successes and total ",
+        "trials.")))
+      guess <- glmm_trials_guess(cand)$trials
+      selectInput(ns("trials"), "Total trials column (successes + failures)",
+                  choices = cand,
+                  selected = if (!is.na(guess)) guess
+                             else cand[min(2L, length(cand))])
+    })
+
+    # Live pre-fit note + warning, using the SAME validator string the fit
+    # would return -- one rule, one message (cf. family_note_ui).
+    output$grouped_note_ui <- renderUI({
+      df <- dataset(); su <- input$success; tr <- input$trials
+      req(binary, df, su, tr)
+      warn <- glmm_trials_check(df, su, tr)
+      tagList(
+        helpText(sprintf(
+          "Failures are computed automatically as %s \u2212 %s, so the model's response becomes cbind(%s, %s - %s).",
+          tr, su, su, tr, su)),
+        if (!is.null(warn))
+          div(class = "alert alert-warning",
+              style = "padding:6px 10px;", warn))
     })
 
     # Live valid-domain note for the selected family, plus an automatic check
@@ -400,6 +511,8 @@ glmmServer <- function(id, data_in, binary = FALSE) {
       if (!binary) updateSelectInput(session, "family",
                                      selected = "nbinom2_log")
       if (binary)  updateSelectInput(session, "link", selected = "logit")
+      if (binary)  updateRadioButtons(session, "resp_type",
+                                      selected = "single")
       updateSelectInput(session, "adjust", selected = "tukey")
       updateCheckboxInput(session, "interactions", value = FALSE)
       updateCheckboxInput(session, "zi_on", value = FALSE)
@@ -409,10 +522,14 @@ glmmServer <- function(id, data_in, binary = FALSE) {
     # -- Fit on demand ------------------------------------------------------
     observeEvent(input$run, {
       df <- dataset(); req(df)
+      mode <- resp_mode()
       resp <- input$response
       fx   <- input$fixed  %||% character(0)
       rnd  <- input$random %||% character(0)
-      if (is.null(resp) || !nzchar(resp)) {
+      # No grouped-mode validation here: the engine owns it --
+      # glmm_trials_check() runs inside glmm_fit(), whose error string the
+      # existing failure branch below already renders.
+      if (identical(mode, "single") && (is.null(resp) || !nzchar(resp))) {
         rv$message <- list(type = "warning",
                            text = "Choose a response variable.")
         return()
@@ -424,6 +541,9 @@ glmmServer <- function(id, data_in, binary = FALSE) {
       }
       spec <- list(
         response = resp, fixed = fx, random = rnd,
+        resp_mode = mode,
+        successes = if (identical(mode, "grouped")) input$success,
+        trials    = if (identical(mode, "grouped")) input$trials,
         interactions = isTRUE(input$interactions),
         slope = input$ranslope, slope_group = input$ranslope_group,
         binary = binary,
@@ -459,6 +579,8 @@ glmmServer <- function(id, data_in, binary = FALSE) {
       f <- rv$fit
       validate(need(!is.null(f), "Fit a model to see the formulas."))
       cat("Conditional: ", f$fml_str, "\n")
+      if (identical(f$resp_mode, "grouped"))
+        cat("response:    ", f$response, " (grouped binomial)\n")
       cat("ziformula:   ", f$zi_str, "\n")
       if (!binary) cat("dispformula: ", f$disp_str, "\n")
       cat("family:      ", glmm_family_text(f), "\n")
@@ -543,7 +665,9 @@ glmmServer <- function(id, data_in, binary = FALSE) {
 
     dharma_tests <- reactive({
       s <- dharma_sim(); req(s$ok)
-      glmm_dharma_tests(s$sim, binary = binary)
+      # bernoulli(), not the tab flag: a grouped binomial CAN be
+      # zero-inflated, so its test battery must include testZeroInflation.
+      glmm_dharma_tests(s$sim, binary = bernoulli())
     })
 
     output$unif_test <- renderPrint({
@@ -569,9 +693,12 @@ glmmServer <- function(id, data_in, binary = FALSE) {
 
     output$zi_test <- renderPrint({
       f <- rv$fit
-      validate(need(!is.null(f) && !binary, ""))
+      validate(need(!is.null(f), ""))
       s <- dharma_sim()
       validate(need(s$ok, s$error))
+      # driven by the RESULT, not the tab: present for the general tab and
+      # for grouped-binomial fits, absent for Bernoulli fits.
+      validate(need(!is.null(dharma_tests()$zero_inflation), ""))
       print(dharma_tests()$zero_inflation)
     })
 
@@ -583,7 +710,7 @@ glmmServer <- function(id, data_in, binary = FALSE) {
       print(dharma_tests()$outliers)
     })
 
-    output$code_dharma <- renderPrint(cat(glmm_dharma_code(binary)))
+    output$code_dharma <- renderPrint(cat(glmm_dharma_code(bernoulli())))
 
     # -- EMMeans ------------------------------------------------------------
     emm_result <- reactive({

@@ -25,21 +25,6 @@
 data_explorer_app <- function() {
   options(shiny.maxRequestSize = 250 * 1024^2)   # lift the 5 MB upload cap
 
-  # The import stage's three built-in examples (a custom `examples` list
-  # REPLACES them, so they are restated here) plus the map-ready Florida sites.
-  ex <- list(
-    mtcars = local({
-      d <- as.data.frame(datasets::mtcars); d$car <- rownames(d)
-      rownames(d) <- NULL; d
-    }),
-    relig_income    = as.data.frame(tidyr::relig_income),
-    fish_encounters = as.data.frame(tidyr::fish_encounters),
-    sites           = make_map_example_data())
-  ex_choices <- c("mtcars (cars)"           = "mtcars",
-                  "relig_income (wide)"     = "relig_income",
-                  "fish_encounters (long)"  = "fish_encounters",
-                  "Florida sites (map)"     = "sites")
-
   about_panel <- nav_panel(
     title = tagList(icon("circle-info"), " About"),
     value = "about",
@@ -65,7 +50,7 @@ data_explorer_app <- function() {
             tags$li(tags$b("Summarize"), " \u2014 count, mean, median, mode, min, max, SD, ",
                     "SE, and IQR by group, or category proportions with confidence ",
                     "intervals."),
-            tags$li(tags$b("Visualize"), " \u2014 up to four charts at once (scatter, line, ",
+            tags$li(tags$b("Visualize"), " \u2014 up to eight charts at once (scatter, line, ",
                     "bar, histogram, density, box, violin, mean \u00b1 error, pie, ",
                     "hexbin, correlation heatmap) with copy-ready ggplot2 code; a ",
                     "scatter can be sized by a variable to make a bubble chart."),
@@ -108,6 +93,7 @@ data_explorer_app <- function() {
   )
 
   ui <- page_navbar(
+    header       = uf_busy(),   # spinners on slow outputs (maps, big charts)
     title        = uf_title("Data Explorer"),
     window_title = "UF/IFAS Data Explorer",
     theme        = uf_theme(),
@@ -118,7 +104,7 @@ data_explorer_app <- function() {
 
     about_panel,
     nav_panel(tagList(icon("file-arrow-up"), " Import"),    value = "import",
-              importUI("imp", example_choices = ex_choices)),
+              importUI("imp", examples = EXAMPLES_EXPLORER)),
     nav_panel(tagList(icon("table-cells"),   " Reshape"),   value = "reshape",
               reshapeUI("rs")),
     nav_panel(tagList(icon("layer-group"),   " Summarize"), value = "summarize",
@@ -142,7 +128,7 @@ data_explorer_app <- function() {
     # other. Only Import + Reshape touch it.
     session_store <- reactiveValues(reshape_state = NULL, pending_reshape = NULL)
 
-    imported   <- importServer("imp", examples = ex,          # Import -> reactive(data|NULL)
+    imported   <- importServer("imp", examples = EXAMPLES_EXPLORER,   # Import -> reactive(data|NULL)
                                store = session_store)
     working    <- reshapeServer("rs", imported, store = session_store)  # Reshape -> working data
     summary_t  <- summarizeServer("sm", working)   # Summarize -> reactive(summary table)

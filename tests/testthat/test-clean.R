@@ -74,3 +74,24 @@ test_that("the outliers issue clears once the data is flagged", {
   out <- clean_apply(df, "outliers")
   expect_false("outliers" %in% names(detect_issues(out)))  # gone after
 })
+
+test_that("rename_column renames one column and leaves the rest alone", {
+  df  <- data.frame(country = c("US", "FR"), pop = c(331, 67))
+  out <- rename_column(df, "country", "Country")
+  expect_named(out, c("Country", "pop"))
+  expect_equal(out$Country, c("US", "FR"))
+  expect_equal(out$pop, c(331, 67))
+})
+
+test_that("rename_column trims the new name and no-ops on the same name", {
+  df <- data.frame(x = 1:3)
+  expect_named(rename_column(df, "x", "  y  "), "y")
+  expect_identical(rename_column(df, "x", "x"), df)
+})
+
+test_that("rename_column rejects unknown, blank, and colliding names", {
+  df <- data.frame(a = 1, b = 2)
+  expect_error(rename_column(df, "nope", "c"), "not found")
+  expect_error(rename_column(df, "a", "   "), "blank")
+  expect_error(rename_column(df, "a", "b"), "already exists")
+})

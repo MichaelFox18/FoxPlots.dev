@@ -410,9 +410,14 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
 }
 
 # A matrix (counts / percentages / residuals) as an HTML table with its row
-# names promoted to a leading column.
-.mat_to_html <- function(m, caption) {
-  df_to_html(cbind(` ` = rownames(m), as.data.frame.matrix(m)), caption)
+# names promoted to a leading column. `row_var` names that column (the ROW
+# variable) -- the matrix itself has no dimnames, so without it the header
+# cell is blank and the reader cannot tell which variable went where.
+.mat_to_html <- function(m, caption, row_var = " ") {
+  d <- cbind(stats::setNames(data.frame(rownames(m), stringsAsFactors = FALSE),
+                             row_var),
+             as.data.frame.matrix(m))
+  df_to_html(d, caption)
 }
 
 # The body for ONE numeric comparison. Shared by the single-comparison report
@@ -462,24 +467,30 @@ footer{margin-top:2.4em;border-top:1px solid #e4e4ea;padding-top:12px;color:#9a9
       Statistic = c("Chi-square", "df", CRAMERS_V, "N"),
       Value = c(round(r$statistic, 3), r$df, round(r$cramers_v, 3), r$n),
       check.names = FALSE)
+    rc <- sprintf(" (rows: %s, columns: %s)",
+                  html_escape(r$var1), html_escape(r$var2))
     body <- paste0(
       "<p>", verdict, "</p>",
       "<p class=\"note\">Association strength (", CRAMERS_V, "): ",
       effect_magnitude(CRAMERS_V, r$cramers_v), ".</p>",
       df_to_html(stats_tbl, "Test statistics"),
-      .mat_to_html(r$table, "Contingency table"),
-      .mat_to_html(r$expected, "Expected counts"),
+      .mat_to_html(r$table, paste0("Contingency table", rc), r$var1),
+      .mat_to_html(r$expected, paste0("Expected counts", rc), r$var1),
       .mat_to_html(r$stdres,
-                   "Standardized residuals (|z| &gt; 2 flags a driver cell)"))
+                   paste0("Standardized residuals", rc,
+                          " (|z| &gt; 2 flags a driver cell)"), r$var1))
     pcts <- r$pcts %||% character(0)
     if ("row" %in% pcts)
-      body <- paste0(body, .mat_to_html(r$row_pct, "Row % (each row sums to 100)"))
+      body <- paste0(body, .mat_to_html(
+        r$row_pct, paste0("Row %", rc, " (each row sums to 100)"), r$var1))
     if ("col" %in% pcts)
-      body <- paste0(body, .mat_to_html(r$col_pct,
-                                        "Column % (each column sums to 100)"))
+      body <- paste0(body, .mat_to_html(
+        r$col_pct, paste0("Column %", rc, " (each column sums to 100)"),
+        r$var1))
     if ("total" %in% pcts)
-      body <- paste0(body, .mat_to_html(r$total_pct,
-                                        "Total % (whole table sums to 100)"))
+      body <- paste0(body, .mat_to_html(
+        r$total_pct, paste0("Total %", rc, " (whole table sums to 100)"),
+        r$var1))
   } else if (identical(r$mode, "num_multi")) {
     body <- paste0(
       sprintf(paste0("<p class=\"note\">One test per outcome x group. p_adj ",
@@ -702,9 +713,13 @@ split_wide_df <- function(df, max_cols = 10L, keep = 1L) {
   doc
 }
 
-# A matrix as a Word table with its row names promoted to a leading column.
-.docx_add_mat <- function(doc, m, caption) {
-  .docx_add_table(doc, cbind(` ` = rownames(m), as.data.frame.matrix(m)), caption)
+# A matrix as a Word table with its row names promoted to a leading column,
+# headed by the ROW variable's name (the matrix itself has no dimnames).
+.docx_add_mat <- function(doc, m, caption, row_var = " ") {
+  d <- cbind(stats::setNames(data.frame(rownames(m), stringsAsFactors = FALSE),
+                             row_var),
+             as.data.frame.matrix(m))
+  .docx_add_table(doc, d, caption)
 }
 
 # The body for ONE numeric comparison; shared by the single report and the grid.
@@ -754,17 +769,27 @@ split_wide_df <- function(df, max_cols = 10L, keep = 1L) {
       Value = c(round(r$statistic, 3), r$df, round(r$cramers_v, 3), r$n),
       check.names = FALSE)
     doc <- .docx_add_table(doc, stats_tbl, "Test statistics")
-    doc <- .docx_add_mat(doc, r$table,    "Contingency table")
-    doc <- .docx_add_mat(doc, r$expected, "Expected counts")
+    rc <- sprintf(" (rows: %s, columns: %s)", r$var1, r$var2)
+    doc <- .docx_add_mat(doc, r$table,
+                         paste0("Contingency table", rc), r$var1)
+    doc <- .docx_add_mat(doc, r$expected,
+                         paste0("Expected counts", rc), r$var1)
     doc <- .docx_add_mat(doc, r$stdres,
-                         "Standardized residuals (|z| > 2 flags a driver cell)")
+                         paste0("Standardized residuals", rc,
+                                " (|z| > 2 flags a driver cell)"), r$var1)
     pcts <- r$pcts %||% character(0)
     if ("row" %in% pcts)
-      doc <- .docx_add_mat(doc, r$row_pct, "Row % (each row sums to 100)")
+      doc <- .docx_add_mat(doc, r$row_pct,
+                           paste0("Row %", rc, " (each row sums to 100)"),
+                           r$var1)
     if ("col" %in% pcts)
-      doc <- .docx_add_mat(doc, r$col_pct, "Column % (each column sums to 100)")
+      doc <- .docx_add_mat(doc, r$col_pct,
+                           paste0("Column %", rc, " (each column sums to 100)"),
+                           r$var1)
     if ("total" %in% pcts)
-      doc <- .docx_add_mat(doc, r$total_pct, "Total % (whole table sums to 100)")
+      doc <- .docx_add_mat(doc, r$total_pct,
+                           paste0("Total %", rc, " (whole table sums to 100)"),
+                           r$var1)
   } else if (identical(r$mode, "num_multi")) {
     doc <- officer::body_add_par(doc, sprintf(
       "One test per outcome x group. p_adj corrects across all %d combinations (method: %s).",

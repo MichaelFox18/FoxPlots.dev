@@ -1,8 +1,10 @@
 Package: foxplots
 Title: Point-and-Click Data Exploration and Reshaping Toolkit
-Version: 0.10.0
-Authors@R:
-    person("Michael", "Fox", , "michaelfox0418@gmail.com", role = c("aut", "cre"))
+Version: 0.12.0
+Authors@R: c(
+    person("Michael", "Fox", , "michaelfox0418@gmail.com", role = c("aut", "cre")),
+    person("Laina", "Edwards", role = "ctb",
+           comment = "GLMM Review app: original standalone version, ordered beta family, grouped binomial mode"))
 URL: https://github.com/UFSDACU/FoxPlots
 BugReports: https://github.com/UFSDACU/FoxPlots/issues
 Description: A point-and-click toolkit, built on 'shiny', for importing,
@@ -27,7 +29,7 @@ Imports:
     dplyr,
     DT,
     emmeans,
-    glmmTMB,
+    glmmTMB (>= 1.1.5),
     ggplot2,
     graphics,
     grDevices,
@@ -42,7 +44,7 @@ Imports:
     multcompView,
     plotly,
     readxl,
-    shiny,
+    shiny (>= 1.11.0),
     stats,
     tibble,
     tidyr,

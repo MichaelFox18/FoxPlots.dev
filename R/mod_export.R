@@ -128,10 +128,15 @@ exportServer <- function(id, data_in, plots = NULL, model = NULL,
 
     # -- Optional: export charts (from mod_visualize) ----------
     if (!is.null(plots)) {
-      # Preview the exact grid that will be exported.
+      # Preview the exact grid that will be exported. Height scales with the
+      # grid's row count (2 per row) so 6-8 plots aren't squashed; at 1-4
+      # plots (<= 2 rows) it stays the original 440px.
       output$charts_preview_ui <- renderUI({
+        n    <- length(tryCatch(plots(), error = function(e) list()))
+        rows <- max(1L, ceiling(n / 2))
         card(card_header(icon("chart-line"), " Chart preview"),
-             plotOutput(ns("charts_preview"), height = "440px"))
+             plotOutput(ns("charts_preview"),
+                        height = paste0(max(440L, 220L * rows), "px")))
       })
       output$charts_preview <- renderPlot({
         pl <- plots()

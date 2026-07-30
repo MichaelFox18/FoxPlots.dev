@@ -29,6 +29,7 @@ map_tool_app <- function() {
   options(shiny.maxRequestSize = 250 * 1024^2)
 
   ui <- page_navbar(
+    header       = uf_busy(),   # spinners on slow outputs (maps, big charts)
     title        = uf_title("Map Tool"),
     window_title = "UF/IFAS Map Tool",
     theme        = uf_theme(),
@@ -43,18 +44,25 @@ map_tool_app <- function() {
             "HTML file or a PNG image, or copy the matching leaflet R code.",
             "Basemap tiles load from the internet."),
       c(paste("Import a CSV or Excel file with coordinate columns on the",
-              "Import tab (or load the Florida sites / Fiji earthquakes",
-              "examples)."),
+              "Import tab, or load an example (Florida sites, Fiji",
+              "earthquakes, Atlantic storm tracks, or the map-ready state",
+              "rent + income set for shaded regions)."),
         paste("On the Map tab the coordinate columns are detected",
               "automatically; style the markers and pan / zoom freely.",
               "Your view survives setting changes."),
         paste("Download the interactive map or a PNG snapshot from the Map",
               "tab's sidebar; the data itself downloads from the Export",
-              "tab."))),
+              "tab.")),
+      tips = c(
+        paste("No coordinates? Switch Map type to Shaded regions - it joins",
+              "your data to built-in state / county / country boundaries by",
+              "name."),
+        paste("Skewed values (population, income) color better on the log or",
+              "quantile scale."),
+        paste("Dense point clouds: clustering keeps the map responsive, or",
+              "combine points by admin area."))),
     nav_panel(tagList(icon("file-arrow-up"),    " Import"), value = "import",
-              importUI("imp", example_choices = c(
-                "Florida research sites (example)" = "sites",
-                "Fiji earthquakes (1,000 points)"  = "quakes"))),
+              importUI("imp", examples = EXAMPLES_MAP)),
     nav_panel(tagList(icon("map-location-dot"), " Map"),    value = "map",
               mapUI("map")),
     nav_panel(tagList(icon("file-export"),      " Export & Report"),
@@ -64,9 +72,7 @@ map_tool_app <- function() {
   )
 
   server <- function(input, output, session) {
-    imported <- importServer("imp", examples = list(
-      sites  = make_map_example_data(),
-      quakes = as.data.frame(datasets::quakes)))
+    imported <- importServer("imp", examples = EXAMPLES_MAP)
     map_out <- mapServer("map", imported)            # map + its own downloads
     exportServer("ex", imported, preview = FALSE)    # data-only download
     reportServer("rep", imported,

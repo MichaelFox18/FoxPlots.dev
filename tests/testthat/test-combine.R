@@ -50,3 +50,14 @@ test_that("compare_tables reports membership and cell diffs", {
   expect_equal(cmp$Differing[cmp$Column == "x"], 1L)        # one cell differs
   expect_equal(cmp$In_right[cmp$Column == "only_l"], "no")
 })
+
+test_that("near_match_columns pairs names differing only by case/whitespace", {
+  out <- near_match_columns(c("Country", "pop"), c("country ", "gdp"))
+  expect_equal(out$left,  "Country")
+  expect_equal(out$right, "country ")
+})
+
+test_that("near_match_columns ignores exact shared names and true misses", {
+  expect_equal(nrow(near_match_columns(c("id", "x"), c("id", "y"))), 0L)
+  expect_equal(nrow(near_match_columns(character(0), c("a"))), 0L)
+})

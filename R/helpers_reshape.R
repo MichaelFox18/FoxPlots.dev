@@ -211,3 +211,48 @@ do_transpose <- function(data, names_from = NULL, id_col = "name") {
   tidyr::pivot_wider(long, names_from = tidyselect::all_of(names_from),
                      values_from = ".value")
 }
+
+# --- Advisory hint ----------------------------------------------------------
+
+# Returns an HTML advisory string for the chosen reshape operation, or NULL
+# when there is nothing worth saying (the chart_hint / map_no_coord_advice
+# pattern: pure and testable, rendered by the module as an info alert).
+#
+# The one that earns its keep: Subset's row control is RANDOM sampling only,
+# and users reliably expect "subset by <value>" -- that lives on the Import
+# tab as Filter rows, one stage upstream. Name it, the way chart_hint's
+# GROUP_MAX message names Filter rows.
+#
+# `params` is a plain list of the module's current inputs:
+#   subset_cols (chr), subset_sample ("all"/"n"/"prop"),
+#   stack_cols (chr), summary_groups (chr), summary_vars (chr)
+reshape_hint <- function(df, op, params = list()) {
+  if (is.null(op)) return(NULL)
+  if (identical(op, "subset")) {
+    no_cols <- length(params$subset_cols %||% character(0)) == 0
+    all_rows <- identical(params$subset_sample %||% "all", "all")
+    base <- paste0(
+      "Subset keeps <b>columns</b> and draws a <b>random sample</b> of rows. ",
+      "To keep rows by <b>value</b> (e.g. only Season = Spring), use ",
+      "<b>Filter rows</b> on the Import tab &mdash; it runs before this ",
+      "stage, so the two combine.")
+    if (no_cols && all_rows)
+      return(paste0(base, " Right now nothing is selected, so the data ",
+                    "passes through unchanged."))
+    return(base)
+  }
+  if (identical(op, "stack") &&
+      length(params$stack_cols %||% character(0)) == 0)
+    return(paste0("Pick two or more columns to stack &mdash; typically ",
+                  "repeated measurements stored side by side (e.g. week1, ",
+                  "week2, week3)."))
+  # No Summarize-tab pointer here: this module also ships in the standalone
+  # Reshape Tool, which has no Summarize tab -- advice must stay followable
+  # in every app that hosts the module (the chart_hint facet rule).
+  if (identical(op, "summary") &&
+      length(params$summary_groups %||% character(0)) == 0 &&
+      length(params$summary_vars %||% character(0)) == 0)
+    return(paste0("Pick grouping column(s) and numeric column(s) to build ",
+                  "the summary table &mdash; one row per group combination."))
+  NULL
+}

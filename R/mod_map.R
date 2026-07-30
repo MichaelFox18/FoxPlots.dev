@@ -371,6 +371,12 @@ mapServer <- function(id, data_in) {
         if (!is.null(cur) && cur %in% valid) cur else NULL
       }
       tagList(
+        # Big boundary sets redraw slowly (serializing thousands of polygons),
+        # and a silent multi-second freeze reads as a hang -- say so up front.
+        if (length(gj$features) >= MAP_CHORO_SLOW)
+          helpText(sprintf(
+            "Drawing %s regions %s the map can take ~10 seconds to appear after each change.",
+            format(length(gj$features), big.mark = ","), SYM_MDASH)),
         selectInput(ns("region_prop"),
           tagList("Region name property", info_tip(
             "Boundary files store several names for each region - a short ",
@@ -423,6 +429,12 @@ mapServer <- function(id, data_in) {
           selected = keep_sel("choro_scale", c("linear", "quantile"))),
         checkboxInput(ns("choro_legend"), "Show legend",
                       isolate(input$choro_legend) %||% TRUE),
+        checkboxInput(ns("choro_info"),
+          tagList("Region popups & hover labels", info_tip(
+            "Hover a region for its name and shaded value; click it for the ",
+            "full summary of your matching rows (rows, mean, median, SD, min, ",
+            "max). Untick to slim down a very large map.")),
+          isolate(input$choro_info) %||% TRUE),
         uiOutput(ns("choro_diag"))
       )
     })
@@ -596,6 +608,7 @@ mapServer <- function(id, data_in) {
         region_prop  = input$region_prop %||% "",
         region_value = input$region_value %||% "__none__",
         region_agg   = input$region_agg %||% "mean",
+        region_info  = isTRUE(input$choro_info %||% TRUE),
         palette      = input$choro_palette %||% "auto",
         color_scale  = input$choro_scale %||% "linear",
         legend       = isTRUE(input$choro_legend %||% TRUE),

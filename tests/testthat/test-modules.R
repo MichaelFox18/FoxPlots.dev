@@ -104,6 +104,41 @@ test_that("visualizeServer drops a colour past GROUP_MAX (the 0.10.0 freeze)", {
   })
 })
 
+test_that("visualizeServer thins a crowded x axis and honours the override", {
+  df <- data.frame(day = sprintf("2024-%02d-%02d", rep(1:12, each = 25),
+                                 rep(1:25, 12)),
+                   y = rnorm(300), stringsAsFactors = FALSE)
+  x_scales <- function(p) Filter(function(z) "x" %in% z$aesthetics,
+                                 p$scales$scales)
+  testServer(visualizeServer, args = list(data_in = reactive(df)), {
+    session$setInputs(n_plots = 1, mp1_type = "line", mp1_xvar = "day",
+                      mp1_yvar = "y", mp1_xticks = "auto")
+    sc <- x_scales(session$returned()$plots[[1]])
+    expect_equal(length(sc), 1L)
+    expect_lte(length(sc[[1]]$breaks), AXIS_LABEL_MAX)
+    session$setInputs(mp1_xticks = "all")
+    expect_equal(length(x_scales(session$returned()$plots[[1]])), 0L)
+  })
+})
+
+test_that("the date-format picker appears only for a REAL Date x", {
+  # The wiring half: conditionalPanel cannot see column types, so this must be
+  # a renderUI. Reverting it to a static control would pass the helper tests.
+  df <- data.frame(d = as.Date("2024-01-01") + 0:9,
+                   s = sprintf("2024-01-%02d", 1:10),
+                   y = rnorm(10), stringsAsFactors = FALSE)
+  testServer(visualizeServer, args = list(data_in = reactive(df)), {
+    session$setInputs(n_plots = 1, mp1_type = "line", mp1_yvar = "y",
+                      mp1_xvar = "s")
+    expect_null(output$ui_mp1_xdatefmt)      # renderUI returned NULL -> no UI
+    session$setInputs(mp1_xvar = "d")
+    html <- as.character(output$ui_mp1_xdatefmt$html)
+    expect_true(grepl("mp1_xdatefmtv", html, fixed = TRUE))
+    # options are labelled with the format applied to the user's own data
+    expect_true(grepl("2024-01-01", html, fixed = TRUE))
+  })
+})
+
 # ---- mod_map -----------------------------------------------------------------
 
 test_that("mapServer returns a leaflet widget once coordinates resolve", {
@@ -241,4 +276,60 @@ test_that("glmmServer returns the same pair in both general and binary modes", {
       expect_true(all(c("data", "report") %in% names(out)))
     })
   }
+})
+
+# ---- 0.12.0 additions: import rename + the 8-slot / blocked-config wiring ----
+
+test_that("importServer renames a column and publishes the new name", {
+  testServer(importServer, args = list(examples = list(demo = mod_df())), {
+    session$setInputs(example = "demo", load_example = 1)
+    session$setInputs(rn_col = "g", rn_new = "group", rn_apply = 1)
+    expect_named(session$returned(), c("group", "x", "y"))
+  })
+})
+
+test_that("importServer's rename carries an active filter to the new name", {
+  # The one real rename hazard: filters store bare column names, and an
+  # unknown column silently no-ops (helpers_filter.R). The handler must
+  # rewrite the stored condition or a rename silently UN-filters.
+  testServer(importServer, args = list(examples = list(demo = mod_df())), {
+    session$setInputs(example = "demo", load_example = 1)
+    session$setInputs(filter_col = "g", filter_op = "in",
+                      filter_vals = "a", filter_add = 1)
+    expect_equal(nrow(session$returned()), 5L)
+    session$setInputs(rn_col = "g", rn_new = "group", rn_apply = 1)
+    out <- session$returned()
+    expect_true("group" %in% names(out))
+    expect_false("g" %in% names(out))
+    expect_equal(nrow(out), 5L)                  # still filtered, not 10
+    expect_true(all(out$group == "a"))
+    expect_equal(rv$filters[[1]]$col, "group")   # the chip tells the truth
+  })
+})
+
+test_that("visualizeServer reaches slot 8 and renders all eight accordions", {
+  testServer(visualizeServer, args = list(data_in = reactive(mod_df())), {
+    session$setInputs(n_plots = MAX_PLOTS,
+                      mp1_type = "scatter", mp1_xvar = "x", mp1_yvar = "y",
+                      mp8_type = "scatter", mp8_xvar = "x", mp8_yvar = "y")
+    out <- session$returned()
+    expect_equal(length(out$plots), 2L)          # slots 1 and 8; 2-7 skipped
+    expect_s3_class(out$plots[[2]], "ggplot")
+    html <- as.character(output$plot_config_accordion$html)
+    expect_true(grepl(paste0("mp", MAX_PLOTS, "_type"), html, fixed = TRUE))
+  })
+})
+
+test_that("visualizeServer blocks a per-value chart past X_LEVELS_MAX", {
+  # The wiring half of the x cap: Export/Report must never see the blocked
+  # slot, and the sidebar hint must explain the block.
+  df <- data.frame(x = rep(seq_len(X_LEVELS_MAX + 50L), 2))
+  df$y <- rnorm(nrow(df))
+  testServer(visualizeServer, args = list(data_in = reactive(df)), {
+    session$setInputs(n_plots = 1, mp1_type = "boxplot",
+                      mp1_xvar = "x", mp1_yvar = "y")
+    expect_equal(length(session$returned()$plots), 0L)
+    html <- as.character(output$ui_mp1_hint$html)
+    expect_true(grepl(as.character(X_LEVELS_MAX), html))
+  })
 })

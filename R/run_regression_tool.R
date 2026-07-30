@@ -30,14 +30,8 @@
 regression_tool_app <- function() {
   options(shiny.maxRequestSize = 250 * 1024^2)
 
-  # iris gives a numeric response plus a 3-level factor (Species) for ANCOVA;
-  # mtcars adds all-numeric predictors and 0/1 columns (am, vs) that work as a
-  # binary response for logistic regression.
-  ex <- list(iris = datasets::iris, mtcars = datasets::mtcars)
-  ex_choices <- c("iris (flowers, 3 species)" = "iris",
-                  "mtcars (cars)"             = "mtcars")
-
   ui <- page_navbar(
+    header       = uf_busy(),   # spinners on slow outputs (maps, big charts)
     title        = uf_title("Regression"),
     window_title = "UF/IFAS Regression",
     theme        = uf_theme(),
@@ -52,16 +46,26 @@ regression_tool_app <- function() {
             "means with letter groupings, residual diagnostics with assumption",
             "checks and VIF, odds ratios for logistic models, nested model",
             "comparison, and copy-ready code."),
-      c(paste("Import a CSV or Excel file on the Import tab (or load the",
-              "built-in iris / mtcars examples). Use Change Type to make a",
-              "number that is really a category into a factor."),
+      c(paste("Import a CSV or Excel file on the Import tab, or load a",
+              "built-in example (mpg, iris, Titanic, diamonds, and more).",
+              "Use Change Type to make a number that is really a category",
+              "into a factor."),
         paste("On the Regression tab pick the outcome type, the response, and",
               "the predictors, then fit the model."),
         paste("Review the coefficients, marginal means, and diagnostics;",
               "export the data and model, or download a full HTML / Word",
-              "report."))),
+              "report.")),
+      tips = c(
+        paste("mpg's displ vs hwy is curved - try adding a polynomial term",
+              "and watch the diagnostics improve."),
+        paste("For a 0/1 outcome (Titanic's survived01), switch to logistic",
+              "and read the odds ratios."),
+        paste("High VIF means two predictors carry the same information -",
+              "diamonds' x, y and z show it clearly."),
+        paste("Save model A, refit as B, and the comparison table appears",
+              "automatically."))),
     nav_panel(tagList(icon("file-arrow-up"),  " Import"),     value = "import",
-              importUI("imp", ex_choices)),
+              importUI("imp", examples = EXAMPLES_REGRESSION)),
     nav_panel(tagList(icon("chart-simple"),   " Regression"), value = "regression",
               regressionUI("reg")),
     nav_panel(tagList(icon("file-export"),    " Export & Report"),
@@ -71,7 +75,7 @@ regression_tool_app <- function() {
   )
 
   server <- function(input, output, session) {
-    imported <- importServer("imp", examples = ex)      # -> reactive(data | NULL)
+    imported <- importServer("imp", examples = EXAMPLES_REGRESSION)  # -> reactive(data | NULL)
     model    <- regressionServer("reg", imported)       # -> reactive(fitted lm/glm)
     exportServer("ex", imported, model = model)         # data + model downloads
     reportServer("rep", imported, model = model,

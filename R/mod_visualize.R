@@ -1,14 +1,22 @@
 # ============================================================
-# mod_visualize.R -- multi-plot charting (1-4 plots)
+# mod_visualize.R -- multi-plot charting (1-8 plots)
 # ============================================================
 # Full-parity port of the original Visualize tab, namespaced as a module:
-# 1-4 plots side by side, 7 chart types, per-plot config accordions,
+# 1-8 plots side by side, 11 chart types, per-plot config accordions,
 # "apply Plot 1 style to all", smart chart-suitability hints, auto
 # static-vs-interactive rendering for big data, and a copy-the-ggplot2-code
 # panel per plot. Thin wrapper over R/helpers_plot.R.
 #
 # Requires R/components.R (info_tip, copy_js, UF_COLORS) and R/helpers_plot.R.
 # The app must attach ggplot2, plotly, and colourpicker.
+
+# How many plot slots the Visualize tab offers. Pure UI wiring: every loop,
+# accordion and output below scales from this one constant. Deliberately NOT
+# in helpers_plot.R -- the caps there are enforced by pure helpers and
+# mirrored in chart_hint/generate_code; nothing in helpers_plot depends on
+# the slot count (draw_plot_grid and the report both scale with
+# length(plots)).
+MAX_PLOTS <- 8L
 
 # One plot's control panel. All input ids and conditionalPanel conditions are
 # namespaced via `ns`; JS conditions use bracket notation because namespaced
@@ -165,6 +173,23 @@ plot_slot_panel <- function(ns, i) {
                                   "Sqrt \u2014 X" = "sqrtx", "Sqrt \u2014 Y" = "sqrty",
                                   "Sqrt \u2014 both" = "sqrtboth"))
         ),
+        conditionalPanel(
+          sprintf("%s && %s", cond("_type", "!= 'pie'"), cond("_type", "!= 'heatmap'")),
+          selectInput(pid("_xticks"),
+                      tagList("X-axis tick labels", info_tip(
+                        "How many labels to print along the X axis. ",
+                        "\u201cAutomatic\u201d (default) keeps a crowded category ",
+                        "axis readable by printing an evenly spaced subset ",
+                        "\u2014 every bar, point and line is still drawn, only ",
+                        "the labels are thinned. Dates and numbers already ",
+                        "choose sensible labels on their own.")),
+                      choices = c("Automatic" = "auto",
+                                  "Show every label" = "all",
+                                  "About 6" = "6", "About 10" = "10",
+                                  "About 15" = "15", "About 20" = "20",
+                                  "About 30" = "30")),
+          uiOutput(oid("_xdatefmt"))
+        ),
         uiOutput(oid("_facet")),
         selectInput(pid("_legendpos"), "Legend position",
                     choices = c("Right" = "right", "Bottom" = "bottom",
@@ -194,7 +219,7 @@ visualizeUI <- function(id) {
       width = 320,
       h5("Chart settings"),
       radioButtons(ns("n_plots"), "Number of plots",
-                   choices = c(1, 2, 3, 4), selected = 1, inline = TRUE),
+                   choices = seq_len(MAX_PLOTS), selected = 1, inline = TRUE),
       conditionalPanel(
         sprintf("input['%s'] != '1'", ns("n_plots")),
         actionButton(ns("copy_style"), "Apply Plot 1 style to all",
@@ -237,17 +262,17 @@ visualizeServer <- function(id, data_in) {
     output$plot_config_accordion <- renderUI({
       tagList(
         accordion(plot_slot_panel(ns, 1), open = "panel1"),
-        conditionalPanel(sprintf("input['%s'] >= 2", ns("n_plots")),
-                         accordion(plot_slot_panel(ns, 2), open = FALSE)),
-        conditionalPanel(sprintf("input['%s'] >= 3", ns("n_plots")),
-                         accordion(plot_slot_panel(ns, 3), open = FALSE)),
-        conditionalPanel(sprintf("input['%s'] >= 4", ns("n_plots")),
-                         accordion(plot_slot_panel(ns, 4), open = FALSE))
+        # Slots 2..MAX_PLOTS reveal as n_plots grows. The JS comparison is
+        # numeric (the RHS is a bare literal), so single- and multi-digit
+        # values both compare correctly.
+        lapply(2:MAX_PLOTS, function(k)
+          conditionalPanel(sprintf("input['%s'] >= %d", ns("n_plots"), k),
+                           accordion(plot_slot_panel(ns, k), open = FALSE)))
       )
     })
 
     # Per-slot dynamic variable pickers + hint. reset() forces a rebuild.
-    for (i in 1:4) {
+    for (i in seq_len(MAX_PLOTS)) {
       local({
         idx <- i
         # A remembered pick, re-applied only if still a valid choice.
@@ -359,6 +384,36 @@ visualizeServer <- function(id, data_in) {
               deflt, cap))),
             min = 2, max = cap, value = deflt, step = 1)
         })
+        # Date label format -- only meaningful for a REAL Date/POSIXct x, and
+        # conditionalPanel cannot see column types, so this must be server
+        # side. The choice LABELS are the format applied to a real value from
+        # the user's own data, so "%b %Y" reads as "Jan 2024" in the dropdown.
+        output[[paste0("ui_mp", idx, "_xdatefmt")]] <- renderUI({
+          req(is.data.frame(data_in())); reset()
+          ty <- input[[paste0("mp", idx, "_type")]]
+          if (isTRUE(ty %in% c("pie", "heatmap"))) return(NULL)
+          xv <- input[[paste0("mp", idx, "_xvar")]]
+          req(xv, xv %in% names(data_in()))
+          x <- data_in()[[xv]]
+          if (!is_date_col(x)) return(NULL)
+          ex <- x[which(!is.na(x))[1]]
+          if (length(ex) != 1L || is.na(ex))
+            ex <- if (inherits(x, "POSIXt")) as.POSIXct("2024-01-15 14:30:00")
+                  else as.Date("2024-01-15")
+          fmts <- if (inherits(x, "POSIXt"))
+            c("%Y-%m-%d", "%b %d", "%b %Y", "%Y", "%b %d %H:%M", "%H:%M")
+          else
+            c("%Y-%m-%d", "%b %d", "%b %d, %Y", "%b %Y", "%Y")
+          selectInput(ns(paste0("mp", idx, "_xdatefmtv")),
+            tagList("Date label format", info_tip(
+              "How each date tick is written. The examples are the format ",
+              "applied to a real value from your data. Long formats are ",
+              "angled automatically so they don't overlap.")),
+            choices = c("Automatic" = "auto",
+                        stats::setNames(fmts,
+                          vapply(fmts, function(f) format(ex, f),
+                                 character(1)))))
+        })
       })
     }
 
@@ -395,6 +450,8 @@ visualizeServer <- function(id, data_in) {
         alpha       = input[[paste0("mp", i, "_alpha")]],
         jitter      = isTRUE(input[[paste0("mp", i, "_jitter")]]),
         logscale    = input[[paste0("mp", i, "_logscale")]] %||% "none",
+        x_labels      = input[[paste0("mp", i, "_xticks")]]    %||% "auto",
+        x_date_format = input[[paste0("mp", i, "_xdatefmtv")]] %||% "auto",
         facet       = input[[paste0("mp", i, "_facetvar")]],
         legend_pos  = input[[paste0("mp", i, "_legendpos")]] %||% "right",
         gridlines   = input[[paste0("mp", i, "_grid")]] %||% TRUE,
@@ -408,6 +465,10 @@ visualizeServer <- function(id, data_in) {
       th <- input$mp1_theme;  co <- input$mp1_color;  sz <- input$mp1_size
       pal <- input$mp1_palette; al <- input$mp1_alpha
       lp <- input$mp1_legendpos; gr <- input$mp1_grid
+      xt <- input$mp1_xticks
+      # x_date_format is NOT copied: it only exists in a slot whose x is a real
+      # Date, and updateSelectInput on an id that slot never rendered is a
+      # silent no-op that would look like it worked.
       for (i in 2:n) {
         if (!is.null(th)) updateSelectInput(session, paste0("mp", i, "_theme"), selected = th)
         if (!is.null(co)) colourpicker::updateColourInput(session, paste0("mp", i, "_color"), value = co)
@@ -416,6 +477,7 @@ visualizeServer <- function(id, data_in) {
         if (!is.null(al))  updateSliderInput(session, paste0("mp", i, "_alpha"), value = al)
         if (!is.null(lp))  updateSelectInput(session, paste0("mp", i, "_legendpos"), selected = lp)
         if (!is.null(gr))  updateCheckboxInput(session, paste0("mp", i, "_grid"), value = gr)
+        if (!is.null(xt))  updateSelectInput(session, paste0("mp", i, "_xticks"), selected = xt)
       }
       showNotification("Applied Plot 1's style to the other plots.", type = "message")
     })
@@ -481,7 +543,7 @@ visualizeServer <- function(id, data_in) {
       do.call(layout_columns, c(list(col_widths = if (n == 1) 12 else 6), cards))
     })
 
-    for (i in 1:4) {
+    for (i in seq_len(MAX_PLOTS)) {
       local({
         idx <- i
         output[[paste0("mp_ly", idx)]] <- plotly::renderPlotly({
@@ -494,6 +556,11 @@ visualizeServer <- function(id, data_in) {
             validate(need(requireNamespace("hexbin", quietly = TRUE),
                           paste0("This chart needs the optional 'hexbin' ",
                                  "package: install.packages(\"hexbin\")")))
+          # A blocked config must show its SPECIFIC reason here -- the
+          # builder's NULL would otherwise fall through to the misleading
+          # "finish choosing variables" message below.
+          reason <- plot_block_reason(data_in(), pr)
+          validate(need(is.null(reason), reason))
           p <- build_full_plot(data_in(), pr)
           validate(need(!is.null(p),
                         "Finish choosing variables to draw this chart."))
@@ -516,6 +583,8 @@ visualizeServer <- function(id, data_in) {
             validate(need(requireNamespace("hexbin", quietly = TRUE),
                           paste0("This chart needs the optional 'hexbin' ",
                                  "package: install.packages(\"hexbin\")")))
+          reason <- plot_block_reason(data_in(), pr)
+          validate(need(is.null(reason), reason))
           p <- build_full_plot(data_in(), pr)
           validate(need(!is.null(p),
                         "Finish choosing variables to draw this chart."))

@@ -60,8 +60,11 @@ There are **nine** issue types; two are opt-in. Check each fires and each fix wo
 | Do | What good looks like |
 |---|---|
 | Tick **outliers** and apply | Adds an `is_outlier` column (3×IQR); **deletes nothing**. Re-applying does not stack a second column |
+| Load **Messy field survey**, tick ALL nine fixes, apply | Banner turns green; 120 rows remain; `price_usd` numeric, `sample_date` a Date, `plot_id` still text with leading zeros; `crop` case drift deliberately untouched |
 | Apply fixes, then **Revert to original** | Data returns exactly to as-loaded |
 | **Change Variable Types**: a factor → Number | Converts via the *labels*, never the hidden integer codes; unparseable values become NA and the count is reported |
+| **Rename columns**: rename a column that has an active filter | The name changes everywhere downstream; the filter chip shows the *new* name and still filters |
+| Rename to a blank name, or an existing column's name | A readable error/warning notification; nothing changes. Revert to original undoes renames too |
 | Add a **row filter**, then remove it | Downstream tabs (Summarize/Visualize/Map) follow the filtered rows, and restore when cleared |
 | Press **Clear data** | Everything empties, the file input visibly resets, and you can upload again |
 
@@ -88,10 +91,15 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | Colour a density plot by a **high-cardinality column** (e.g. `site`, 120 values) | Draws **instantly**, uncoloured, with an orange note naming the column and the limit (50). *This was a 112-second freeze before 0.10.0* |
 | Colour by a 5-level column | Colours and legend appear normally |
 | Colour a scatter by a **continuous numeric** | A smooth gradient — continuous colours are deliberately NOT capped |
-| Set 4 plots at once | All four render; the sidebar accordion keeps them separate |
+| Set 8 plots at once | All eight render in four rows of two; the sidebar accordion keeps them separate. (The Export tab's grid preview grows with the row count; the downloaded file is sized per plot) |
+| Box plot with a numeric X of ~1,500 distinct values | **Blocked**: the plot pane names the column, the count, and the limit (100); the orange hint says the same; Export/Report skip the slot; the R-code panel shows a comment, not chart code |
 | A bar chart of a column with **> 30 categories** | Only the largest 30 shown, rest as "Other", and a note says so |
 | A pie chart with **> 12 slices** | Same, capped at 12 |
 | Open **Facet by** on a table with a >30-value column | That column is not offered at all — the picker lists only columns with 30 or fewer values |
+| Line-chart *Daily weather*'s `date_text` (dates stored as TEXT) vs `temp_c` | ~12 evenly spaced axis labels, not a smear, plus an orange hint pointing at Import > Change variable types. *Before 0.11.0 this drew 365 labels* |
+| Recast `date_text` to Date on Import, re-chart | A real time axis with ggplot's own pretty breaks; the **Date label format** picker appears in Advanced options, previewing formats on your own data |
+| Set **X-axis tick labels** to "Show every label" | The smear comes back — the override wins |
+| Flip a bar chart with ~25 categories horizontal | All labels shown (the flipped cap is 30, upright is 12) |
 | Copy the **R code** for a plot into a fresh R session | Reproduces the chart you saw — including any cap that was applied |
 | **Save session** on Import, reload the app, **Restore** | Working data, filters and reshape settings all come back (analysis-tab choices are *not* saved — known limit) |
 
@@ -126,6 +134,11 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | US counties → **Limit to state = Florida** | Renders fast (a second at most), and your property / key / value picks **survive the change** |
 | Switch to Shaded regions **before** choosing columns | The pane stays empty with "pick the region property…" — it must **not** draw a points map |
 | Upload your own GeoJSON | Same flow; properties are read from the file |
+| **Hover** a shaded region, then a grey one | A tooltip follows the cursor: region + shaded value; grey regions say "(no data)" |
+| **Click** a shaded region | A popup with the full summary of your rows there: rows / mean / median / sd / min / max |
+| Untick **Region popups & hover labels** | All region interactivity gone; the rebuild is as fast as before the feature |
+| US counties, first shade | A spinner overlays the map during the multi-second build, and a note under the boundary picker warns about it. (A brief browser pause *after* the spinner is a known gap.) |
+| Download HTML after hovering/clicking | The downloaded file keeps live tooltips and popups; the PNG snapshot still renders |
 
 ## 3. Compare Groups — `run_compare_groups()`
 
@@ -140,6 +153,8 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | **Split by** a third variable | One stratum per level (max 6), BH applied across the whole family |
 | Set split-by back to **(none)** | It actually returns to none — *this was broken before 0.8.0* |
 | Chi-square on two categorical columns | Table with the percentage options working |
+| Load *Titanic*, Sex vs Survived | Pickers read "Variable 1 - table rows" / "Variable 2 - table columns"; every table's leading header is `Sex`; captions name both roles; same in the .txt export and both report formats |
+| Press **Swap rows / columns** | The two pickers exchange values and every table transposes |
 
 ## 4. Regression Tool — `run_regression_tool()`
 
@@ -173,6 +188,10 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | `cover_prop` with **beta** | Fits |
 | **DHARMa** residual panel | Axis labels are readable numbers, not `0.0943396226415094` |
 | **Binary tab:** `present` with logit/probit/cloglog | Fits; EMMeans come back on the response scale |
+| `cover_prop_ord` with **Beta** | A message naming **Ordered beta** appears under the family picker BEFORE fitting, and the fit itself fails with a readable error |
+| `cover_prop_ord` with **Ordered beta** | Fits (the column deliberately contains exact 0s and 1s) |
+| **Binary tab > Grouped counts**: `successes` / `trials` | Fits; the formula shows `cbind(successes, trials - successes)`; EMMeans on the probability scale; a **Zero inflation** test appears (it does not in individual-rows mode) |
+| Swap the two grouped pickers (successes <- trials) | A live warning names the offending row count; Fit model refuses with the same message |
 | Report with **both** tabs fitted | Both models appear side by side |
 
 ## 7. Reshape Tool — `run_reshape_tool()`
@@ -183,6 +202,7 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | **Split** back to wide (`fish_encounters`) | Round-trips |
 | Split with **duplicate keys** | Produces list-columns; CSV export flattens them rather than erroring |
 | **Transpose**, **Sort**, **Subset** | Each does what its name says and the preview updates |
+| Select **Subset** with nothing configured | An info strip explains Subset = columns + RANDOM sampling, and points at Import > Filter rows for value-based row filtering |
 
 ## 8. Combine Tool — `run_combine_tool()`
 
@@ -192,6 +212,7 @@ Map → Compare Groups → Regression → Export & Report, ending with one HTML 
 | **Concatenate** the two mtcars halves | 32 rows; the optional source column marks which table each row came from |
 | **Update** and **Compare** | Compare names the differing columns/rows |
 | Join two tables that share **no** column | A clear message asking for a key column — the key picker only ever lists shared columns |
+| Load two tables whose key differs only by case (`Country` vs `country`) | A warning under the key picker names the pair and points at Import's Rename card; renaming one side makes the key appear |
 | Note there are **two** Data Health panels (one per table) | Both work independently |
 
 ---
@@ -202,7 +223,10 @@ These are deliberate limits. Each should **explain itself**, never fail silently
 
 | Limit | Value | Where |
 |---|---|---|
+| Simultaneous plots | **8** | Visualize — "Number of plots" |
+| Distinct X values on per-value charts | **100** | Visualize — box/violin/mean-error (any X) and bar (numeric X) block past this with an explanation; the code panel emits a comment |
 | Colour / group levels | **50** | Visualize — past this, colouring is dropped |
+| X-axis tick labels | **12** (30 flipped) | Visualize — crowded discrete axes thin to an evenly spaced subset; per-plot override in Advanced options |
 | Bars before "Other" | 30 | Bar charts (slider-adjustable) |
 | Pie slices before "Other" | 12 | Pie charts |
 | Facet panels | 30 | Visualize |
@@ -213,6 +237,7 @@ These are deliberate limits. Each should **explain itself**, never fail silently
 | "Combine by area" areas | 100 | Map |
 | Auto-clustering threshold | 500 points | Map |
 | Choropleth features drawn | 4,000 | Map |
+| Choropleth "slow draw" note | 1,000 features | Map — a note appears under the boundary picker (MAP_CHORO_SLOW) |
 
 **Optional packages** — each should degrade to a note, never an error:
 `hexbin` (hexbin chart), `leaflet.extras` (heatmap), `car` (GLMM Wald ANOVA),
@@ -232,8 +257,15 @@ An 11k-row file is comfortable; a multi-million-row file will be slow throughout
 |---|---|---|
 | `make_example_data()` | 108 rows, RCBD: Block/Variety/Nitrogen/Irrigation + 5 response types | Mixed models, Compare Groups, Regression |
 | `make_map_example_data()` | 120 rows, 12 Florida counties, `lat`/`lon`/`yield`/`acres`/`crop` | Map (points **and** choropleth via `county`) |
-| `make_glmm_example_data()` | 144 rows: overdispersed counts, zero-heavy counts, a proportion, a 0/1 | GLMM Review |
+| `make_glmm_example_data()` | 144 rows: overdispersed counts, zero-heavy counts, a proportion, a 0/1, a boundary-touching proportion (ordered beta), a successes/trials pair | GLMM Review |
+| `make_timeseries_example_data()` | 1,095 rows (3 stations × 365 days): real `Date` + the same date as **text**, seasonal temp/rain/NDVI. Deliberately just over the 1,000-row static-plot threshold | Date axes, Visualize, Summarize, Compare Groups (rain is non-normal) |
+| `make_messy_example_data()` | 123 rows firing **all nine** Data Health detectors; applying every fix leaves 120 clean rows | Data Health end-to-end |
 | `datasets::quakes` | 1,000 points | Map clustering, heatmap, combine-by-area |
+
+The full catalogue is `foxplots_examples()` (~33 sets, per-app menus in
+`helpers_examples.R`). Sets that cross the 1,000-row static-plot threshold:
+Daily weather (1,095), Texas housing (1,122), Titanic (2,201), storm tracks
+(2,304), diamonds (5,394).
 
 **From Kaggle (or anywhere) — what shape to look for:**
 
